@@ -229,19 +229,24 @@
     <div id="measurement-total"></div>
   </div>
   <script>
-    Cesium.Ion.defaultAccessToken = ''; // Paste your token here
+    Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJmYTNlODhkNC0zOTNlLTRkMmEtODU2MS04ZGQ3NDFkNGU4NmQiLCJpZCI6MTE5NjI3LCJpYXQiOjE2NzIxNjg2MjN9.iQ-WY4qZZoK8NCgheHh1m0gM4GBWsaMl7UTMcufyl7Q';
 
+    // Add all your models here for future expansion!
     const models = [
       {
-        id: "production_3",
+        id: "givat_haviva",
         name: "Givat Haviva",
         url: "https://quadspectat-models.fra1.cdn.digitaloceanspaces.com/Givat%20Haviva/Scene/Cesium.json"
-      }
+      },
+      // Example future model:
+      // {
+      //   id: "future_model",
+      //   name: "Future Project Name",
+      //   url: "https://your-bucket-url/Future/Scene/Cesium.json"
+      // }
     ];
 
     let viewer, currentTileset = null, currentModelId = null;
-
-    // Store initial lighting values for the currently loaded model
     let initialLighting = {};
 
     document.addEventListener('DOMContentLoaded', async () => {
@@ -290,7 +295,6 @@
         currentModelId = model.id;
         document.querySelectorAll('#modelList li').forEach(e => e.classList.remove('active'));
         document.getElementById('model-list-item-' + model.id).classList.add('active');
-        // Store the current lighting slider values as the initial values for this model
         Object.keys(sliders).forEach(key => {
           initialLighting[key] = sliders[key].value;
         });
@@ -351,7 +355,6 @@
             obj = await Cesium.KmlDataSource.load(file);
             viewer.dataSources.add(obj);
 
-            // Height adjustment if needed
             let modelHeight = 0;
             if (currentTileset) {
               const c = Cesium.Cartographic.fromCartesian(currentTileset.boundingSphere.center);
@@ -498,7 +501,6 @@
         stage.uniforms.u_whiteBalance = parseFloat(sliders.whiteBalance.value);
       }
 
-      // Reset Button
       document.getElementById('resetLightingBtn').onclick = function() {
         Object.keys(sliders).forEach(key=>{
           if (initialLighting[key] !== undefined) sliders[key].value = initialLighting[key];
@@ -527,7 +529,6 @@
       menuBtn.onclick = () => sidebar.classList.toggle('open');
     }
 
-    // Measurement tools
     function setupMeasurementTools() {
       const display = document.getElementById('measurement-display');
       const listElem = document.getElementById('measurement-list');
@@ -664,7 +665,6 @@
           }
           entity = viewer.entities.add({ polygon: { hierarchy: new Cesium.PolygonHierarchy(points), material: color.withAlpha(0.5) } });
           entities.push(entity);
-          // Place area/volume label at polygon centroid
           const centroid = polygonCentroid(points);
           let labelText = activeTool === "area"
             ? `${calculate3DArea(points).toFixed(2)} m²`
