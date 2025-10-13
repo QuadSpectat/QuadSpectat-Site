@@ -209,7 +209,6 @@
       0% { transform: translateY(0); }
       100% { transform: translateY(-25px); }
     }
-    /* Features and contact styling unchanged */
     .features {
       margin: 0 auto 54px auto;
       max-width: 1200px;
@@ -278,7 +277,6 @@
       box-shadow: 0 -2px 18px #1b254099;
       margin-top: auto;
     }
-    /* Responsive */
     @media (max-width: 1200px) {
       .hero { flex-direction: column; align-items: stretch; min-height: 90vh; }
       .hero-content { margin: 24px 8vw 0 8vw; align-items: center; text-align: center; }
@@ -318,7 +316,7 @@
       <nav>
         <a href="#features">Services</a>
         <a href="#contact">Contact</a>
-        <a href="#" id="gallery-link">3D Model Gallery</a>
+        <a href="viewer.html" id="gallery-link">3D Model Gallery</a>
       </nav>
     </div>
   </header>
@@ -331,11 +329,10 @@
         </p>
         <div class="hero-buttons">
           <a href="#contact">Get a Quote</a>
-          <a href="#" class="cta" id="gallery-cta">Enter 3D Model Gallery</a>
+          <a href="viewer.html" class="cta" id="gallery-cta">Enter 3D Model Gallery</a>
         </div>
       </div>
       <div class="hero-graphics">
-        <!-- Main drone illustration (SVG) -->
         <svg viewBox="0 0 420 320" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
           <ellipse cx="210" cy="265" rx="160" ry="40" fill="#212812" fill-opacity="0.3"/>
           <g>
@@ -361,7 +358,6 @@
             <circle cx="55" cy="180" r="6" fill="#c1f120" stroke="#232524" stroke-width="2"/>
           </g>
           <g>
-            <!-- mapping lines -->
             <polyline points="130,250 160,210 250,210 290,240" stroke="#43a9ff" stroke-width="4" fill="none" stroke-linecap="round" stroke-dasharray="10 8"/>
             <polyline points="180,240 210,185 245,240" stroke="#43a9ff" stroke-width="2.3" fill="none" stroke-dasharray="7 5"/>
             <circle cx="210" cy="185" r="7" fill="#43a9ff" stroke="#fff" stroke-width="2"/>
@@ -425,18 +421,21 @@
     &copy; 2025 QuadSpectat. All rights reserved.
   </footer>
   <script>
-    // Open 3D gallery in a new tab on fullscreen when clicking either nav or hero button
-    function openGallery() {
-      window.location.href = "viewer.html";
+    // Open 3D Model Gallery in fullscreen on mobile/tablet
+    function isMobileOrTablet() {
+      return window.innerWidth <= 900 || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     }
-    document.getElementById('gallery-link').onclick = function(e) {
-      e.preventDefault();
-      openGallery();
+    function goToGallery(e) {
+      if (isMobileOrTablet()) {
+        window.location.href = "viewer.html";
+      } else {
+        window.location.href = "viewer.html";
+      }
+      if (e) e.preventDefault();
+      return false;
     }
-    document.getElementById('gallery-cta').onclick = function(e) {
-      e.preventDefault();
-      openGallery();
-    }
+    document.getElementById('gallery-link').onclick = goToGallery;
+    document.getElementById('gallery-cta').onclick = goToGallery;
     document.querySelector('form[name="contactform"]').onsubmit = function(e) {
       e.preventDefault();
       alert("Thank you for your inquiry! We'll get back to you soon.");
