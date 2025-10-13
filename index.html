@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>QuadSpectat - Drone Survey & Mapping</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="QuadSpectat - drone survey, mapping, photogrammetry, and 3D models. Fast, accurate, and professional for construction, agriculture, infrastructure, and more.">
+  <link href="https://fonts.googleapis.com/css?family=Inter:400,600,700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary-green: #c1f120;
+      --primary-dark: #232524;
+      --primary-gray: #373a39;
+      --accent: #bfe120;
+      --white: #fff;
+      --nav-bg: rgba(26, 32, 19, 0.98);
+      --footer-bg: #232524;
+      --hero-bg: linear-gradient(120deg, #232524 0%, #464b3b 100%);
+      --font-main: 'Inter', Arial, sans-serif;
+    }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: var(--font-main);
+      background: var(--hero-bg);
+      min-height: 100vh;
+      color: #f8faff;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+    header {
+      width: 100vw;
+      background: var(--nav-bg);
+      box-shadow: 0 4px 24px #0004;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0;
+      min-height: 70px;
+      z-index: 20;
+      position: fixed;
+      top: 0; left: 0;
+      left: 0;
+      right: 0;
+    }
+    .nav-inner {
+      width: 100%;
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 2vw;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 9px 0;
+    }
+    .logo img {
+      width: 54px; height: 54px;
+      border-radius: 17%;
+      background: #fff;
+      object-fit: contain;
+      box-shadow: 0 3px 18px var(--primary-green)44;
+      border: 2.5px solid var(--primary-green);
+    }
+    .logo-title {
+      font-size: 2.2rem;
+      font-weight: 900;
+      letter-spacing: 0.04em;
+      color: var(--primary-green);
+      text-shadow: 0 2px 12px #0a1f3b40;
+    }
+    nav {
+      display: flex;
+      gap: 38px;
+      align-items: center;
+    }
+    nav a {
+      color: #eaf1e9;
+      text-decoration: none;
+      font-weight: 500;
+      font-size: 1.16rem;
+      letter-spacing: 0.02em;
+      transition: color 0.17s;
+      border-bottom: 2.5px solid transparent;
+      padding-bottom: 3px;
+      position: relative;
+    }
+    nav a:hover, nav a.active {
+      color: var(--primary-green);
+      border-bottom: 2.5px solid var(--primary-green);
+      text-shadow: 0 1px 6px #a7e11f80;
+    }
+    main {
+      flex: 1;
+      margin-top: 90px;
+      display: flex;
+      flex-direction: column;
+    }
+    .hero {
+      min-height: 70vh;
+      width: 100vw;
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      z-index: 1;
+      padding: 0 0 0 0;
+      background: radial-gradient(ellipse at 60% 50%, #31361e 60%, transparent 100%);
+      overflow: hidden;
+    }
+    .hero-content {
+      flex: 1;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      margin-left: 8vw;
+      margin-right: 0;
+      max-width: 650px;
+      padding: 60px 0 60px 0;
+    }
+    .hero h1 {
+      font-size: 3.1rem;
+      font-weight: 900;
+      margin-bottom: 20px;
+      color: var(--primary-green);
+      letter-spacing: 0.05em;
+      text-shadow: 0 2px 24px #0a1f3b50;
+    }
+    .hero p {
+      font-size: 1.35rem;
+      font-weight: 500;
+      margin-bottom: 38px;
+      color: #eaf6ee;
+      text-shadow: 0 1px 8px #23252477;
+      max-width: 670px;
+    }
+    .hero-buttons {
+      display: flex;
+      gap: 28px;
+      justify-content: flex-start;
+      flex-wrap: wrap;
+      margin-bottom: 22px;
+    }
+    .hero-buttons a {
+      display: inline-block;
+      background: var(--primary-green);
+      color: #232524;
+      font-weight: 900;
+      font-size: 1.22rem;
+      border-radius: 13px;
+      padding: 17px 54px;
+      text-decoration: none;
+      box-shadow: 0 2px 22px #c1f12045;
+      letter-spacing: 0.03em;
+      transition: background 0.13s, transform 0.13s, color 0.13s, box-shadow 0.13s;
+      border: none;
+      outline: none;
+      position: relative;
+      top: 0;
+    }
+    .hero-buttons a.cta {
+      background: linear-gradient(90deg, var(--primary-green) 70%, #e9ffb0 100%);
+      color: #232524;
+      font-size: 1.3rem;
+      box-shadow: 0 4px 30px #c1f12055;
+      border: 2px solid var(--primary-green);
+      padding: 18px 60px;
+      font-weight: 900;
+    }
+    .hero-buttons a:hover, .hero-buttons a.cta:hover {
+      background: #fff;
+      color: var(--primary-green);
+      transform: translateY(-3px) scale(1.045);
+      box-shadow: 0 6px 32px #c1f12077;
+    }
+    .hero-graphics {
+      flex: 1.5;
+      min-width: 350px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      z-index: 1;
+      margin-right: 0;
+      margin-left: 5vw;
+      height: 100%;
+    }
+    .hero-graphics svg {
+      width: 440px; max-width: 100%; height: 340px; margin-top: 40px;
+      filter: drop-shadow(0 14px 40px #c1f12033);
+    }
+    .floating-drone {
+      position: absolute;
+      left: 70px; top: 10px;
+      animation: floatDrone 3.6s ease-in-out infinite alternate;
+      pointer-events: none;
+      z-index: 9;
+    }
+    @keyframes floatDrone {
+      0% { transform: translateY(0); }
+      100% { transform: translateY(-25px); }
+    }
+    /* Features and contact styling unchanged */
+    .features {
+      margin: 0 auto 54px auto;
+      max-width: 1200px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 38px;
+      justify-content: center;
+      z-index: 2;
+      position: relative;
+    }
+    .feature-card {
+      flex: 1 1 270px;
+      min-width: 220px;
+      max-width: 340px;
+      background: rgba(35, 37, 36, 0.82);
+      border-radius: 17px;
+      padding: 32px 26px 26px 26px;
+      box-shadow: 0 6px 28px #0a1f3b28;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      margin-bottom: 10px;
+      border-left: 5px solid var(--primary-green);
+      backdrop-filter: blur(6px);
+    }
+    .feature-card h3 {
+      color: var(--primary-green);
+      font-size: 1.18rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+    .feature-card p {
+      font-size: 1.05rem;
+      color: #eaf1f9;
+      margin: 0;
+      font-weight: 400;
+    }
+    .contact-section {
+      max-width:550px;
+      margin:0 auto 60px auto;
+      text-align:center;
+      background: rgba(35, 37, 36, 0.82);
+      border-radius: 18px;
+      box-shadow: 0 2px 22px #c1f12022;
+      padding: 38px 18px 25px 18px;
+      backdrop-filter: blur(7px);
+    }
+    .contact-section h2 { color: var(--primary-green); }
+    .contact-section form { display:flex;flex-direction:column;gap:14px;max-width:420px;margin:0 auto;}
+    .contact-section input, .contact-section textarea {
+      font-size:1rem;padding:10px 12px;border-radius:7px;border:none;background:#f6f8fa;color:#222;
+    }
+    .contact-section button {
+      background:var(--primary-green);color:#232524;font-weight:700;font-size:1.12rem;padding:11px 0;border-radius:7px;border:none;box-shadow:0 2px 14px #c1f12033;cursor:pointer;transition:background 0.13s;
+    }
+    .contact-section button:hover { background: #fff; color: var(--primary-green);}
+    .contact-section p.contact-email {color:#c1f120b8;font-size:.98rem;margin-top:18px;}
+    .contact-section a { color: var(--primary-green); }
+    footer {
+      text-align: center;
+      padding: 20px 0 12px 0;
+      background: var(--primary-dark);
+      color: #c1f120b8;
+      font-size: 1.08rem;
+      letter-spacing: 0.01em;
+      box-shadow: 0 -2px 18px #1b254099;
+      margin-top: auto;
+    }
+    /* Responsive */
+    @media (max-width: 1200px) {
+      .hero { flex-direction: column; align-items: stretch; min-height: 90vh; }
+      .hero-content { margin: 24px 8vw 0 8vw; align-items: center; text-align: center; }
+      .hero-graphics { margin: 0 0 40px 0; justify-content: center; }
+    }
+    @media (max-width: 900px) {
+      .features { flex-direction: column; align-items: center; gap: 18px; }
+      .feature-card { max-width: 97vw; }
+      .logo { padding: 10px 10px 10px 10px; }
+      nav { gap: 13px;}
+      .hero-content { padding: 28px 0 18px 0; }
+      .hero h1 { font-size: 2.1rem;}
+    }
+    @media (max-width: 600px) {
+      header { flex-direction: column; align-items: flex-start; }
+      .nav-inner { flex-direction: column; gap: 10px; }
+      .logo { padding: 9px 3vw 7px 3vw; }
+      nav { flex-wrap: wrap; margin-bottom: 7px; gap: 8px;}
+      .hero { padding: 0; }
+      .hero-content { padding: 12px 1vw 0 1vw; margin: 0 2vw 0 2vw; }
+      .hero h1 { font-size: 1.28rem; }
+      .hero p { font-size: 1.05rem; }
+      .hero-buttons { gap: 9px; }
+      .feature-card { padding: 13px 7px 13px 7px; }
+      .hero-graphics svg { width: 90vw; height: 170px; }
+      .floating-drone { left: 10vw; top: 0; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="nav-inner">
+      <div class="logo">
+        <img src="logo.png" alt="QuadSpectat drone logo" />
+        <span class="logo-title">QuadSpectat</span>
+      </div>
+      <nav>
+        <a href="#features">Services</a>
+        <a href="#contact">Contact</a>
+        <a href="#" id="gallery-link">3D Model Gallery</a>
+      </nav>
+    </div>
+  </header>
+  <main>
+    <section class="hero">
+      <div class="hero-content">
+        <h1>Drone Survey, Mapping & 3D Models</h1>
+        <p>
+          <b>QuadSpectat</b> delivers advanced drone aerial photography, surveying, photogrammetry, and 3D modeling for construction, agriculture, real estate, infrastructure, and more.
+        </p>
+        <div class="hero-buttons">
+          <a href="#contact">Get a Quote</a>
+          <a href="#" class="cta" id="gallery-cta">Enter 3D Model Gallery</a>
+        </div>
+      </div>
+      <div class="hero-graphics">
+        <!-- Main drone illustration (SVG) -->
+        <svg viewBox="0 0 420 320" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <ellipse cx="210" cy="265" rx="160" ry="40" fill="#212812" fill-opacity="0.3"/>
+          <g>
+            <rect x="125" y="160" width="170" height="38" rx="19" fill="#232524" stroke="#c1f120" stroke-width="4"/>
+            <rect x="195" y="190" width="30" height="36" rx="12" fill="#c1f120" stroke="#232524" stroke-width="3"/>
+            <ellipse cx="210" cy="148" rx="68" ry="22" fill="#232524" stroke="#bfe120" stroke-width="4"/>
+            <rect x="145" y="120" width="130" height="30" rx="15" fill="#232524" stroke="#bfe120" stroke-width="2"/>
+            <rect x="185" y="100" width="50" height="20" rx="6" fill="#bfe120"/>
+            <rect x="110" y="140" width="25" height="10" rx="4" fill="#bfe120"/>
+            <rect x="285" y="140" width="25" height="10" rx="4" fill="#bfe120"/>
+          </g>
+          <g>
+            <rect x="50" y="65" width="90" height="10" rx="5" fill="#232524" stroke="#bfe120" stroke-width="2"/>
+            <ellipse cx="60" cy="70" rx="15" ry="6" fill="#bfe120" fill-opacity="0.9"/>
+            <rect x="280" y="65" width="90" height="10" rx="5" fill="#232524" stroke="#bfe120" stroke-width="2"/>
+            <ellipse cx="360" cy="70" rx="15" ry="6" fill="#bfe120" fill-opacity="0.9"/>
+          </g>
+          <g class="floating-drone">
+            <ellipse cx="55" cy="200" rx="36" ry="8" fill="#232524" fill-opacity="0.4"/>
+            <rect x="40" y="175" width="30" height="22" rx="9" fill="#232524" stroke="#c1f120" stroke-width="2"/>
+            <rect x="52" y="165" width="7" height="14" rx="3" fill="#bfe120"/>
+            <rect x="44" y="164" width="24" height="5" rx="2" fill="#bfe120"/>
+            <circle cx="55" cy="180" r="6" fill="#c1f120" stroke="#232524" stroke-width="2"/>
+          </g>
+          <g>
+            <!-- mapping lines -->
+            <polyline points="130,250 160,210 250,210 290,240" stroke="#43a9ff" stroke-width="4" fill="none" stroke-linecap="round" stroke-dasharray="10 8"/>
+            <polyline points="180,240 210,185 245,240" stroke="#43a9ff" stroke-width="2.3" fill="none" stroke-dasharray="7 5"/>
+            <circle cx="210" cy="185" r="7" fill="#43a9ff" stroke="#fff" stroke-width="2"/>
+          </g>
+        </svg>
+      </div>
+    </section>
+    <section class="features" id="features">
+      <div class="feature-card">
+        <h3>Precision Mapping</h3>
+        <p>
+          Orthophoto generation, point clouds, and accurate area measurements for engineering, planning, and progress monitoring.
+        </p>
+      </div>
+      <div class="feature-card">
+        <h3>3D Modeling</h3>
+        <p>
+          Create stunning models for analysis, planning, and visualization, including terrain, buildings, and agriculture.
+        </p>
+      </div>
+      <div class="feature-card">
+        <h3>Data Processing & Analysis</h3>
+        <p>
+          Image processing, volume calculations, progress comparisons, and export to GIS and CAD systems.
+        </p>
+      </div>
+      <div class="feature-card">
+        <h3>Custom Drone Missions</h3>
+        <p>
+          Tailored flight plans—volume, monitoring, documentation, and more. Safety and permits guaranteed.
+        </p>
+      </div>
+      <div class="feature-card">
+        <h3>Fast Turnaround</h3>
+        <p>
+          Fast capture, processing, and delivery—see results in just 24-48 hours.
+        </p>
+      </div>
+      <div class="feature-card">
+        <h3>Professional Support</h3>
+        <p>
+          Our experienced team will guide you from planning to delivery, with full support along the way.
+        </p>
+      </div>
+    </section>
+    <section class="contact-section" id="contact">
+      <h2>Contact Us</h2>
+      <p style="font-size:1.1rem;color:#eaf1f9;margin-bottom:14px;">Want a quote or consultation?</p>
+      <form name="contactform">
+        <input type="text" name="name" placeholder="Full Name" required>
+        <input type="email" name="email" placeholder="Email" required>
+        <textarea name="message" placeholder="How can we help you?" rows="4" required></textarea>
+        <button type="submit">Send</button>
+      </form>
+      <p class="contact-email">
+        Or email: <a href="mailto:info@quadspectat.com">info@quadspectat.com</a>
+      </p>
+    </section>
+  </main>
+  <footer>
+    &copy; 2025 QuadSpectat. All rights reserved.
+  </footer>
+  <script>
+    // Open 3D gallery in a new tab on fullscreen when clicking either nav or hero button
+    function openGallery() {
+      window.location.href = "viewer.html";
+    }
+    document.getElementById('gallery-link').onclick = function(e) {
+      e.preventDefault();
+      openGallery();
+    }
+    document.getElementById('gallery-cta').onclick = function(e) {
+      e.preventDefault();
+      openGallery();
+    }
+    document.querySelector('form[name="contactform"]').onsubmit = function(e) {
+      e.preventDefault();
+      alert("Thank you for your inquiry! We'll get back to you soon.");
+      this.reset();
+      return false;
+    };
+  </script>
+</body>
+</html>
