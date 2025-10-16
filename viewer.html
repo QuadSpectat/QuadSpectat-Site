@@ -157,8 +157,6 @@
       box-shadow: 0 2px 12px #c1f12022; cursor: pointer;
       position: absolute; top: 15px; right: 15px; z-index: 30;
     }
-
-    /* --- MOBILE TOOLBAR FIX --- */
     @media (max-width: 900px) {
       #toolbar {
         position: fixed;
@@ -185,7 +183,7 @@
       #sidebar.open { left: 0; }
       #toolbar, #measurement-display { left: 0 !important; }
       #toolbar { padding:8px 4px; }
-      #measurement-display { padding:14px 8px 8px 14px; }
+      #measurement-display { padding:14px 8px 8px 14px; margin-top: 70px; }
       #menuBtn { display: block; }
     }
   </style>
@@ -249,16 +247,13 @@
   </div>
   <script>
     Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJmYTNlODhkNC0zOTNlLTRkMmEtODU2MS04ZGQ3NDFkNGU4NmQiLCJpZCI6MTE5NjI3LCJpYXQiOjE2NzIxNjg2MjN9.iQ-WY4qZZoK8NCgheHh1m0gM4GBWsaMl7UTMcufyl7Q';
-
     const models = [
       {
-        id: "Barkay",
+        id: "barkay2025",
         name: "Barkay 2025",
         url: "https://quadspectat-models.fra1.cdn.digitaloceanspaces.com/Barkay%202025/Scene/Barkai_2025_Cesium.json"
-      },
-      // Add more here!
+      }
     ];
-
     let viewer, currentTileset = null, currentModelId = null;
     let initialLighting = {};
 
@@ -282,7 +277,6 @@
       viewer.scene.globe.enableLighting = true;
       viewer.canvas.oncontextmenu = e => e.preventDefault();
     }
-
     function setupModelGallery() {
       const list = document.getElementById('modelList');
       models.forEach(model => {
@@ -296,7 +290,6 @@
         list.appendChild(li);
       });
     }
-
     async function loadModel(model) {
       if (currentTileset) viewer.scene.primitives.remove(currentTileset);
       try {
@@ -313,7 +306,6 @@
         });
       } catch (e) { alert('Failed to load model: ' + e); }
     }
-
     function loadModelFromUrlOrDefault() {
       const urlParams = new URLSearchParams(window.location.search);
       let initialModelId = urlParams.get('model') || (models[0] && models[0].id);
@@ -324,13 +316,11 @@
         loadModel(models[0]);
       }
     }
-
     function getCurrentShareUrl() {
       const url = new URL(window.location.href);
       url.searchParams.set('model', currentModelId ?? models[0].id);
       return url.href;
     }
-
     function setupShareControls() {
       document.getElementById('copyLinkBtn').onclick = () => {
         const url = getCurrentShareUrl();
@@ -353,12 +343,10 @@
         window.open(`mailto:?subject=${subject}&body=${body}`, '_blank');
       };
     }
-
     function setupDataLayers() {
       const fileInput = document.getElementById('fileInput');
       const layerList = document.getElementById('layerList');
       let loaded = new Map();
-
       fileInput.onchange = async (e) => {
         const file = e.target.files[0];
         if (!file || loaded.has(file.name)) return;
@@ -367,7 +355,6 @@
           if (/\.(kml|kmz)$/i.test(file.name)) {
             obj = await Cesium.KmlDataSource.load(file);
             viewer.dataSources.add(obj);
-
             let modelHeight = 0;
             if (currentTileset) {
               const c = Cesium.Cartographic.fromCartesian(currentTileset.boundingSphere.center);
@@ -421,7 +408,6 @@
             });
             viewer.scene.primitives.add(obj);
           } else return alert('Unsupported file type.');
-
           const li = document.createElement('li');
           li.textContent = file.name;
           li.ondblclick = () => viewer.flyTo(obj);
@@ -436,12 +422,10 @@
           layerList.appendChild(li);
           loaded.set(file.name, obj);
           viewer.flyTo(obj);
-
         } catch (err) { alert('Error: ' + err); }
         fileInput.value = '';
       };
     }
-
     function getLightingSliders() {
       return {
         detailLevel: document.getElementById('detailLevel'),
@@ -453,14 +437,11 @@
         whiteBalance: document.getElementById('whiteBalance'),
       };
     }
-
     function setupLightingControls() {
       const sliders = getLightingSliders();
       let stage;
       let lightingInitialized = false;
-
       sliders.detailLevel.oninput = e => { if (currentTileset) currentTileset.maximumScreenSpaceError = parseFloat(e.target.value); };
-
       Object.keys(sliders).forEach(key => {
         if (key !== 'detailLevel') {
           sliders[key].oninput = function() {
@@ -474,7 +455,6 @@
           };
         }
       });
-
       function updateShader() {
         if (!stage) {
           stage = new Cesium.PostProcessStage({
@@ -513,7 +493,6 @@
         stage.uniforms.u_whites = parseFloat(sliders.whites.value);
         stage.uniforms.u_whiteBalance = parseFloat(sliders.whiteBalance.value);
       }
-
       document.getElementById('resetLightingBtn').onclick = function() {
         Object.keys(sliders).forEach(key=>{
           if (initialLighting[key] !== undefined) sliders[key].value = initialLighting[key];
@@ -523,7 +502,6 @@
         if(currentTileset) currentTileset.maximumScreenSpaceError = sliders.detailLevel.value;
       };
     }
-
     function setupToolbar() {
       document.getElementById('recenterBtn').onclick = () => { if (currentTileset) viewer.zoomTo(currentTileset); };
       document.getElementById('fullscreenBtn').onclick = () => {
@@ -535,15 +513,13 @@
         window.location.href = "index.html";
       };
     }
-
     function setupMenu() {
       const menuBtn = document.getElementById('menuBtn');
       const sidebar = document.getElementById('sidebar');
       menuBtn.onclick = () => sidebar.classList.toggle('open');
     }
-
-    // ... (Measurement tools code remains unchanged from your working version) ...
-    // (Paste your measurement tools code here)
+    // Use your existing measurement tools code here (unchanged)
+    // ...
   </script>
 </body>
 </html>
