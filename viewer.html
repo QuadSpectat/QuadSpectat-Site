@@ -162,7 +162,7 @@
       position: absolute; top: 15px; right: 15px; z-index: 30;
     }
     /* ---- MOBILE PANEL & TOOLBAR FIX ---- */
-    @media (max-width: 900px) {
+   @media (max-width: 900px) {
   #toolbar {
     position: fixed;
     top: 0; left: 0; right: 0;
@@ -175,14 +175,14 @@
     background: #232524ea;
     display: flex;
     flex-wrap: wrap;
-    justify-content: space-between;
+    justify-content: flex-start;  /* KEY: was space-between, must be flex-start */
     align-items: center;
-    overflow-x: hidden;
+    overflow-x: visible;          /* KEY: was hidden, must allow wrapping */
   }
   #toolbar button, #toolbar a {
-    flex: 1 1 0;
+    flex: 1 0 45%;                /* KEY: allow buttons to take up half row if needed */
     margin: 2px 2px;
-    min-width: 0;
+    min-width: 90px;
     max-width: 100%;
     font-size: 0.99rem;
     padding: 9px 0;
