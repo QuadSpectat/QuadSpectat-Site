@@ -7,14 +7,267 @@
   <script src="https://cesium.com/downloads/cesiumjs/releases/1.117/Build/Cesium/Cesium.js"></script>
   <link href="https://cesium.com/downloads/cesiumjs/releases/1.117/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:400,600,700&display=swap">
-  <!-- ... your CSS unchanged ... -->
-  <!-- [CSS omitted for brevity: use exactly your code above!] -->
+  <style>
+    :root {
+      --primary-green: #c1f120;
+      --primary-dark: #373a39;
+      --primary-gray: #434343;
+      --primary-bg: #232524;
+      --highlight: #c1f120;
+      --accent: #bfe120;
+      --sidebar-bg: #232524e6;
+      --panel-bg: #232524f7;
+      --font-main: 'Inter', Arial, sans-serif;
+      --distance-color: #c1f120;
+      --area-color: #43a9ff;
+      --volume-color: #ff2d50;
+    }
+    html, body, #cesiumContainer {
+      width: 100%; height: 100%; margin: 0; padding: 0;
+      font-family: var(--font-main);
+      background: var(--primary-bg);
+      color: #e6e8e3;
+      letter-spacing: 0.01em;
+    }
+    #cesiumContainer {
+      position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 1;
+    }
+    #sidebar {
+      position: absolute; left: 0; top: 0; width: 320px; height: 100%;
+      background: var(--sidebar-bg);
+      color: #e6e8e3;
+      z-index: 20; overflow-y: auto; padding: 28px 22px 24px 18px; box-sizing: border-box;
+      box-shadow: 0 4px 24px 0 rgba(20,20,40,0.12), 0 1.5px 4px rgba(0,0,0,0.05);
+      backdrop-filter: blur(6px);
+      border-right: 3px solid var(--primary-green);
+    }
+    #sidebar h2, #sidebar h3 {
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      margin: 0 0 12px 0;
+      color: var(--primary-green);
+      text-shadow: 0 1px 6px #0a1f3b33;
+    }
+    #sidebar h3 { font-size: 1.08rem; margin-top: 32px; }
+    #sidebar section { margin-bottom: 28px; }
+    #modelList, #layerList {
+      list-style: none; padding: 0; margin: 0 0 4px 0;
+    }
+    #modelList li, #layerList li {
+      padding: 11px 14px; border-radius: 12px;
+      font-size: 1.04rem; cursor: pointer; margin-bottom: 7px;
+      background: transparent;
+      transition: background 0.18s, color 0.18s;
+      font-weight: 500;
+    }
+    #modelList li.active, #modelList li:hover, #layerList li:hover {
+      background: var(--primary-green); color: #232524;
+      box-shadow: 0 2px 12px #c1f12033;
+    }
+    #layerList li {
+      display: flex; align-items: center; justify-content: space-between;
+      background: var(--panel-bg);
+    }
+    #layerList li button {
+      background: #b00; color: #fff; border: none; border-radius: 7px; padding: 2px 12px 2px 10px; font-size: 1rem; margin-left: 10px; cursor: pointer;
+      transition: background 0.15s;
+    }
+    #layerList li button:hover { background: #ff2d50; }
+    #fileInput {
+      background: #181917; color: #eee; border: none; border-radius: 10px; padding: 8px; font-size: 1em;
+      margin-bottom: 10px; margin-top: 4px; width: 100%;
+      box-shadow: 0 1px 3px #0001;
+    }
+    #lighting-details-section label {
+      display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; font-size: 1.01rem;
+      font-weight: 500; color: #f6f8ff;
+    }
+    #lighting-details-section input[type="range"] {
+      width: 160px; margin-left: 12px; accent-color: var(--primary-green);
+      background: #232524; border-radius: 7px; height: 3.5px;
+      outline: none; box-shadow: 0 1px 2px #0001;
+    }
+    #lighting-details-section input[type="range"]:focus { outline: 2px solid var(--primary-green); }
+    #resetLightingBtn {
+      display: block;
+      width: 100%;
+      background: var(--primary-green); color: #232524;
+      border: none; border-radius: 7px;
+      padding: 10px 0; font-size: 1.06em; font-weight: 700;
+      margin-bottom: 18px;
+      cursor: pointer;
+      box-shadow: 0 2px 10px #c1f12012; transition: background 0.13s;
+    }
+    #resetLightingBtn:hover { background: #fff; color: var(--primary-green);}
+    #toolbar {
+      position: absolute; left: 330px; top: 20px; z-index: 10;
+      display: flex; gap: 14px; background: #232524e6;
+      border-radius: 14px; box-shadow: 0 1.5px 5px rgba(0,0,0,0.12);
+      padding: 9px 16px;
+      align-items: center;
+    }
+    #toolbar button, #toolbar a {
+      background: var(--primary-green); color: #232524;
+      border: none; border-radius: 7px; padding: 8px 18px; font-size: 1.04rem; font-weight: 600;
+      cursor: pointer; transition: background 0.17s, transform 0.14s;
+      box-shadow: 0 1.5px 7px #c1f12031;
+      text-decoration: none;
+      outline: none;
+    }
+    #toolbar button:hover, #toolbar a:hover {
+      background: #fff;
+      color: var(--primary-green);
+      transform: translateY(-2px) scale(1.04);
+    }
+    #toolbar button.active {
+      background: var(--highlight); color: #232524;
+    }
+    #measurement-display {
+      position: absolute; top: 82px; left: 330px; z-index: 12;
+      background: var(--panel-bg); color: #fff; padding: 22px 22px 12px 22px;
+      border-radius: 14px; min-width: 240px; max-width: 370px;
+      box-shadow: 0 4px 24px 0 rgba(20,20,40,0.12), 0 1.5px 4px rgba(0,0,0,0.05);
+      font-size: 1.08rem;
+      font-family: var(--font-main);
+      margin-top: 6px;
+    }
+    #measurement-list { margin: 0; padding: 0; list-style: none; }
+    #measurement-list li {
+      background: #222; margin-bottom: 8px; padding: 7px 11px; border-radius: 7px; display: flex; justify-content: space-between; align-items: center;
+      font-size: 1.01em;
+      box-shadow: 0 2px 8px #0001;
+      border-left: 7px solid var(--primary-green);
+      font-weight: 600;
+    }
+    #measurement-list li[data-type="distance"] { border-left-color: var(--distance-color); }
+    #measurement-list li[data-type="area"] { border-left-color: var(--area-color); }
+    #measurement-list li[data-type="volume"] { border-left-color: var(--volume-color); }
+    #measurement-list button {
+      background: #b00; color: #fff; border: none; border-radius: 7px; padding: 2px 11px; font-size: 1rem; margin-left: 10px; cursor: pointer;
+      transition: background 0.15s;
+    }
+    #measurement-list button:hover { background: #ff2d50; }
+    #measurement-total {
+      font-weight: bold; margin-top:8px; color:var(--highlight); font-size:1.12em; letter-spacing: 0.02em;
+    }
+    #share-section button {
+      margin-bottom: 8px; display:block; width:100%; background: var(--primary-green); color: #232524; font-size:1.06em; font-weight: 600; border-radius: 7px;
+      border: none; padding: 9px 0; box-shadow: 0 2px 10px #c1f12012; transition: background 0.13s;
+    }
+    #share-section button:hover { background: #fff; color: var(--primary-green);}
+    #menuBtn {
+      display: none;
+      background: var(--primary-green); color: #232524; border: none; border-radius: 7px; padding: 10px 20px; font-size: 1.08em; font-weight: 600;
+      box-shadow: 0 2px 12px #c1f12022; cursor: pointer;
+      position: absolute; top: 15px; right: 15px; z-index: 30;
+    }
+    @media (max-width: 900px) {
+      #toolbar {
+        position: fixed;
+        top: 0; left: 0; right: 0;
+        width: 100vw;
+        z-index: 102;
+        box-sizing: border-box;
+        border-radius: 0 0 18px 18px;
+        padding: 8px 3px 7px 3px;
+        background: #232524ea;
+        display: flex;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        gap: 7px;
+      }
+      #toolbar button, #toolbar a {
+        flex: 0 0 auto;
+        min-width: 92px;
+        max-width: 140px;
+        font-size: 1rem;
+        padding: 10px 8px;
+        text-align: center;
+        white-space: nowrap;
+        margin-bottom: 0;
+      }
+      #menuBtn {
+        display: block;
+        position: fixed;
+        left: 10px; top: 10px;
+        z-index: 110;
+      }
+      #sidebar {
+        left: 0;
+        top: 56px !important;
+        width: 96vw;
+        max-width: 500px;
+        height: calc(100% - 56px);
+        z-index: 101;
+        border-radius: 0 0 24px 0;
+        border-right: 3px solid var(--primary-green);
+        background: var(--sidebar-bg);
+        box-shadow: 2px 4px 18px #000c;
+        padding-top: 18px;
+      }
+      #sidebar:not(.open) {
+        display: none !important;
+      }
+      #measurement-display {
+        left: 0 !important;
+        right: 0 !important;
+        width: 92vw;
+        max-width: 98vw;
+        margin: 0 auto;
+        top: 90px !important;
+        z-index: 100;
+        border-radius: 16px;
+        font-size: 1.1rem;
+        background: var(--panel-bg);
+        box-shadow: 0 6px 24px #000b;
+      }
+    }
+  </style>
+  <!-- END STYLE -->
 </head>
 <body>
   <div id="cesiumContainer"></div>
   <button id="menuBtn">Menu</button>
   <div id="sidebar">
-    <!-- ... sidebar unchanged ... -->
+    <h2>Models</h2>
+    <ul id="modelList"></ul>
+    <section>
+      <h3>Data Layers</h3>
+      <input type="file" id="fileInput" accept=".kml,.kmz,.glb,.gltf" />
+      <ul id="layerList"></ul>
+    </section>
+    <section id="lighting-details-section">
+      <h3>Lighting & Detail</h3>
+      <button id="resetLightingBtn" type="button">Reset Lighting</button>
+      <label>Detail
+        <input type="range" id="detailLevel" min="2" max="32" value="16">
+      </label>
+      <label>Brightness
+        <input type="range" id="brightness" min="0" max="3" value="1" step="0.05">
+      </label>
+      <label>Contrast
+        <input type="range" id="contrast" min="0" max="3" value="1" step="0.05">
+      </label>
+      <label>Gamma
+        <input type="range" id="gamma" min="0.1" max="4" value="2.2" step="0.05">
+      </label>
+      <label>Saturation
+        <input type="range" id="saturation" min="0" max="3" value="1" step="0.05">
+      </label>
+      <label>Whites
+        <input type="range" id="whites" min="-0.5" max="0.5" value="0" step="0.01">
+      </label>
+      <label>WB
+        <input type="range" id="whiteBalance" min="-1" max="1" value="0" step="0.05">
+      </label>
+    </section>
+    <section id="share-section">
+      <h3>Share</h3>
+      <button id="copyLinkBtn" title="Copy Link">Copy Link</button>
+      <button id="whatsappShareBtn" title="Share on WhatsApp">WhatsApp</button>
+      <button id="gmailShareBtn" title="Share via Email">Email</button>
+    </section>
   </div>
   <div id="toolbar">
     <a href="#" id="backBtn">Back</a>
@@ -31,42 +284,14 @@
     <div id="measurement-total"></div>
   </div>
   <script>
-    Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJmYTNlODhkNC0zOTNlLTRkMmEtODU2MS04ZGQ3NDFkNGU4NmQiLCJpZCI6MTE5NjI3LCJpYXQiOjE2NzIxNjg2MjN9.iQ-WY4qZZoK8NCgheHh1m0gM4GBWsaMl7UTMcufyl7Q';
-    const models = [
-      {
-        id: "Barkay",
-        name: "Barkay 2025",
-        url: "https://quadspectat-models.fra1.cdn.digitaloceanspaces.com/Barkay%202025/Scene/Barkai_2025_Cesium.json"
-      },
-      {
-        id: "Givat Haviva",
-        name: "Givat Haviva 2025",
-        url: "https://quadspectat-models.fra1.cdn.digitaloceanspaces.com/Givat%20Haviva/Scene/Cesium.json"
-      }
-    ];
-    let viewer, currentTileset = null, currentModelId = null;
-    let initialLighting = {};
-
-    document.addEventListener('DOMContentLoaded', async () => {
-      setupMenu();
-      await setupCesium();
-      setupModelGallery();
-      setupDataLayers();
-      setupLightingControls();
-      setupShareControls();
-      setupToolbar();
-      setupMeasurementTools(); // <-- FIXED: make sure this is called!
-      loadModelFromUrlOrDefault();
-    });
-
-    // ... rest of your code unchanged ...
+    // ... [all your JS code unchanged except the following block]
 
     // --- FIXED MEASUREMENT TOOLS ---
     function setupMeasurementTools() {
       const display = document.getElementById('measurement-display');
       const listElem = document.getElementById('measurement-list');
       const totalElem = document.getElementById('measurement-total');
-      let handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas); // FIX: use viewer.scene.canvas!
+      let handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
       let activeTool = null, points = [];
       let measurements = [];
       let tempEntities = [];
@@ -116,7 +341,6 @@
         tempEntities.push(dot);
         if (activeTool === 'distance' && points.length === 2) finalize();
         if ((activeTool === 'area' || activeTool === 'volume') && points.length > 2) {
-          // allow area/volume to finish with double-click or right click
           display.querySelector('div').textContent = 'Double-tap or right-click to finish.';
         }
       }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
@@ -286,7 +510,6 @@
         return new Cesium.Cartesian3(x/positions.length, y/positions.length, z/positions.length);
       }
     }
-    // ... rest of your code unchanged ...
   </script>
 </body>
 </html>
