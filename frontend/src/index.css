@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Professional dark theme — always dark */
+    --background:        215 28% 7%;    /* #0E1117 */
+    --foreground:        210 24% 90%;   /* #E0E6EF */
+    --card:              216 24% 10%;   /* #141920 */
+    --card-foreground:   210 24% 90%;
+    --popover:           216 24% 10%;
+    --popover-foreground:210 24% 90%;
+    --primary:           84 47% 47%;    /* #86B735 brand green */
+    --primary-foreground:0 0% 100%;
+    --secondary:         100 18% 13%;   /* dark green-grey */
+    --secondary-foreground:110 20% 88%;
+    --muted:             100 15% 13%;
+    --muted-foreground:  100 10% 50%;
+    --accent:            100 15% 15%;   /* green-tinted row highlight */
+    --accent-foreground: 110 20% 90%;
+    --destructive:       0 72% 51%;
+    --destructive-foreground:0 0% 100%;
+    --border:            100 12% 17%;
+    --input:             100 12% 17%;
+    --ring:              84 47% 47%;
+    --radius:            0.5rem;
+    /* Brand colours as CSS custom properties */
+    --brand-green:       #86B735;
+    --brand-dark:        #1C222D;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}

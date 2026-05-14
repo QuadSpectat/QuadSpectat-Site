@@ -1,0 +1,363 @@
+import { Router, Request, Response, NextFunction } from 'express'
+import express from 'express'
+import { db, randomUUID } from '../db'
+import { uploadObject, presignUpload, presignDownload } from '../s3'
+import { spawn } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { readFile, unlink } from 'node:fs/promises'
+import { fromUrl } from 'geotiff'
+import sharp from 'sharp'
+
+const router = Router()
+
+// Half-extent of EPSG:3857: π × 6378137
+const EARTH_HALF = 20037508.342789244
+
+// ── List ──────────────────────────────────────────────────────────────────────
+router.get('/', async (_req, res, next) => {
+  try {
+    const { rows } = await db.query<OrthoRow>(`SELECT * FROM orthophotos ORDER BY created_at DESC`)
+    res.json(rows)
+  } catch (err) { next(err) }
+})
+
+// ── Get single ────────────────────────────────────────────────────────────────
+router.get('/:id([0-9a-f-]{36})', async (req, res, next) => {
+  try {
+    const { rows } = await db.query<OrthoRow>(`SELECT * FROM orthophotos WHERE id = $1`, [req.params.id])
+    if (!rows[0]) return res.status(404).json({ error: 'Not found' })
+    res.json(rows[0])
+  } catch (err) { next(err) }
+})
+
+// ── Presign ───────────────────────────────────────────────────────────────────
+router.post('/presign', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { filename, contentType } = req.body as Record<string, unknown>
+    if (typeof filename !== 'string' || typeof contentType !== 'string') {
+      return res.status(400).json({ error: 'filename and contentType are required strings' })
+    }
+    const ext = filename.split('.').pop()?.toLowerCase() ?? 'tif'
+    const key = `orthophotos/raw/${randomUUID()}.${ext}`
+    const url = await presignUpload(key, contentType)
+    res.json({ key, url, expiresIn: Number(process.env.PRESIGN_EXPIRY_SECONDS ?? 3600) })
+  } catch (err) { next(err) }
+})
+
+// ── Create (after presigned upload) ──────────────────────────────────────────
+router.post('/', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { name, description, raw_key, original_format } = req.body as Record<string, unknown>
+    if (typeof name !== 'string' || !name) return res.status(400).json({ error: 'name is required' })
+    if (typeof raw_key !== 'string' || !raw_key) return res.status(400).json({ error: 'raw_key is required' })
+
+    const id   = randomUUID()
+    const fmt  = typeof original_format === 'string' ? original_format : 'unknown'
+    const desc = typeof description === 'string' ? description : null
+
+    const { rows } = await db.query<OrthoRow>(
+      `INSERT INTO orthophotos (id, name, description, file_key, original_format, status)
+       VALUES ($1, $2, $3, $4, $5, 'pending') RETURNING *`,
+      [id, name, desc, raw_key, fmt],
+    )
+    res.status(201).json(rows[0])
+
+    processOrthophoto(id, raw_key).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('[orthophoto] processing error:', msg)
+      db.query(
+        `UPDATE orthophotos SET status = 'error', error_message = $1, updated_at = datetime('now') WHERE id = $2`,
+        [msg.slice(0, 1000), id],
+      ).catch(console.error)
+    })
+  } catch (err) { next(err) }
+})
+
+// ── Upload (raw-body proxy, kept for direct browser uploads) ─────────────────
+router.post('/upload',
+  express.raw({ type: '*/*', limit: '2gb' }),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { filename } = req.query as Record<string, string>
+      if (!filename) return res.status(400).json({ error: 'filename required' })
+
+      const ext = filename.split('.').pop()?.toLowerCase() ?? 'tif'
+      const id = randomUUID()
+      const fileKey = `orthophotos/${id}/original.${ext}`
+      const body = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0)
+
+      await uploadObject(fileKey, body, 'image/tiff')
+
+      const { rows } = await db.query<OrthoRow>(
+        `INSERT INTO orthophotos (id, name, file_key, original_format, status)
+         VALUES ($1, $2, $3, $4, 'pending') RETURNING *`,
+        [id, filename, fileKey, ext],
+      )
+      res.status(201).json(rows[0])
+
+      // Kick off async GDAL processing (non-blocking)
+      processOrthophoto(id, fileKey).catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err)
+        console.error('[orthophoto] processing error:', msg)
+        db.query(
+          `UPDATE orthophotos SET status = 'error', error_message = $1, updated_at = datetime('now') WHERE id = $2`,
+          [msg.slice(0, 1000), id],
+        ).catch(console.error)
+      })
+    } catch (err) { next(err) }
+  },
+)
+
+// ── Update opacity / visibility ───────────────────────────────────────────────
+router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { visible, opacity } = req.body as { visible?: boolean; opacity?: number }
+    const fields: string[] = []
+    const vals: unknown[] = []
+    if (visible !== undefined) { fields.push(`visible = $${vals.length + 1}`); vals.push(visible ? 1 : 0) }
+    if (opacity  !== undefined) { fields.push(`opacity  = $${vals.length + 1}`); vals.push(opacity) }
+    if (!fields.length) return res.status(400).json({ error: 'nothing to update' })
+    vals.push(req.params.id)
+    const { rows } = await db.query<OrthoRow>(
+      `UPDATE orthophotos SET ${fields.join(', ')}, updated_at = datetime('now') WHERE id = $${vals.length} RETURNING *`,
+      vals,
+    )
+    if (!rows[0]) return res.status(404).json({ error: 'Not found' })
+    res.json(rows[0])
+  } catch (err) { next(err) }
+})
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { rows } = await db.query<OrthoRow>(
+      `DELETE FROM orthophotos WHERE id = $1 RETURNING *`,
+      [req.params.id],
+    )
+    if (!rows[0]) return res.status(404).json({ error: 'Not found' })
+    res.status(204).end()
+  } catch (err) { next(err) }
+})
+
+// ── Tile serving ──────────────────────────────────────────────────────────────
+// GET /api/orthophotos/:id/tiles/:z/:x/:y(.png)
+router.get('/:id([0-9a-f-]{36})/tiles/:z/:x/:y', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id, z, x } = req.params
+    const tz = parseInt(z)
+    const tx = parseInt(x)
+    const ty = parseInt(req.params.y)  // parseInt handles "200.png" → 200
+    if (isNaN(tz) || isNaN(tx) || isNaN(ty)) return res.status(400).end()
+
+    const { rows } = await db.query<OrthoRow>(`SELECT * FROM orthophotos WHERE id = $1`, [id])
+    const photo = rows[0]
+    if (!photo) return res.status(404).end()
+    if (photo.status !== 'ready' || !photo.cog_key) return res.status(202).end()
+
+    res.setHeader('Content-Type', 'image/png')
+    res.setHeader('Cache-Control', 'public, max-age=3600')
+
+    // XYZ tile → EPSG:3857 bounding box (y=0 at north)
+    const tileSize = (EARTH_HALF * 2) / Math.pow(2, tz)
+    const xMin =  tx       * tileSize - EARTH_HALF
+    const xMax = (tx + 1)  * tileSize - EARTH_HALF
+    const yMax = EARTH_HALF -  ty      * tileSize
+    const yMin = EARTH_HALF - (ty + 1) * tileSize
+
+    // Pre-check: tile must intersect orthophoto bounds
+    if (photo.bounds_west !== null) {
+      const bW = lon2merc(photo.bounds_west)
+      const bE = lon2merc(photo.bounds_east!)
+      const bS = lat2merc(photo.bounds_south!)
+      const bN = lat2merc(photo.bounds_north!)
+      if (xMax <= bW || xMin >= bE || yMax <= bS || yMin >= bN) {
+        return res.end(await emptyTile())
+      }
+    }
+
+    // Open COG via HTTP range requests
+    const cogUrl = await presignDownload(photo.cog_key)
+    let png: Buffer
+    try {
+      const tiff  = await fromUrl(cogUrl)
+      const image = await tiff.getImage()
+      const bands = image.getSamplesPerPixel()
+
+      // readRasters with bbox in image CRS (EPSG:3857 metres)
+      const rasters = await image.readRasters({
+        bbox: [xMin, yMin, xMax, yMax],
+        width: 256,
+        height: 256,
+        interleave: true,
+        resampleMethod: 'bilinear',
+        fillValue: 0,
+      })
+
+      const raw = toRGBA(rasters as unknown as ArrayLike<number> & { BYTES_PER_ELEMENT: number }, bands)
+      png = await sharp(raw, { raw: { width: 256, height: 256, channels: 4 } }).png().toBuffer()
+    } catch {
+      // Raster read failed (out of bounds, corrupt tile, etc.) — return transparent
+      png = await emptyTile()
+    }
+
+    res.end(png)
+  } catch (err) { next(err) }
+})
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+interface OrthoRow extends Record<string, unknown> {
+  id: string
+  name: string
+  status: string
+  cog_key: string | null
+  file_key: string | null
+  bounds_west:  number | null
+  bounds_south: number | null
+  bounds_east:  number | null
+  bounds_north: number | null
+  zoom_min: number
+  zoom_max: number
+  error_message: string | null
+}
+
+let _emptyTile: Buffer | null = null
+async function emptyTile(): Promise<Buffer> {
+  if (!_emptyTile) {
+    _emptyTile = await sharp({
+      create: { width: 256, height: 256, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
+    }).png({ compressionLevel: 1 }).toBuffer()
+  }
+  return _emptyTile
+}
+
+function lon2merc(lon: number): number {
+  return lon * EARTH_HALF / 180
+}
+
+function lat2merc(lat: number): number {
+  return Math.log(Math.tan((90 + lat) * Math.PI / 360)) / (Math.PI / 180) * EARTH_HALF / 180
+}
+
+function toRGBA(
+  data: ArrayLike<number> & { BYTES_PER_ELEMENT: number },
+  bands: number,
+): Buffer {
+  const pixels = 256 * 256
+  const scale  = data.BYTES_PER_ELEMENT === 2 ? 256 : 1  // 16-bit → 8-bit
+  const rgba   = Buffer.alloc(pixels * 4)
+
+  for (let i = 0; i < pixels; i++) {
+    const b = i * bands
+    if (bands === 1) {
+      const v = data[b] / scale
+      rgba[i*4] = rgba[i*4+1] = rgba[i*4+2] = v
+      rgba[i*4+3] = 255
+    } else if (bands === 2) {
+      const v = data[b] / scale
+      rgba[i*4] = rgba[i*4+1] = rgba[i*4+2] = v
+      rgba[i*4+3] = data[b+1] / scale
+    } else if (bands === 3) {
+      rgba[i*4]   = data[b]   / scale
+      rgba[i*4+1] = data[b+1] / scale
+      rgba[i*4+2] = data[b+2] / scale
+      rgba[i*4+3] = 255
+    } else {
+      rgba[i*4]   = data[b]   / scale
+      rgba[i*4+1] = data[b+1] / scale
+      rgba[i*4+2] = data[b+2] / scale
+      rgba[i*4+3] = data[b+3] / scale
+    }
+  }
+
+  return rgba
+}
+
+function runProcess(cmd: string, args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(cmd, args)
+    let stdout = '', stderr = ''
+    proc.stdout.on('data', (d: Buffer) => { stdout += d.toString() })
+    proc.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
+    proc.on('close', (code) => {
+      if (code === 0) resolve(stdout)
+      else reject(new Error(`${cmd} failed (exit ${code}): ${stderr.slice(0, 600)}`))
+    })
+    proc.on('error', (e: NodeJS.ErrnoException) => {
+      reject(new Error(`${cmd} not found — install gdal-bin on the server (${e.message})`))
+    })
+  })
+}
+
+async function processOrthophoto(id: string, fileKey: string): Promise<void> {
+  await db.query(
+    `UPDATE orthophotos SET status = 'processing', updated_at = datetime('now') WHERE id = $1`,
+    [id],
+  )
+
+  const tmp        = tmpdir()
+  const reprojPath = join(tmp, `orth_${id}_3857.tif`)
+  const cogPath    = join(tmp, `orth_${id}_cog.tif`)
+  const fileUrl    = await presignDownload(fileKey)
+
+  try {
+    // 1. Reproject source file to EPSG:3857 (reads remotely via /vsicurl/)
+    await runProcess('gdalwarp', [
+      '-t_srs', 'EPSG:3857',
+      '-r', 'bilinear',
+      '-of', 'GTiff',
+      `/vsicurl/${fileUrl}`,
+      reprojPath,
+    ])
+
+    // 2. Convert to Cloud-Optimised GeoTIFF with internal overviews
+    await runProcess('gdal_translate', [
+      '-of', 'COG',
+      '-co', 'COMPRESS=LZW',
+      '-co', 'OVERVIEW_LEVEL=AUTO',
+      reprojPath,
+      cogPath,
+    ])
+
+    // 3. Get WGS84 bounds via gdalinfo -json
+    const infoJson = await runProcess('gdalinfo', ['-json', reprojPath])
+    const info = JSON.parse(infoJson) as {
+      wgs84Extent?: { coordinates: number[][][] }
+    }
+    const coords = info.wgs84Extent?.coordinates?.[0] ?? []
+    const lons   = coords.map((c) => c[0])
+    const lats   = coords.map((c) => c[1])
+    const boundsWest  = lons.length ? Math.min(...lons) : null
+    const boundsEast  = lons.length ? Math.max(...lons) : null
+    const boundsSouth = lats.length ? Math.min(...lats) : null
+    const boundsNorth = lats.length ? Math.max(...lats) : null
+
+    // 4. Upload COG to Spaces
+    const cogBuffer = await readFile(cogPath)
+    const cogKey    = `orthophotos/${id}/cog.tif`
+    await uploadObject(cogKey, cogBuffer, 'image/tiff')
+
+    // 5. Derive sensible zoom_max from pixel resolution
+    const cogUrl    = await presignDownload(cogKey)
+    const tiff      = await fromUrl(cogUrl)
+    const image     = await tiff.getImage()
+    const [xRes]    = image.getResolution()
+    const zoomMax   = Math.max(0, Math.min(22,
+      Math.round(Math.log2((EARTH_HALF * 2) / (256 * Math.abs(xRes)))),
+    ))
+
+    await db.query(
+      `UPDATE orthophotos SET
+         status = 'ready', cog_key = $1,
+         bounds_west = $2, bounds_south = $3, bounds_east = $4, bounds_north = $5,
+         zoom_max = $6, updated_at = datetime('now')
+       WHERE id = $7`,
+      [cogKey, boundsWest, boundsSouth, boundsEast, boundsNorth, zoomMax, id],
+    )
+  } finally {
+    await Promise.allSettled([unlink(reprojPath), unlink(cogPath)])
+  }
+}
+
+export default router

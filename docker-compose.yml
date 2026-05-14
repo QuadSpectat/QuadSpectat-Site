@@ -1,0 +1,30 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: "3001"
+      NODE_ENV: production
+      DATA_DIR: /var/lib/quadspectat
+      SPACES_KEY: ${SPACES_KEY}
+      SPACES_SECRET: ${SPACES_SECRET}
+      SPACES_BUCKET: ${SPACES_BUCKET:-quadspectat-models}
+      SPACES_REGION: ${SPACES_REGION:-fra1}
+      SPACES_ENDPOINT: ${SPACES_ENDPOINT:-https://fra1.digitaloceanspaces.com}
+      PRESIGN_EXPIRY_SECONDS: ${PRESIGN_EXPIRY_SECONDS:-3600}
+    volumes:
+      - sqlite_data:/var/lib/quadspectat
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/api/health', r => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  sqlite_data:
+    driver: local

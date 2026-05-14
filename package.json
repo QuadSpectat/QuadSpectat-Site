@@ -1,0 +1,19 @@
+{
+  "name": "3d-model-viewer",
+  "private": true,
+  "version": "0.0.0",
+  "engines": {
+    "node": ">=18",
+    "pnpm": ">=9"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["better-sqlite3", "sharp"],
+    "allowBuild": ["better-sqlite3", "esbuild", "protobufjs", "sharp"]
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel run dev",
+    "build": "pnpm -r run build",
+    "dev:frontend": "pnpm --filter frontend run dev",
+    "dev:backend": "pnpm --filter backend run dev"
+  }
+}
