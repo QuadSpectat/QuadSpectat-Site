@@ -13,6 +13,8 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  // GitHub Pages deploys to /QuadSpectat-Site/ subdirectory
+  base: process.env.VITE_BASE_PATH ?? '/',
   server: {
     port: 5173,
     proxy: {

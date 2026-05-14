@@ -1,0 +1,35 @@
+# fly.toml — Fly.io backend config
+# App name: quadspectat-api  (change if taken, must be globally unique on fly.io)
+app = "quadspectat-api"
+primary_region = "fra"   # Frankfurt — same region as DigitalOcean Spaces
+
+[build]
+  dockerfile = "backend/Dockerfile"
+
+[env]
+  PORT       = "3001"
+  NODE_ENV   = "production"
+  DATA_DIR   = "/var/lib/quadspectat"
+
+# Secrets (set via: flyctl secrets set KEY=value)
+# SPACES_KEY, SPACES_SECRET, SPACES_BUCKET, SPACES_REGION, SPACES_ENDPOINT
+
+[[mounts]]
+  source      = "quadspectat_data"
+  destination = "/var/lib/quadspectat"
+
+[http_service]
+  internal_port        = 3001
+  force_https          = true
+  auto_stop_machines   = "stop"
+  auto_start_machines  = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type       = "requests"
+    soft_limit = 50
+    hard_limit = 100
+
+[[vm]]
+  size   = "shared-cpu-1x"
+  memory = "256mb"
