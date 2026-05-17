@@ -11,8 +11,8 @@ const app = express()
 // ── CORS ─────────────────────────────────────────────────────────────────────
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',
-  'https://quadspectat.site',
-  'https://www.quadspectat.site',
+  'https://quadspectat.com',
+  'https://www.quadspectat.com',
   'https://quadspectat.github.io',
 ]
 app.use((req, res, next) => {
