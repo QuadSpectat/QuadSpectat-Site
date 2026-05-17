@@ -20,7 +20,7 @@ COPY backend/src ./backend/src
 RUN pnpm --filter backend build
 
 # Prune to production deps only
-RUN CI=true pnpm prune --prod
+RUN CI=true pnpm prune --prod --ignore-scripts
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
 FROM node:22-slim AS runtime
