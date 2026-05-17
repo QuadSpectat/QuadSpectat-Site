@@ -49,7 +49,6 @@ jobs:
           # Point to Fly.io backend
           VITE_API_URL: https://quadspectat-api.fly.dev/api
           VITE_GOOGLE_MAPS_KEY: ${{ secrets.VITE_GOOGLE_MAPS_KEY }}
-          # GitHub Pages serves from /QuadSpectat-Site/ subdirectory
           VITE_BASE_PATH: /QuadSpectat-Site/
         run: pnpm vite build
 
