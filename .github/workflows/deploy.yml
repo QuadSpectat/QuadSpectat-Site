@@ -51,7 +51,7 @@ jobs:
           VITE_GOOGLE_MAPS_KEY: ${{ secrets.VITE_GOOGLE_MAPS_KEY }}
           # GitHub Pages serves from /QuadSpectat-Site/ subdirectory
           VITE_BASE_PATH: /QuadSpectat-Site/
-        run: pnpm build
+        run: pnpm vite build
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
