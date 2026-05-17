@@ -1,5 +1,5 @@
 # ── Stage 1: build ────────────────────────────────────────────────────────────
-FROM node:20-slim AS builder
+FROM node:22-slim AS builder
 
 WORKDIR /app
 
@@ -22,7 +22,7 @@ RUN pnpm --filter backend build
 RUN pnpm prune --prod
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
-FROM node:20-slim AS runtime
+FROM node:22-slim AS runtime
 
 # Install GDAL with ECW/JP2/MrSID support
 RUN apt-get update && apt-get install -y --no-install-recommends \
