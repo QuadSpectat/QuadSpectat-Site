@@ -3,15 +3,16 @@ FROM node:22-slim AS builder
 
 WORKDIR /app
 
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Install pnpm (pinned to match lockfile version)
+RUN corepack enable && corepack prepare pnpm@11.0.9 --activate
 
 # Copy workspace manifests (lockfile lives at repo root)
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY backend/package.json ./backend/package.json
 
-# Install only backend dependencies
-RUN pnpm install --frozen-lockfile --filter backend
+# Install deps (ignore-scripts first, then rebuild native modules explicitly)
+RUN pnpm install --frozen-lockfile --filter backend --ignore-scripts
+RUN pnpm --filter backend rebuild better-sqlite3 sharp esbuild
 
 # Copy backend source and compile TypeScript
 COPY backend/tsconfig.json ./backend/tsconfig.json
