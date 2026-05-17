@@ -6,14 +6,17 @@ WORKDIR /app
 # Install pnpm
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
-# Copy manifests first (layer-cache friendly)
-COPY backend/package.json backend/pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+# Copy workspace manifests (lockfile lives at repo root)
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY backend/package.json ./backend/package.json
 
-# Copy source and compile TypeScript
-COPY backend/tsconfig.json ./
-COPY backend/src ./src
-RUN pnpm build
+# Install only backend dependencies
+RUN pnpm install --frozen-lockfile --filter backend
+
+# Copy backend source and compile TypeScript
+COPY backend/tsconfig.json ./backend/tsconfig.json
+COPY backend/src ./backend/src
+RUN pnpm --filter backend build
 
 # Prune to production deps only
 RUN pnpm prune --prod
@@ -30,9 +33,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copy built artifacts + production node_modules
-COPY --from=builder /app/dist        ./dist
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/backend/dist        ./dist
+COPY --from=builder /app/backend/node_modules ./node_modules
+COPY --from=builder /app/backend/package.json ./package.json
 
 # Persistent data directory (SQLite DB lives here — mount a volume)
 RUN mkdir -p /var/lib/quadspectat
