@@ -5,6 +5,7 @@ primary_region = "fra"   # Frankfurt — same region as DigitalOcean Spaces
 
 [build]
   dockerfile = "backend/Dockerfile"
+  context = "backend"
 
 [env]
   PORT       = "3001"
