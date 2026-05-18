@@ -19,9 +19,6 @@ COPY backend/tsconfig.json ./backend/tsconfig.json
 COPY backend/src ./backend/src
 RUN pnpm --filter backend build
 
-# Prune to production deps only
-RUN CI=true pnpm prune --prod --ignore-scripts
-
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
 FROM node:22-slim AS runtime
 
@@ -35,7 +32,7 @@ WORKDIR /app
 
 # Copy built artifacts + production node_modules
 COPY --from=builder /app/backend/dist        ./dist
-COPY --from=builder /app/backend/node_modules ./node_modules
+COPY --from=builder /app/node_modules        ./node_modules
 COPY --from=builder /app/backend/package.json ./package.json
 
 # Persistent data directory (SQLite DB lives here — mount a volume)
