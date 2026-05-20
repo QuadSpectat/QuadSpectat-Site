@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# setup-server.sh — Run once on a fresh Ubuntu 24.04 Droplet to get quadspectat.site live.
+# setup-server.sh — Run once on a fresh Ubuntu 24.04 Droplet to get quadspectat.com live.
 # Usage: bash setup-server.sh
 # Requires: root or sudo access, DNS already pointing to this server's IP.
 
 set -euo pipefail
 
-DOMAIN="quadspectat.site"
+DOMAIN="quadspectat.com"
 APP_DIR="/opt/quadspectat"
 WEB_DIR="/var/www/quadspectat"
 DATA_DIR="/var/lib/quadspectat"
@@ -13,7 +13,7 @@ REPO_URL="https://github.com/QuadSpectat/QuadSpectat-Site.git"
 APP_USER="quadspectat"
 
 echo "=========================================="
-echo "  quadspectat.site — server setup script  "
+echo "  quadspectat.com — server setup script  "
 echo "=========================================="
 
 # ── 1. System packages ─────────────────────────────────────────────────────
