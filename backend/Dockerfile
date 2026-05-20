@@ -14,16 +14,7 @@ COPY backend/package.json ./backend/package.json
 
 # Install ALL deps.
 # --ignore-scripts avoids pnpm v11's ERR_PNPM_IGNORED_BUILDS approval gate.
-# Native modules are compiled explicitly below.
 RUN pnpm install --frozen-lockfile --ignore-scripts
-
-# Rebuild native deps explicitly.
-# node:22-bookworm provides python3, make, g++ that node-gyp requires.
-# pnpm rebuild bypasses the onlyBuiltDependencies filter.
-RUN pnpm rebuild better-sqlite3 sharp
-# Fail-fast: verify the binary was actually compiled
-RUN find /app/node_modules/.pnpm -name "better_sqlite3.node" | grep -q . \
- || (echo "ERROR: better_sqlite3.node was not compiled by node-gyp" >&2 && exit 1)
 
 # Install esbuild globally via npm so the bundler binary is reliably available
 RUN npm install -g esbuild@0.21.5
@@ -41,11 +32,14 @@ RUN esbuild backend/src/index.ts \
       --external:better-sqlite3 \
       --external:sharp
 
-# Create a self-contained flat node_modules for the backend (no pnpm symlinks).
-# pnpm deploy resolves all production dependencies (direct + transitive) into
-# a single directory that is safe to COPY across Docker stage boundaries.
-# --ignore-scripts prevents re-running build scripts on already-compiled modules.
-RUN pnpm --filter backend deploy --prod --ignore-scripts /backend-deploy
+# Install native modules with plain npm into a separate directory.
+# npm produces a flat node_modules (no symlinks) and properly invokes node-gyp.
+# node:22-bookworm provides python3, make, g++ required by node-gyp.
+RUN mkdir -p /native && cd /native && npm init -y \
+ && npm install better-sqlite3@12.9.0 sharp@0.33.5
+# Fail-fast: verify binary was compiled
+RUN find /native -name "better_sqlite3.node" | grep -q . \
+ || (echo "ERROR: better_sqlite3.node not compiled" >&2 && exit 1)
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
 FROM node:22-slim AS runtime
@@ -61,8 +55,8 @@ WORKDIR /app
 # Copy the esbuild bundle (contains all JS code; native addons load from node_modules)
 COPY --from=builder /app/backend/dist/bundle.js  ./dist/index.js
 COPY --from=builder /app/backend/package.json    ./package.json
-# Copy the flat, symlink-free node_modules produced by pnpm deploy
-COPY --from=builder /backend-deploy/node_modules ./node_modules
+# Copy the flat npm node_modules (better-sqlite3 + sharp + their transitive deps)
+COPY --from=builder /native/node_modules         ./node_modules
 
 # Persistent data directory (SQLite DB lives here — mount a volume)
 RUN mkdir -p /var/lib/quadspectat
