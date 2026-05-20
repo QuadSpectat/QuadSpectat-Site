@@ -12,7 +12,8 @@ COPY backend/package.json ./backend/package.json
 
 # Install all deps; ignore-scripts first, then rebuild native modules explicitly
 RUN pnpm install --frozen-lockfile --ignore-scripts
-RUN pnpm --filter backend rebuild better-sqlite3 sharp esbuild
+# Rebuild esbuild (bundler) and native deps against the current Node ABI
+RUN pnpm rebuild esbuild && pnpm --filter backend rebuild better-sqlite3 sharp
 
 # Copy backend source
 COPY backend/tsconfig.json ./backend/tsconfig.json
