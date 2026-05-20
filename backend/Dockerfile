@@ -12,20 +12,20 @@ RUN corepack enable && corepack prepare pnpm@11.0.9 --activate
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY backend/package.json ./backend/package.json
 
-# Install all deps; ignore-scripts first, then rebuild native modules explicitly
-RUN pnpm install --frozen-lockfile --ignore-scripts
-# Rebuild native deps against the current Node ABI (requires build tools in image)
-RUN pnpm --filter backend rebuild better-sqlite3 sharp
-# Install esbuild globally via npm so the platform binary is reliably available
+# Install ALL deps.
+# onlyBuiltDependencies (in root package.json) limits native build scripts
+# to only better-sqlite3 and sharp — all other postinstall scripts are skipped.
+# node:22-bookworm has the build tools (python3, make, g++) needed to compile them.
+RUN pnpm install --frozen-lockfile
+
+# Install esbuild globally via npm so the bundler binary is reliably available
 RUN npm install -g esbuild@0.21.5
 
-# Copy backend source
+# Copy backend source and bundle all JS into a single file.
+# --external marks native addons so they stay as require() calls at runtime.
 COPY backend/tsconfig.json ./backend/tsconfig.json
 COPY backend/src ./backend/src
 
-# Bundle ALL JS deps into a single file with esbuild (installed globally above).
-# Mark native modules as external — they are copied separately.
-# This eliminates node_modules symlink resolution issues in Docker.
 RUN esbuild backend/src/index.ts \
       --bundle \
       --platform=node \
@@ -34,13 +34,10 @@ RUN esbuild backend/src/index.ts \
       --external:better-sqlite3 \
       --external:sharp
 
-# Stage the native module directories (dereference pnpm symlinks with cp -rL)
-# so Docker COPY works cleanly across stage boundaries.
-RUN mkdir -p /native/node_modules \
- && src=$(cd /app/backend/node_modules/better-sqlite3 && pwd -P) \
- && cp -rL "$src" /native/node_modules/better-sqlite3 \
- && src=$(cd /app/backend/node_modules/sharp && pwd -P) \
- && cp -rL "$src" /native/node_modules/sharp
+# Create a self-contained flat node_modules for the backend (no pnpm symlinks).
+# pnpm deploy resolves all production dependencies (direct + transitive) into
+# a single directory that is safe to COPY across Docker stage boundaries.
+RUN pnpm --filter backend deploy --prod /backend-deploy
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
 FROM node:22-slim AS runtime
@@ -53,10 +50,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Runtime only needs the bundle + native module binaries (no other node_modules)
+# Copy the esbuild bundle (contains all JS code; native addons load from node_modules)
 COPY --from=builder /app/backend/dist/bundle.js  ./dist/index.js
 COPY --from=builder /app/backend/package.json    ./package.json
-COPY --from=builder /native/node_modules         ./node_modules
+# Copy the flat, symlink-free node_modules produced by pnpm deploy
+COPY --from=builder /backend-deploy/node_modules ./node_modules
 
 # Persistent data directory (SQLite DB lives here — mount a volume)
 RUN mkdir -p /var/lib/quadspectat
