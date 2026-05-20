@@ -6,12 +6,11 @@ WORKDIR /app
 # Install pnpm (pinned to match lockfile version)
 RUN corepack enable && corepack prepare pnpm@11.0.9 --activate
 
-# Copy workspace manifests + .npmrc (node-linker=hoisted → flat node_modules)
-COPY .npmrc pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+# Copy workspace manifests (lockfile lives at repo root)
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY backend/package.json ./backend/package.json
 
-# Install all deps with hoisted linker (flat node_modules, no symlinks)
-# ignore-scripts first so native binaries are built in a controlled step
+# Install all deps; ignore-scripts so native builds happen in a controlled step
 RUN pnpm install --frozen-lockfile --ignore-scripts
 # Rebuild native modules explicitly against the current Node ABI
 RUN pnpm --filter backend rebuild better-sqlite3 sharp esbuild
@@ -20,6 +19,12 @@ RUN pnpm --filter backend rebuild better-sqlite3 sharp esbuild
 COPY backend/tsconfig.json ./backend/tsconfig.json
 COPY backend/src ./backend/src
 RUN pnpm --filter backend build
+
+# Dereference ALL symlinks in backend's node_modules into a plain directory.
+# pnpm's default linker stores real files in .pnpm and uses symlinks in
+# workspace node_modules — Docker's COPY preserves broken symlinks across
+# stages, so we materialise them here with cp -rL before the stage boundary.
+RUN cp -rL /app/backend/node_modules /app/backend/node_modules_flat
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
 FROM node:22-slim AS runtime
@@ -32,11 +37,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# With node-linker=hoisted, all deps are in the root node_modules (flat, no symlinks).
-# Copy that directly — it is portable across Docker stages.
-COPY --from=builder /app/node_modules  ./node_modules
-COPY --from=builder /app/backend/dist  ./dist
-COPY --from=builder /app/backend/package.json ./package.json
+# Copy dereferenced (symlink-free) node_modules + compiled dist
+COPY --from=builder /app/backend/node_modules_flat ./node_modules
+COPY --from=builder /app/backend/dist              ./dist
+COPY --from=builder /app/backend/package.json      ./package.json
 
 # Persistent data directory (SQLite DB lives here — mount a volume)
 RUN mkdir -p /var/lib/quadspectat
