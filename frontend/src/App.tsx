@@ -7,6 +7,7 @@ import { UploadDialog } from '@/components/UploadDialog'
 import { ShareDialog } from '@/components/ShareDialog'
 import { LayerPanel } from '@/components/LayerPanel'
 import { OrthophotoPanel } from '@/components/OrthophotoPanel'
+import { ComparePanel } from '@/components/ComparePanel'
 import { VisualControls } from '@/components/VisualControls'
 import { MapSwitcher } from '@/components/MapSwitcher'
 import { useModels } from '@/hooks/useModels'
@@ -18,6 +19,7 @@ import type { VisualSettings } from '@/lib/visualControls'
 import type { BaseMap } from '@/components/MapSwitcher'
 import type { ResolvedLayer } from '@/components/LayerPanel'
 import type { ResolvedOrthophoto } from '@/components/OrthophotoPanel'
+import type { OrthoCompare } from '@/components/ComparePanel'
 
 export default function App() {
   const { models, loading, error, refresh, remove } = useModels()
@@ -36,6 +38,10 @@ export default function App() {
   const [baseMap, setBaseMap]                   = useState<BaseMap>('none')
   const [layers, setLayers]                     = useState<ResolvedLayer[]>([])
   const [orthophotos, setOrthophotos]           = useState<ResolvedOrthophoto[]>([])
+  const [overlayModel, setOverlayModel]         = useState<Model | null>(null)
+  const [overlayModelUrl, setOverlayModelUrl]   = useState<string | null>(null)
+  const [compareBlend, setCompareBlend]         = useState(0.5)
+  const [orthoCompare, setOrthoCompare]         = useState<OrthoCompare | null>(null)
 
   // Snap-to-ground: CesiumViewer writes its snap function here; VisualControls button calls it
   const snapRef = useRef<(() => void) | null>(null)
@@ -54,6 +60,17 @@ export default function App() {
       .catch(console.error)
     return () => { cancelled = true }
   }, [selectedModel?.id])
+
+  // Resolve overlay model download URL (same pattern as main model)
+  useEffect(() => {
+    if (!overlayModel) { setOverlayModelUrl(null); return }
+    if (overlayModel.external_url) { setOverlayModelUrl(overlayModel.external_url); return }
+    let cancelled = false
+    getDownloadUrl(overlayModel.id)
+      .then((url) => { if (!cancelled) setOverlayModelUrl(url) })
+      .catch(console.error)
+    return () => { cancelled = true }
+  }, [overlayModel?.id])
 
   async function handleDelete(id: string) {
     await remove(id)
@@ -132,6 +149,10 @@ export default function App() {
             baseMap={baseMap}
             layers={layers}
             orthophotos={orthophotos}
+            overlayModel={overlayModel}
+            overlayModelUrl={overlayModelUrl}
+            compareBlend={compareBlend}
+            orthoCompare={orthoCompare}
             onSnapToGround={(offset) => void handleSnapToGround(offset)}
             snapRef={snapRef}
           />
@@ -155,6 +176,17 @@ export default function App() {
               <LayerPanel modelId={selectedModel.id} onLayersChange={setLayers} />
             )}
             <OrthophotoPanel onOrthophotosChange={setOrthophotos} />
+            <ComparePanel
+              models={models}
+              selectedModel={selectedModel}
+              orthophotos={orthophotos}
+              overlayModel={overlayModel}
+              compareBlend={compareBlend}
+              orthoCompare={orthoCompare}
+              onOverlayModelChange={setOverlayModel}
+              onCompareBlendChange={setCompareBlend}
+              onOrthoCompareChange={setOrthoCompare}
+            />
           </div>
           {/* Stamp */}
           <div

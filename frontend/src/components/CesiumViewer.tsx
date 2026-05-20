@@ -48,6 +48,7 @@ void main() {
 
 import type { ResolvedLayer } from '@/components/LayerPanel'
 import type { ResolvedOrthophoto } from '@/components/OrthophotoPanel'
+import type { OrthoCompare } from '@/components/ComparePanel'
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? '/api'
 
@@ -163,6 +164,13 @@ interface Props {
   baseMap?: BaseMap
   layers?: ResolvedLayer[]
   orthophotos?: ResolvedOrthophoto[]
+  /** Overlay model for time-comparison crossfade */
+  overlayModel?: Model | null
+  overlayModelUrl?: string | null
+  /** 0 = base only, 1 = overlay only */
+  compareBlend?: number
+  /** Orthophoto before/after compare state */
+  orthoCompare?: OrthoCompare | null
   /** Called with the detected geoid offset (m) when user snaps to ground */
   onSnapToGround?: (detectedOffset: number) => void
   /** Parent passes a ref; CesiumViewer writes the snap-to-ground function into it */
@@ -176,6 +184,10 @@ export function CesiumViewer({
   baseMap = 'none',
   layers = [],
   orthophotos = [],
+  overlayModel = null,
+  overlayModelUrl = null,
+  compareBlend = 0.5,
+  orthoCompare = null,
   onSnapToGround,
   snapRef,
 }: Props) {
@@ -197,6 +209,9 @@ export function CesiumViewer({
   const google3dRef     = useRef<Cesium.Cesium3DTileset | null>(null)
   // Map from orthophoto id → Cesium ImageryLayer
   const orthoLayerRef   = useRef<Map<string, Cesium.ImageryLayer>>(new Map())
+  // Overlay model for time-comparison
+  const overlayEntityRef  = useRef<Cesium.Entity | null>(null)
+  const overlayTilesetRef = useRef<Cesium.Cesium3DTileset | null>(null)
 
   // Keep a ref so shader uniform getters always read the latest values
   const visualRef = useRef<VisualSettings>(visualSettings)
@@ -268,6 +283,8 @@ export function CesiumViewer({
       v.destroy()
       viewerRef.current = null
       google3dRef.current = null
+      overlayEntityRef.current = null
+      overlayTilesetRef.current = null
       setViewer(null)
     }
   }, [])
@@ -427,6 +444,106 @@ export function CesiumViewer({
     }
   }, [visualSettings.heightOffset, selectedModel?.geoid_offset])
 
+  // ── Overlay model loading ────────────────────────────────────────────────────
+  useEffect(() => {
+    const v = viewerRef.current
+    if (!v) return
+
+    // Remove previous overlay
+    if (overlayEntityRef.current) {
+      v.entities.remove(overlayEntityRef.current)
+      overlayEntityRef.current = null
+    }
+    if (overlayTilesetRef.current) {
+      v.scene.primitives.remove(overlayTilesetRef.current)
+      overlayTilesetRef.current = null
+    }
+
+    if (!overlayModel || !overlayModelUrl) return
+
+    if (overlayModel.model_type === '3d-tiles') {
+      let cancelled = false
+      const directUrl = overlayModelUrl.replace(
+        /([a-z0-9-]+)\.fra1\.cdn\.digitaloceanspaces\.com/,
+        '$1.fra1.digitaloceanspaces.com',
+      )
+      Cesium.Cesium3DTileset.fromUrl(directUrl, {
+        maximumScreenSpaceError: qualityToSSE(visualRef.current.quality),
+      }).then((tileset) => {
+        if (cancelled || !viewerRef.current) return
+        const geoidOffset = overlayModel.geoid_offset ?? 0
+        applyHeightOffset(tileset, geoidOffset + visualRef.current.heightOffset)
+        viewerRef.current.scene.primitives.add(tileset)
+        overlayTilesetRef.current = tileset
+      }).catch(console.error)
+      return () => { cancelled = true }
+    }
+
+    // glTF / GLB overlay
+    const { longitude, latitude, altitude, heading, pitch, roll, scale } = overlayModel
+    const position = Cesium.Cartesian3.fromDegrees(longitude, latitude, altitude)
+    const hpr = new Cesium.HeadingPitchRoll(
+      Cesium.Math.toRadians(heading),
+      Cesium.Math.toRadians(pitch),
+      Cesium.Math.toRadians(roll),
+    )
+    const entity = v.entities.add({
+      name: overlayModel.name,
+      position,
+      orientation: new Cesium.ConstantProperty(
+        Cesium.Transforms.headingPitchRollQuaternion(position, hpr),
+      ),
+      model: {
+        uri: overlayModelUrl,
+        scale,
+        minimumPixelSize: 64,
+        maximumScale: 200_000,
+        shadows: Cesium.ShadowMode.ENABLED,
+      },
+    })
+    overlayEntityRef.current = entity
+  }, [overlayModel?.id, overlayModelUrl])
+
+  // ── Compare blend — crossfade base ↔ overlay ─────────────────────────────────
+  useEffect(() => {
+    const hasOverlay = overlayModel !== null && (overlayEntityRef.current !== null || overlayTilesetRef.current !== null)
+    const baseAlpha    = hasOverlay ? 1 - compareBlend : 1
+    const overlayAlpha = compareBlend
+
+    // Base model
+    if (tilesetRef.current) {
+      if (hasOverlay) {
+        tilesetRef.current.customShader = new Cesium.CustomShader({
+          fragmentShaderText: `void fragmentMain(FragmentInput fsInput, inout czm_modelMaterial material) { material.alpha = ${baseAlpha.toFixed(3)}; }`,
+        })
+      } else {
+        tilesetRef.current.customShader = undefined
+      }
+    }
+    if (entityRef.current?.model) {
+      if (hasOverlay) {
+        entityRef.current.model.colorBlendMode = new Cesium.ConstantProperty(Cesium.ColorBlendMode.HIGHLIGHT)
+        entityRef.current.model.color = new Cesium.ConstantProperty(new Cesium.Color(1, 1, 1, baseAlpha))
+      } else {
+        entityRef.current.model.color = undefined
+        entityRef.current.model.colorBlendMode = undefined
+      }
+    }
+
+    // Overlay model
+    if (overlayTilesetRef.current) {
+      overlayTilesetRef.current.customShader = new Cesium.CustomShader({
+        fragmentShaderText: `void fragmentMain(FragmentInput fsInput, inout czm_modelMaterial material) { material.alpha = ${overlayAlpha.toFixed(3)}; }`,
+      })
+    }
+    if (overlayEntityRef.current?.model) {
+      overlayEntityRef.current.model.colorBlendMode = new Cesium.ConstantProperty(Cesium.ColorBlendMode.HIGHLIGHT)
+      overlayEntityRef.current.model.color = new Cesium.ConstantProperty(new Cesium.Color(1, 1, 1, overlayAlpha))
+    }
+  }, [compareBlend, overlayModel?.id,
+      // Re-run once the overlay refs are populated (tracked via overlayModelUrl as a proxy)
+      overlayModelUrl])
+
   // Sync orthophoto imagery layers
   useEffect(() => {
     const v = viewerRef.current
@@ -450,7 +567,14 @@ export function CesiumViewer({
         // Update existing layer
         const layer = orthoMap.get(photo.id)!
         layer.show  = photo.visible
-        layer.alpha = photo.opacity
+        // Ortho compare overrides opacity for the two selected photos
+        if (orthoCompare?.beforeId === photo.id && orthoCompare.afterId) {
+          layer.alpha = (1 - orthoCompare.blend)
+        } else if (orthoCompare?.afterId === photo.id && orthoCompare.beforeId) {
+          layer.alpha = orthoCompare.blend
+        } else {
+          layer.alpha = photo.opacity
+        }
       } else {
         // Create new imagery layer
         const tileUrl = `${API_BASE}/orthophotos/${photo.id}/tiles/{z}/{x}/{y}.png`
@@ -475,7 +599,7 @@ export function CesiumViewer({
         orthoMap.set(photo.id, layer)
       }
     }
-  }, [orthophotos])
+  }, [orthophotos, orthoCompare])
 
   // Measurement
   useMeasure(viewer, measureMode, baseElevation, measureKey, onMeasureResult)
