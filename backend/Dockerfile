@@ -13,10 +13,17 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY backend/package.json ./backend/package.json
 
 # Install ALL deps.
-# onlyBuiltDependencies (in root package.json) limits native build scripts
-# to only better-sqlite3 and sharp — all other postinstall scripts are skipped.
-# node:22-bookworm has the build tools (python3, make, g++) needed to compile them.
-RUN pnpm install --frozen-lockfile
+# --ignore-scripts avoids pnpm v11's ERR_PNPM_IGNORED_BUILDS approval gate.
+# Native modules are compiled explicitly below.
+RUN pnpm install --frozen-lockfile --ignore-scripts
+
+# Rebuild native deps explicitly.
+# node:22-bookworm provides python3, make, g++ that node-gyp requires.
+# pnpm rebuild bypasses the onlyBuiltDependencies filter.
+RUN pnpm rebuild better-sqlite3 sharp
+# Fail-fast: verify the binary was actually compiled
+RUN find /app/node_modules/.pnpm -name "better_sqlite3.node" | grep -q . \
+ || (echo "ERROR: better_sqlite3.node was not compiled by node-gyp" >&2 && exit 1)
 
 # Install esbuild globally via npm so the bundler binary is reliably available
 RUN npm install -g esbuild@0.21.5
@@ -37,7 +44,8 @@ RUN esbuild backend/src/index.ts \
 # Create a self-contained flat node_modules for the backend (no pnpm symlinks).
 # pnpm deploy resolves all production dependencies (direct + transitive) into
 # a single directory that is safe to COPY across Docker stage boundaries.
-RUN pnpm --filter backend deploy --prod /backend-deploy
+# --ignore-scripts prevents re-running build scripts on already-compiled modules.
+RUN pnpm --filter backend deploy --prod --ignore-scripts /backend-deploy
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
 FROM node:22-slim AS runtime
