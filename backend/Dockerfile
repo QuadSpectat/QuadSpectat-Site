@@ -12,17 +12,19 @@ COPY backend/package.json ./backend/package.json
 
 # Install all deps; ignore-scripts first, then rebuild native modules explicitly
 RUN pnpm install --frozen-lockfile --ignore-scripts
-# Rebuild esbuild (bundler) and native deps against the current Node ABI
-RUN pnpm rebuild esbuild && pnpm --filter backend rebuild better-sqlite3 sharp
+# Rebuild native deps against the current Node ABI
+RUN pnpm --filter backend rebuild better-sqlite3 sharp
+# Install esbuild globally via npm so the platform binary is reliably available
+RUN npm install -g esbuild@0.21.5
 
 # Copy backend source
 COPY backend/tsconfig.json ./backend/tsconfig.json
 COPY backend/src ./backend/src
 
-# Bundle ALL JS deps into a single file with esbuild.
+# Bundle ALL JS deps into a single file with esbuild (installed globally above).
 # Mark native modules as external — they are copied separately.
 # This eliminates node_modules symlink resolution issues in Docker.
-RUN node_modules/.bin/esbuild backend/src/index.ts \
+RUN esbuild backend/src/index.ts \
       --bundle \
       --platform=node \
       --format=cjs \
