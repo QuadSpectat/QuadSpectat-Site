@@ -1,5 +1,7 @@
 # ── Stage 1: build ────────────────────────────────────────────────────────────
-FROM node:22-slim AS builder
+# Use full Debian image so build tools (python3, make, g++) are available
+# for compiling better-sqlite3 and sharp native addons.
+FROM node:22-bookworm AS builder
 
 WORKDIR /app
 
@@ -12,7 +14,7 @@ COPY backend/package.json ./backend/package.json
 
 # Install all deps; ignore-scripts first, then rebuild native modules explicitly
 RUN pnpm install --frozen-lockfile --ignore-scripts
-# Rebuild native deps against the current Node ABI
+# Rebuild native deps against the current Node ABI (requires build tools in image)
 RUN pnpm --filter backend rebuild better-sqlite3 sharp
 # Install esbuild globally via npm so the platform binary is reliably available
 RUN npm install -g esbuild@0.21.5
