@@ -21,7 +21,8 @@ RUN pnpm --filter backend build
 
 # Use pnpm deploy to produce a self-contained production directory
 # (flattens the pnpm virtual store into a normal node_modules — no symlinks)
-RUN pnpm --filter backend deploy --prod /deploy
+# --legacy required for pnpm v10+ when inject-workspace-packages is not set
+RUN pnpm --filter backend deploy --prod --legacy /deploy
 # Overlay compiled dist on top of the deploy directory
 RUN cp -r /app/backend/dist /deploy/dist
 
