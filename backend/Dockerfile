@@ -10,21 +10,32 @@ RUN corepack enable && corepack prepare pnpm@11.0.9 --activate
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY backend/package.json ./backend/package.json
 
-# Install all deps; ignore-scripts so native builds happen in a controlled step
+# Install all deps; ignore-scripts first, then rebuild native modules explicitly
 RUN pnpm install --frozen-lockfile --ignore-scripts
-# Rebuild native modules explicitly against the current Node ABI
 RUN pnpm --filter backend rebuild better-sqlite3 sharp esbuild
 
-# Copy backend source and compile TypeScript
+# Copy backend source
 COPY backend/tsconfig.json ./backend/tsconfig.json
 COPY backend/src ./backend/src
-RUN pnpm --filter backend build
 
-# Dereference ALL symlinks in backend's node_modules into a plain directory.
-# pnpm's default linker stores real files in .pnpm and uses symlinks in
-# workspace node_modules — Docker's COPY preserves broken symlinks across
-# stages, so we materialise them here with cp -rL before the stage boundary.
-RUN cp -rL /app/backend/node_modules /app/backend/node_modules_flat
+# Bundle ALL JS deps into a single file with esbuild.
+# Mark native modules as external — they are copied separately.
+# This eliminates node_modules symlink resolution issues in Docker.
+RUN node_modules/.bin/esbuild backend/src/index.ts \
+      --bundle \
+      --platform=node \
+      --format=cjs \
+      --outfile=backend/dist/bundle.js \
+      --external:better-sqlite3 \
+      --external:sharp
+
+# Stage the native module directories (dereference pnpm symlinks with cp -rL)
+# so Docker COPY works cleanly across stage boundaries.
+RUN mkdir -p /native/node_modules \
+ && src=$(cd /app/backend/node_modules/better-sqlite3 && pwd -P) \
+ && cp -rL "$src" /native/node_modules/better-sqlite3 \
+ && src=$(cd /app/backend/node_modules/sharp && pwd -P) \
+ && cp -rL "$src" /native/node_modules/sharp
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
 FROM node:22-slim AS runtime
@@ -37,10 +48,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy dereferenced (symlink-free) node_modules + compiled dist
-COPY --from=builder /app/backend/node_modules_flat ./node_modules
-COPY --from=builder /app/backend/dist              ./dist
-COPY --from=builder /app/backend/package.json      ./package.json
+# Runtime only needs the bundle + native module binaries (no other node_modules)
+COPY --from=builder /app/backend/dist/bundle.js  ./dist/index.js
+COPY --from=builder /app/backend/package.json    ./package.json
+COPY --from=builder /native/node_modules         ./node_modules
 
 # Persistent data directory (SQLite DB lives here — mount a volume)
 RUN mkdir -p /var/lib/quadspectat
