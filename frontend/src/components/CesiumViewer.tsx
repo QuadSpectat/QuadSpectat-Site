@@ -175,6 +175,8 @@ interface Props {
   onSnapToGround?: (detectedOffset: number) => void
   /** Parent passes a ref; CesiumViewer writes the snap-to-ground function into it */
   snapRef?: React.MutableRefObject<(() => void) | null>
+  /** Parent passes a ref; CesiumViewer writes the reset-camera function into it */
+  resetCameraRef?: React.MutableRefObject<(() => void) | null>
 }
 
 export function CesiumViewer({
@@ -190,6 +192,7 @@ export function CesiumViewer({
   orthoCompare = null,
   onSnapToGround,
   snapRef,
+  resetCameraRef,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewerRef    = useRef<Cesium.Viewer | null>(null)
@@ -326,7 +329,9 @@ export function CesiumViewer({
         // Combined offset: model's stored geoid correction + user fine-tune slider
         const geoidOffset = selectedModel?.geoid_offset ?? 0
         applyHeightOffset(tileset, geoidOffset + visualRef.current.heightOffset)
-        void viewerRef.current.zoomTo(tileset)
+        const fly = () => { if (viewerRef.current) void viewerRef.current.zoomTo(tileset) }
+        fly()
+        if (resetCameraRef) resetCameraRef.current = fly
       }).catch((err: unknown) => {
         if (!cancelled) {
           const msg = err instanceof Error ? err.message : String(err)
@@ -362,7 +367,9 @@ export function CesiumViewer({
     })
 
     entityRef.current = entity
-    void v.flyTo(entity, { duration: 1.5 })
+    const fly = () => { if (viewerRef.current) void viewerRef.current.flyTo(entity, { duration: 1.5 }) }
+    fly()
+    if (resetCameraRef) resetCameraRef.current = fly
   }, [selectedModel?.id, modelUrl])
 
   // Swap base imagery layer when baseMap changes (does NOT remove orthophoto layers)

@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react'
-import { Ruler, Hexagon, Box, Trash2 } from 'lucide-react'
+import { Ruler, Hexagon, Box, Trash2, Home } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { MeasureMode } from '@/lib/measure'
 
@@ -9,6 +9,7 @@ interface Props {
   baseElevation: number
   onBaseElevationChange: (v: number) => void
   result: string | null
+  onResetCamera?: () => void
 }
 
 const TOOLS: { key: Exclude<MeasureMode, 'none'>; label: string; Icon: typeof Ruler }[] = [
@@ -26,7 +27,7 @@ const INSTRUCTIONS: Record<Exclude<MeasureMode, 'none'>, string> = {
 const PANEL = 'rounded-2xl border border-white/[0.15] bg-[#0a0e1a]/[0.97] backdrop-blur-xl shadow-2xl shadow-black/80'
 
 export function MeasureToolbar({
-  mode, onModeChange, baseElevation, onBaseElevationChange, result,
+  mode, onModeChange, baseElevation, onBaseElevationChange, result, onResetCamera,
 }: Props) {
   const elevInputRef  = useRef<HTMLInputElement>(null)
   const elevRef       = useRef(baseElevation)
@@ -82,6 +83,21 @@ export function MeasureToolbar({
         >
           <Trash2 size={13} strokeWidth={1.8} />
         </button>
+
+        {onResetCamera && (
+          <>
+            <div className="w-px h-4 bg-white/[0.20] mx-1" />
+            <button
+              title="Reset view to model"
+              onClick={onResetCamera}
+              className="flex items-center justify-center h-8 w-8 rounded-xl text-white/60
+                         hover:text-[#a3d44a] hover:bg-[#86B735]/10 border border-transparent
+                         transition-all duration-150 pointer-events-auto"
+            >
+              <Home size={13} strokeWidth={1.8} />
+            </button>
+          </>
+        )}
       </div>
 
       {/* Volume base elevation */}
