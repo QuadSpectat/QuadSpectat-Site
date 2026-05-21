@@ -240,6 +240,7 @@ export interface CreateOrthophotoPayload {
   description?: string
   raw_key: string
   original_format: string
+  cog_ready?: boolean
 }
 
 export const createOrthophoto = (payload: CreateOrthophotoPayload) =>

@@ -48,13 +48,14 @@ router.post('/presign', async (req: Request, res: Response, next: NextFunction) 
 // ── Create (after presigned upload) ──────────────────────────────────────────
 router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { name, description, raw_key, original_format } = req.body as Record<string, unknown>
+    const { name, description, raw_key, original_format, cog_ready } = req.body as Record<string, unknown>
     if (typeof name !== 'string' || !name) return res.status(400).json({ error: 'name is required' })
     if (typeof raw_key !== 'string' || !raw_key) return res.status(400).json({ error: 'raw_key is required' })
 
-    const id   = randomUUID()
-    const fmt  = typeof original_format === 'string' ? original_format : 'unknown'
-    const desc = typeof description === 'string' ? description : null
+    const id        = randomUUID()
+    const fmt       = typeof original_format === 'string' ? original_format : 'unknown'
+    const desc      = typeof description === 'string' ? description : null
+    const cogReady  = cog_ready === true
 
     const { rows } = await db.query<OrthoRow>(
       `INSERT INTO orthophotos (id, name, description, file_key, original_format, status)
@@ -63,7 +64,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     )
     res.status(201).json(rows[0])
 
-    processOrthophoto(id, raw_key).catch((err: unknown) => {
+    processOrthophoto(id, raw_key, cogReady).catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err)
       console.error('[orthophoto] processing error:', msg)
       db.query(
@@ -290,7 +291,7 @@ function runProcess(cmd: string, args: string[], env?: NodeJS.ProcessEnv): Promi
   })
 }
 
-async function processOrthophoto(id: string, fileKey: string): Promise<void> {
+async function processOrthophoto(id: string, fileKey: string, cogReady = false): Promise<void> {
   await db.query(
     `UPDATE orthophotos SET status = 'processing', updated_at = datetime('now') WHERE id = $1`,
     [id],
@@ -300,32 +301,38 @@ async function processOrthophoto(id: string, fileKey: string): Promise<void> {
   const cogPath = join(tmp, `orth_${id}_cog.tif`)
   const fileUrl = await presignDownload(fileKey)
 
-  // Memory limits — critical on the 512 MB Fly.io VM
   const gdalEnv = {
-    GDAL_CACHEMAX:     '128', // 128 MB tile cache
-    GDAL_HTTP_TIMEOUT: '180', // 180 s CURL timeout per request
+    GDAL_CACHEMAX:     '128',
+    GDAL_HTTP_TIMEOUT: '180',
   }
 
   try {
-    // 1. Reproject + produce COG in a single gdalwarp pass (no large intermediate file)
-    //    -of COG writes a Cloud-Optimised GeoTIFF with internal overviews directly.
-    await runProcess('gdalwarp', [
-      '-t_srs', 'EPSG:3857',
-      '-r',     'bilinear',
-      '-of',    'COG',
-      '-co',    'COMPRESS=LZW',
-      '-co',    'OVERVIEW_LEVEL=AUTO',
-      '-co',    'BIGTIFF=IF_SAFER',
-      '-wm',    '128',
-      `/vsicurl/${fileUrl}`,
-      cogPath,
-    ], gdalEnv)
+    let cogKey: string
 
-    // 2. Get WGS84 bounds from the COG we just wrote
-    const infoJson = await runProcess('gdalinfo', ['-json', cogPath], gdalEnv)
-    const info = JSON.parse(infoJson) as {
-      wgs84Extent?: { coordinates: number[][][] }
+    if (cogReady) {
+      // File is already an EPSG:3857 COG — skip gdalwarp entirely
+      cogKey = fileKey
+    } else {
+      // Single-pass: reproject + COG output (no large intermediate file)
+      await runProcess('gdalwarp', [
+        '-t_srs', 'EPSG:3857',
+        '-r',     'bilinear',
+        '-of',    'COG',
+        '-co',    'COMPRESS=LZW',
+        '-co',    'OVERVIEW_LEVEL=AUTO',
+        '-co',    'BIGTIFF=IF_SAFER',
+        '-wm',    '128',
+        `/vsicurl/${fileUrl}`,
+        cogPath,
+      ], gdalEnv)
+      cogKey = `orthophotos/${id}/cog.tif`
+      await uploadFile(cogKey, cogPath, 'image/tiff')
     }
+
+    // Get WGS84 bounds via gdalinfo
+    const infoTarget = cogReady ? `/vsicurl/${fileUrl}` : cogPath
+    const infoJson   = await runProcess('gdalinfo', ['-json', infoTarget], gdalEnv)
+    const info = JSON.parse(infoJson) as { wgs84Extent?: { coordinates: number[][][] } }
     const coords = info.wgs84Extent?.coordinates?.[0] ?? []
     const lons   = coords.map((c) => c[0])
     const lats   = coords.map((c) => c[1])
@@ -334,11 +341,7 @@ async function processOrthophoto(id: string, fileKey: string): Promise<void> {
     const boundsSouth = lats.length ? Math.min(...lats) : null
     const boundsNorth = lats.length ? Math.max(...lats) : null
 
-    // 3. Stream COG to Spaces (no full-file buffer in memory)
-    const cogKey = `orthophotos/${id}/cog.tif`
-    await uploadFile(cogKey, cogPath, 'image/tiff')
-
-    // 4. Derive zoom_max from pixel resolution
+    // Derive zoom_max from pixel resolution
     const cogUrl  = await presignDownload(cogKey)
     const tiff    = await fromUrl(cogUrl)
     const image   = await tiff.getImage()
@@ -356,7 +359,7 @@ async function processOrthophoto(id: string, fileKey: string): Promise<void> {
       [cogKey, boundsWest, boundsSouth, boundsEast, boundsNorth, zoomMax, id],
     )
   } finally {
-    await unlink(cogPath).catch(() => { /* already gone */ })
+    if (!cogReady) await unlink(cogPath).catch(() => { /* already gone */ })
   }
 }
 

@@ -427,6 +427,7 @@ function UploadOrthophotoModal({ onClose, onCreated }: { onClose: () => void; on
   const [file, setFile] = useState<File | null>(null)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [cogReady, setCogReady] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
@@ -450,7 +451,7 @@ function UploadOrthophotoModal({ onClose, onCreated }: { onClose: () => void; on
       setProgress(5)
       await uploadToSpaces(url, file, (p) => setProgress(5 + p * 0.9))
       setProgress(95)
-      const ortho = await createOrthophoto({ name, description: description || undefined, raw_key: key, original_format } satisfies CreateOrthophotoPayload)
+      const ortho = await createOrthophoto({ name, description: description || undefined, raw_key: key, original_format, cog_ready: cogReady || undefined } satisfies CreateOrthophotoPayload)
       setProgress(100)
       onCreated(ortho)
       onClose()
@@ -485,9 +486,30 @@ function UploadOrthophotoModal({ onClose, onCreated }: { onClose: () => void; on
         <Field label="Name" value={name} onChange={setName} required />
         <Field label="Description" value={description} onChange={setDescription} placeholder="Optional notes" />
 
-        <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300">
+        <label className="flex items-center gap-2.5 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={cogReady}
+            onChange={(e) => setCogReady(e.target.checked)}
+            className="h-4 w-4 rounded border-white/20 bg-white/5 accent-emerald-500"
+          />
+          <span className="text-xs text-white/60">
+            File is already a Cloud-Optimized GeoTIFF in EPSG:3857
+            <span className="text-white/30"> (skip server-side processing)</span>
+          </span>
+        </label>
+
+        <div className={cn(
+          'flex items-start gap-2 px-3 py-2.5 rounded-lg border text-xs',
+          cogReady
+            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+            : 'bg-blue-500/10 border-blue-500/20 text-blue-300',
+        )}>
           <Info size={13} className="mt-0.5 shrink-0" />
-          <span>The file will be reprojected to Web Mercator and converted to Cloud-Optimized GeoTIFF on the server. Processing may take a few minutes for large files.</span>
+          {cogReady
+            ? <span>File will be registered as-is — bounds and zoom level will be read directly from the COG. No server-side processing.</span>
+            : <span>The file will be reprojected to Web Mercator and converted to Cloud-Optimized GeoTIFF on the server. Processing may take a few minutes for large files.</span>
+          }
         </div>
 
         {error && (
