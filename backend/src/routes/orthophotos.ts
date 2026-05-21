@@ -296,39 +296,33 @@ async function processOrthophoto(id: string, fileKey: string): Promise<void> {
     [id],
   )
 
-  const tmp        = tmpdir()
-  const reprojPath = join(tmp, `orth_${id}_3857.tif`)
-  const cogPath    = join(tmp, `orth_${id}_cog.tif`)
-  const fileUrl    = await presignDownload(fileKey)
+  const tmp     = tmpdir()
+  const cogPath = join(tmp, `orth_${id}_cog.tif`)
+  const fileUrl = await presignDownload(fileKey)
 
-  // Cap GDAL memory and set HTTPS timeout — critical on the 256 MB Fly.io VM
+  // Memory limits — critical on the 512 MB Fly.io VM
   const gdalEnv = {
-    GDAL_CACHEMAX:    '64',   // 64 MB tile cache
-    GDAL_HTTP_TIMEOUT: '120', // 120 s CURL timeout per request
+    GDAL_CACHEMAX:     '128', // 128 MB tile cache
+    GDAL_HTTP_TIMEOUT: '180', // 180 s CURL timeout per request
   }
 
   try {
-    // 1. Reproject source file to EPSG:3857 (reads remotely via /vsicurl/)
+    // 1. Reproject + produce COG in a single gdalwarp pass (no large intermediate file)
+    //    -of COG writes a Cloud-Optimised GeoTIFF with internal overviews directly.
     await runProcess('gdalwarp', [
       '-t_srs', 'EPSG:3857',
-      '-r', 'bilinear',
-      '-of', 'GTiff',
-      '-wm', '64',           // 64 MB working memory
+      '-r',     'bilinear',
+      '-of',    'COG',
+      '-co',    'COMPRESS=LZW',
+      '-co',    'OVERVIEW_LEVEL=AUTO',
+      '-co',    'BIGTIFF=IF_SAFER',
+      '-wm',    '128',
       `/vsicurl/${fileUrl}`,
-      reprojPath,
-    ], gdalEnv)
-
-    // 2. Convert to Cloud-Optimised GeoTIFF with internal overviews
-    await runProcess('gdal_translate', [
-      '-of', 'COG',
-      '-co', 'COMPRESS=LZW',
-      '-co', 'OVERVIEW_LEVEL=AUTO',
-      reprojPath,
       cogPath,
     ], gdalEnv)
 
-    // 3. Get WGS84 bounds via gdalinfo -json
-    const infoJson = await runProcess('gdalinfo', ['-json', reprojPath])
+    // 2. Get WGS84 bounds from the COG we just wrote
+    const infoJson = await runProcess('gdalinfo', ['-json', cogPath], gdalEnv)
     const info = JSON.parse(infoJson) as {
       wgs84Extent?: { coordinates: number[][][] }
     }
@@ -340,16 +334,16 @@ async function processOrthophoto(id: string, fileKey: string): Promise<void> {
     const boundsSouth = lats.length ? Math.min(...lats) : null
     const boundsNorth = lats.length ? Math.max(...lats) : null
 
-    // 4. Stream COG to Spaces (avoids loading the whole file into memory)
+    // 3. Stream COG to Spaces (no full-file buffer in memory)
     const cogKey = `orthophotos/${id}/cog.tif`
     await uploadFile(cogKey, cogPath, 'image/tiff')
 
-    // 5. Derive sensible zoom_max from pixel resolution
-    const cogUrl    = await presignDownload(cogKey)
-    const tiff      = await fromUrl(cogUrl)
-    const image     = await tiff.getImage()
-    const [xRes]    = image.getResolution()
-    const zoomMax   = Math.max(0, Math.min(22,
+    // 4. Derive zoom_max from pixel resolution
+    const cogUrl  = await presignDownload(cogKey)
+    const tiff    = await fromUrl(cogUrl)
+    const image   = await tiff.getImage()
+    const [xRes]  = image.getResolution()
+    const zoomMax = Math.max(0, Math.min(22,
       Math.round(Math.log2((EARTH_HALF * 2) / (256 * Math.abs(xRes)))),
     ))
 
@@ -362,7 +356,7 @@ async function processOrthophoto(id: string, fileKey: string): Promise<void> {
       [cogKey, boundsWest, boundsSouth, boundsEast, boundsNorth, zoomMax, id],
     )
   } finally {
-    await Promise.allSettled([unlink(reprojPath), unlink(cogPath)])
+    await unlink(cogPath).catch(() => { /* already gone */ })
   }
 }
 

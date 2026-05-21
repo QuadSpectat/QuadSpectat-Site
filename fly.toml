@@ -35,4 +35,4 @@ primary_region = "fra"   # Frankfurt — same region as DigitalOcean Spaces
 
 [[vm]]
   size   = "shared-cpu-1x"
-  memory = "256mb"
+  memory = "512mb"
