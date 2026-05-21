@@ -5,6 +5,7 @@ import uploadsRouter from './routes/uploads'
 import shareRouter from './routes/share'
 import layersRouter from './routes/layers'
 import orthophotosRouter from './routes/orthophotos'
+import authRouter from './routes/auth'
 
 const app = express()
 
@@ -13,6 +14,8 @@ const ALLOWED_ORIGINS = [
   'http://localhost:5173',
   'https://quadspectat.com',
   'https://www.quadspectat.com',
+  'https://quadspectat.site',
+  'https://www.quadspectat.site',
   'https://quadspectat.github.io',
 ]
 app.use((req, res, next) => {
@@ -22,7 +25,7 @@ app.use((req, res, next) => {
     res.setHeader('Vary', 'Origin')
   }
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
   if (req.method === 'OPTIONS') { res.sendStatus(204); return }
   next()
 })
@@ -33,6 +36,7 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' })
 })
 
+app.use('/api/auth', authRouter)
 app.use('/api/models', modelsRouter)
 app.use('/api/uploads', uploadsRouter)
 app.use('/api/share', shareRouter)
