@@ -5,6 +5,7 @@ import {
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { createReadStream } from 'node:fs'
 import { env } from './env'
 
 export const s3 = new S3Client({
@@ -44,6 +45,16 @@ export function uploadObject(key: string, body: Buffer, contentType: string): Pr
     Bucket: env.SPACES_BUCKET,
     Key: key,
     Body: body,
+    ContentType: contentType,
+  }))
+}
+
+/** Stream a local file to Spaces without reading it into memory. */
+export function uploadFile(key: string, filePath: string, contentType: string): Promise<unknown> {
+  return s3.send(new PutObjectCommand({
+    Bucket: env.SPACES_BUCKET,
+    Key: key,
+    Body: createReadStream(filePath),
     ContentType: contentType,
   }))
 }

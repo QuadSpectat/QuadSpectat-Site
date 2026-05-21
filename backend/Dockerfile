@@ -44,8 +44,9 @@ RUN find /native -name "better_sqlite3.node" | grep -q . \
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
 FROM node:22-slim AS runtime
 
-# Install GDAL with ECW/JP2/MrSID support
+# Install GDAL + CA certificates (required for GDAL/CURL to verify HTTPS)
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
     gdal-bin \
     libgdal-dev \
     && rm -rf /var/lib/apt/lists/*

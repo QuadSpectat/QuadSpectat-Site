@@ -1,11 +1,11 @@
 import { Router, Request, Response, NextFunction } from 'express'
 import express from 'express'
 import { db, randomUUID } from '../db'
-import { uploadObject, presignUpload, presignDownload } from '../s3'
+import { uploadObject, uploadFile, presignUpload, presignDownload } from '../s3'
 import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { readFile, unlink } from 'node:fs/promises'
+import { unlink } from 'node:fs/promises'
 import { fromUrl } from 'geotiff'
 import sharp from 'sharp'
 
@@ -274,9 +274,9 @@ function toRGBA(
   return rgba
 }
 
-function runProcess(cmd: string, args: string[]): Promise<string> {
+function runProcess(cmd: string, args: string[], env?: NodeJS.ProcessEnv): Promise<string> {
   return new Promise((resolve, reject) => {
-    const proc = spawn(cmd, args)
+    const proc = spawn(cmd, args, env ? { env: { ...process.env, ...env } } : undefined)
     let stdout = '', stderr = ''
     proc.stdout.on('data', (d: Buffer) => { stdout += d.toString() })
     proc.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
@@ -301,15 +301,22 @@ async function processOrthophoto(id: string, fileKey: string): Promise<void> {
   const cogPath    = join(tmp, `orth_${id}_cog.tif`)
   const fileUrl    = await presignDownload(fileKey)
 
+  // Cap GDAL memory and set HTTPS timeout — critical on the 256 MB Fly.io VM
+  const gdalEnv = {
+    GDAL_CACHEMAX:    '64',   // 64 MB tile cache
+    GDAL_HTTP_TIMEOUT: '120', // 120 s CURL timeout per request
+  }
+
   try {
     // 1. Reproject source file to EPSG:3857 (reads remotely via /vsicurl/)
     await runProcess('gdalwarp', [
       '-t_srs', 'EPSG:3857',
       '-r', 'bilinear',
       '-of', 'GTiff',
+      '-wm', '64',           // 64 MB working memory
       `/vsicurl/${fileUrl}`,
       reprojPath,
-    ])
+    ], gdalEnv)
 
     // 2. Convert to Cloud-Optimised GeoTIFF with internal overviews
     await runProcess('gdal_translate', [
@@ -318,7 +325,7 @@ async function processOrthophoto(id: string, fileKey: string): Promise<void> {
       '-co', 'OVERVIEW_LEVEL=AUTO',
       reprojPath,
       cogPath,
-    ])
+    ], gdalEnv)
 
     // 3. Get WGS84 bounds via gdalinfo -json
     const infoJson = await runProcess('gdalinfo', ['-json', reprojPath])
@@ -333,10 +340,9 @@ async function processOrthophoto(id: string, fileKey: string): Promise<void> {
     const boundsSouth = lats.length ? Math.min(...lats) : null
     const boundsNorth = lats.length ? Math.max(...lats) : null
 
-    // 4. Upload COG to Spaces
-    const cogBuffer = await readFile(cogPath)
-    const cogKey    = `orthophotos/${id}/cog.tif`
-    await uploadObject(cogKey, cogBuffer, 'image/tiff')
+    // 4. Stream COG to Spaces (avoids loading the whole file into memory)
+    const cogKey = `orthophotos/${id}/cog.tif`
+    await uploadFile(cogKey, cogPath, 'image/tiff')
 
     // 5. Derive sensible zoom_max from pixel resolution
     const cogUrl    = await presignDownload(cogKey)
