@@ -197,8 +197,8 @@ router.get('/:id([0-9a-f-]{36})/tiles/:z/:x/:y', async (req: Request, res: Respo
 
       const raw = toRGBA(rasters as unknown as ArrayLike<number> & { BYTES_PER_ELEMENT: number }, bands)
       png = await sharp(raw, { raw: { width: 256, height: 256, channels: 4 } }).png().toBuffer()
-    } catch {
-      // Raster read failed (out of bounds, corrupt tile, etc.) — return transparent
+    } catch (err) {
+      console.error(`[tile ${id}/${tz}/${tx}/${ty}] raster read failed:`, err instanceof Error ? err.message : err)
       png = await emptyTile()
     }
 
