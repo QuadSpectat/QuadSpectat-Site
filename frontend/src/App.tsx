@@ -276,7 +276,7 @@ export default function App() {
           </div>
           {/* Stamp */}
           <div
-            className="absolute bottom-2 left-4 z-10 pointer-events-none select-none"
+            className="absolute bottom-2 left-4 z-30 pointer-events-none select-none"
             style={{ direction: 'rtl' }}
           >
             <span
@@ -287,7 +287,7 @@ export default function App() {
                 backdropFilter: 'blur(4px)',
               }}
             >
-              אא מערכות מידה וניהול משאבים בע&quot;מ
+              אא מערכות מידע וניהול משאבים בע&quot;מ
             </span>
           </div>
         </div>
