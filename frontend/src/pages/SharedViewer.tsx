@@ -198,7 +198,7 @@ export function SharedViewer() {
         )}
 
         {/* Stamp */}
-        <div className="absolute bottom-2 left-2 z-10 pointer-events-none select-none" style={{ direction: 'rtl' }}>
+        <div className="absolute bottom-2 left-4 z-10 pointer-events-none select-none" style={{ direction: 'rtl' }}>
           <span
             className="text-[10px] font-medium tracking-wide px-2 py-0.5 rounded"
             style={{ background: 'rgba(0,0,0,0.35)', color: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(4px)' }}

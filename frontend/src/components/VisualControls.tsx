@@ -45,7 +45,7 @@ export function VisualControls({ settings, onChange, onSnapToGround, crsLabel }:
 
   return (
     // flex-col-reverse: first child (button) sits at physical bottom, second child (panel) grows upward
-    <div className="absolute bottom-4 left-4 z-10 flex flex-col-reverse items-start gap-2">
+    <div className="absolute bottom-10 left-4 z-10 flex flex-col-reverse items-start gap-2">
       {/* Toggle button - rendered FIRST so it sits at the bottom */}
       <button
         type="button"
