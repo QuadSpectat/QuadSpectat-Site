@@ -194,7 +194,8 @@ export function CesiumViewer({
   snapRef,
   resetCameraRef,
 }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null)
+  const containerRef  = useRef<HTMLDivElement>(null)
+  const creditRef     = useRef<HTMLDivElement>(null)
   const viewerRef    = useRef<Cesium.Viewer | null>(null)
   const entityRef    = useRef<Cesium.Entity | null>(null)
   const tilesetRef   = useRef<Cesium.Cesium3DTileset | null>(null)
@@ -242,7 +243,7 @@ export function CesiumViewer({
 
   // Init
   useEffect(() => {
-    if (!containerRef.current) return
+    if (!containerRef.current || !creditRef.current) return
 
     const v = new Cesium.Viewer(containerRef.current, {
       baseLayerPicker: false,
@@ -258,6 +259,7 @@ export function CesiumViewer({
       baseLayer: false,          // no default Ion imagery
       skyBox: false,             // no starfield
       skyAtmosphere: false,      // no atmosphere glow
+      creditContainer: creditRef.current, // redirect credits to hidden element
     })
 
     v.imageryLayers.removeAll()
@@ -680,6 +682,8 @@ export function CesiumViewer({
   return (
     <div className="relative w-full h-full">
       <div ref={containerRef} className="w-full h-full" />
+      {/* Hidden credit container — keeps Cesium logo off the canvas */}
+      <div ref={creditRef} className="hidden" />
       {tileError && (
         <div className="absolute top-14 left-1/2 -translate-x-1/2 bg-red-900/90 text-red-100
                         text-xs px-3 py-2 rounded-md max-w-sm text-center z-10 pointer-events-none">
