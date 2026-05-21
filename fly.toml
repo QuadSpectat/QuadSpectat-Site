@@ -7,12 +7,15 @@ primary_region = "fra"   # Frankfurt — same region as DigitalOcean Spaces
   dockerfile = "backend/Dockerfile"
 
 [env]
-  PORT       = "3001"
-  NODE_ENV   = "production"
-  DATA_DIR   = "/var/lib/quadspectat"
+  PORT           = "3001"
+  NODE_ENV       = "production"
+  DATA_DIR       = "/var/lib/quadspectat"
+  ADMIN_USERNAME = "admin"
+# Secrets (set via flyctl secrets set): JWT_SECRET, ADMIN_PASSWORD_HASH, SPACES_KEY, SPACES_SECRET, SPACES_BUCKET, SPACES_REGION, SPACES_ENDPOINT
 
 # Secrets (set via: flyctl secrets set KEY=value)
 # SPACES_KEY, SPACES_SECRET, SPACES_BUCKET, SPACES_REGION, SPACES_ENDPOINT
+# ADMIN_PASSWORD_HASH  (bcrypt hash — never commit to git)
 
 [[mounts]]
   source      = "quadspectat_data"

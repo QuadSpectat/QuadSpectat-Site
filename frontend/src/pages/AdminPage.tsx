@@ -6,18 +6,19 @@ import { useState, useEffect, useRef, useCallback, type ChangeEvent, type DragEv
 import {
   LayoutDashboard, Box, Map, Upload, Trash2, ExternalLink,
   RefreshCw, AlertCircle, CheckCircle2, Loader2, X, ChevronRight,
-  FileImage, Globe, Eye, Info,
+  FileImage, Globe, Eye, Info, LogOut, Bell,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   listModels, deleteModel, presignUpload, uploadToSpaces, createModel,
   listOrthophotos, deleteOrthophoto, presignOrthophotoUpload, createOrthophoto,
+  login, getMe, getAgeInfo,
 } from '@/lib/api'
 import type { Model, Orthophoto, CreateOrthophotoPayload } from '@/lib/api'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type AdminTab = 'dashboard' | 'models' | 'orthophotos'
+type AdminTab = 'dashboard' | 'models' | 'orthophotos' | 'reminders'
 
 interface Toast {
   id: number
@@ -116,6 +117,23 @@ function StatusBadge({ status }: { status: string }) {
   return (
     <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-medium', s.cls)}>
       {s.icon}{s.label}
+    </span>
+  )
+}
+
+function AgeBadge({ createdAt }: { createdAt: string }) {
+  const { days, status } = getAgeInfo(createdAt)
+  const cls =
+    status === 'overdue' ? 'bg-red-500/15 text-red-400 border-red-500/20' :
+    status === 'warning' ? 'bg-amber-500/15 text-amber-400 border-amber-500/20' :
+                           'bg-emerald-500/15 text-emerald-400 border-emerald-500/20'
+  const label =
+    status === 'overdue' ? `${days}d 🔴` :
+    status === 'warning' ? `${days}d ⚠` :
+                           `${days}d`
+  return (
+    <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full border text-[11px] font-medium', cls)}>
+      {label}
     </span>
   )
 }
@@ -640,6 +658,7 @@ function ModelsTab({
                 <th className="text-left px-4 py-2.5 text-white/40 font-medium hidden lg:table-cell">Coordinates</th>
                 <th className="text-left px-4 py-2.5 text-white/40 font-medium hidden md:table-cell">CRS</th>
                 <th className="text-left px-4 py-2.5 text-white/40 font-medium hidden sm:table-cell">Added</th>
+                <th className="text-left px-4 py-2.5 text-white/40 font-medium hidden sm:table-cell">Age</th>
                 <th className="text-right px-4 py-2.5 text-white/40 font-medium">Actions</th>
               </tr>
             </thead>
@@ -667,6 +686,7 @@ function ModelsTab({
                     <span className="text-[11px] text-white/30 uppercase">{m.coordinate_system}</span>
                   </td>
                   <td className="px-4 py-2.5 text-white/30 hidden sm:table-cell">{fmtDate(m.created_at)}</td>
+                  <td className="px-4 py-2.5 hidden sm:table-cell"><AgeBadge createdAt={m.created_at} /></td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-1 justify-end">
                       <a
@@ -758,6 +778,7 @@ function OrthophotosTab({
                 <th className="text-left px-4 py-2.5 text-white/40 font-medium">Status</th>
                 <th className="text-left px-4 py-2.5 text-white/40 font-medium hidden lg:table-cell">Bounds (W/S/E/N)</th>
                 <th className="text-left px-4 py-2.5 text-white/40 font-medium hidden sm:table-cell">Added</th>
+                <th className="text-left px-4 py-2.5 text-white/40 font-medium hidden sm:table-cell">Age</th>
                 <th className="text-right px-4 py-2.5 text-white/40 font-medium">Actions</th>
               </tr>
             </thead>
@@ -783,6 +804,7 @@ function OrthophotosTab({
                       : '—'}
                   </td>
                   <td className="px-4 py-2.5 text-white/30 hidden sm:table-cell">{fmtDate(o.created_at)}</td>
+                  <td className="px-4 py-2.5 hidden sm:table-cell"><AgeBadge createdAt={o.created_at} /></td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-1 justify-end">
                       <button
@@ -804,6 +826,67 @@ function OrthophotosTab({
   )
 }
 
+// ─── Reminders Tab ────────────────────────────────────────────────────────────
+
+function RemindersTab({ models, orthophotos }: { models: Model[]; orthophotos: Orthophoto[] }) {
+  const flaggedModels  = models.filter((m) => getAgeInfo(m.created_at).status !== 'ok')
+  const flaggedOrthos  = orthophotos.filter((o) => getAgeInfo(o.created_at).status !== 'ok')
+  const allFlagged     = flaggedModels.length + flaggedOrthos.length
+
+  if (allFlagged === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
+        <CheckCircle2 size={32} className="text-emerald-400" />
+        <p className="text-sm text-white/50">All items are up to date ✓</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-xs text-white/40">
+        {allFlagged} item{allFlagged !== 1 ? 's' : ''} approaching or past the 1-year mark
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {flaggedModels.map((m) => {
+          const { days, status } = getAgeInfo(m.created_at)
+          return (
+            <div key={m.id} className={cn(
+              'rounded-xl border px-4 py-3 flex flex-col gap-1.5',
+              status === 'overdue' ? 'border-red-500/25 bg-red-500/5' : 'border-amber-500/25 bg-amber-500/5',
+            )}>
+              <div className="flex items-center gap-2">
+                <Box size={13} className="text-indigo-400 shrink-0" />
+                <span className="text-xs font-medium text-white truncate">{m.name}</span>
+              </div>
+              <p className="text-[11px] text-white/40">3D Model · {m.model_type.toUpperCase()}</p>
+              <AgeBadge createdAt={m.created_at} />
+              <p className="text-[11px] text-white/30">{days} days old · added {fmtDate(m.created_at)}</p>
+            </div>
+          )
+        })}
+        {flaggedOrthos.map((o) => {
+          const { days, status } = getAgeInfo(o.created_at)
+          return (
+            <div key={o.id} className={cn(
+              'rounded-xl border px-4 py-3 flex flex-col gap-1.5',
+              status === 'overdue' ? 'border-red-500/25 bg-red-500/5' : 'border-amber-500/25 bg-amber-500/5',
+            )}>
+              <div className="flex items-center gap-2">
+                <FileImage size={13} className="text-emerald-400 shrink-0" />
+                <span className="text-xs font-medium text-white truncate">{o.name}</span>
+              </div>
+              <p className="text-[11px] text-white/40">Orthophoto · {o.original_format ?? 'Raster'}</p>
+              <AgeBadge createdAt={o.created_at} />
+              <p className="text-[11px] text-white/30">{days} days old · added {fmtDate(o.created_at)}</p>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ─── Admin Page ───────────────────────────────────────────────────────────────
 
 export function AdminPage() {
@@ -816,6 +899,42 @@ export function AdminPage() {
   const [showUploadOrtho, setShowUploadOrtho] = useState(false)
   const { toasts, add: addToast, remove: removeToast } = useToasts()
 
+  // ── Auth state ─────────────────────────────────────────────────────────────
+  const [authed, setAuthed]           = useState(false)
+  const [authChecked, setAuthChecked] = useState(false)
+  const [loginUsername, setLoginUsername] = useState('')
+  const [loginPassword, setLoginPassword] = useState('')
+  const [loginError, setLoginError]   = useState('')
+  const [loginBusy, setLoginBusy]     = useState(false)
+
+  useEffect(() => {
+    getMe()
+      .then(() => setAuthed(true))
+      .catch(() => { localStorage.removeItem('admin_token'); setAuthed(false) })
+      .finally(() => setAuthChecked(true))
+  }, [])
+
+  async function handleLogin(e: FormEvent) {
+    e.preventDefault()
+    setLoginError(''); setLoginBusy(true)
+    try {
+      const { token } = await login(loginUsername, loginPassword)
+      localStorage.setItem('admin_token', token)
+      setAuthed(true)
+    } catch {
+      setLoginError('Invalid username or password')
+    } finally {
+      setLoginBusy(false)
+    }
+  }
+
+  function handleLogout() {
+    localStorage.removeItem('admin_token')
+    setAuthed(false)
+    setAuthChecked(true)
+  }
+
+  // ── Data fetching ──────────────────────────────────────────────────────────
   const fetchModels = useCallback(async () => {
     setModelsLoading(true)
     try { setModels(await listModels()) }
@@ -830,13 +949,62 @@ export function AdminPage() {
     finally { setOrthosLoading(false) }
   }, [addToast])
 
-  useEffect(() => { void fetchModels(); void fetchOrthos() }, [fetchModels, fetchOrthos])
+  useEffect(() => {
+    if (authed) { void fetchModels(); void fetchOrthos() }
+  }, [authed, fetchModels, fetchOrthos])
 
-  const NAV: { tab: AdminTab; icon: React.ReactNode; label: string }[] = [
+  const hasReminders =
+    models.some((m) => getAgeInfo(m.created_at).status !== 'ok') ||
+    orthophotos.some((o) => getAgeInfo(o.created_at).status !== 'ok')
+
+  const NAV: { tab: AdminTab; icon: React.ReactNode; label: string; dot?: boolean }[] = [
     { tab: 'dashboard',   icon: <LayoutDashboard size={15} />, label: 'Dashboard' },
     { tab: 'models',      icon: <Box size={15} />,             label: 'Models' },
     { tab: 'orthophotos', icon: <Map size={15} />,             label: 'Orthophotos' },
+    { tab: 'reminders',   icon: <Bell size={15} />,            label: 'Reminders', dot: hasReminders },
   ]
+
+  // ── Spinner while auth check in flight ─────────────────────────────────────
+  if (!authChecked) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-[#070a12]">
+        <Loader2 size={22} className="animate-spin text-white/30" />
+      </div>
+    )
+  }
+
+  // ── Login card ─────────────────────────────────────────────────────────────
+  if (!authed) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-[#070a12] text-white">
+        <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#0d1220] shadow-2xl shadow-black/80 p-8 flex flex-col gap-5">
+          <div className="flex items-center gap-2.5 mb-2">
+            <div className="h-8 w-8 rounded-xl bg-indigo-600 flex items-center justify-center">
+              <Globe size={16} className="text-white" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-white tracking-tight">3D Viewer Admin</p>
+              <p className="text-[11px] text-white/40">Sign in to continue</p>
+            </div>
+          </div>
+          <form onSubmit={(e) => { void handleLogin(e) }} className="flex flex-col gap-3">
+            <Field label="Username" value={loginUsername} onChange={setLoginUsername} required />
+            <Field label="Password" value={loginPassword} onChange={setLoginPassword} type="password" required />
+            {loginError && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-400">
+                <AlertCircle size={12} className="shrink-0" />{loginError}
+              </div>
+            )}
+            <button type="submit" disabled={loginBusy}
+              className="mt-1 h-9 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold text-white transition-colors disabled:opacity-40 flex items-center justify-center gap-2">
+              {loginBusy ? <Loader2 size={14} className="animate-spin" /> : null}
+              Sign in
+            </button>
+          </form>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-[#070a12] text-white flex flex-col">
@@ -853,13 +1021,14 @@ export function AdminPage() {
 
         {/* Tab nav */}
         <nav className="flex items-center gap-0.5 ml-4">
-          {NAV.map(({ tab, icon, label }) => (
+          {NAV.map(({ tab, icon, label, dot }) => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className={cn(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                'relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
                 activeTab === tab ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white hover:bg-white/5',
               )}>
               {icon}{label}
+              {dot && <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-red-500" />}
             </button>
           ))}
         </nav>
@@ -869,6 +1038,10 @@ export function AdminPage() {
             className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-white/10 text-xs text-white/50 hover:text-white hover:border-white/25 transition-colors">
             <ExternalLink size={12} /> Open Viewer
           </a>
+          <button onClick={handleLogout}
+            className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-white/10 text-xs text-white/50 hover:text-white hover:border-white/25 transition-colors">
+            <LogOut size={12} /> Log out
+          </button>
         </div>
       </header>
 
@@ -903,6 +1076,12 @@ export function AdminPage() {
                 onUpload={() => setShowUploadOrtho(true)}
                 toast={addToast}
               />
+            </>
+          )}
+          {activeTab === 'reminders' && (
+            <>
+              <h1 className="text-lg font-semibold text-white mb-5">Reminders</h1>
+              <RemindersTab models={models} orthophotos={orthophotos} />
             </>
           )}
         </div>

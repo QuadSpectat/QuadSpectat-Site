@@ -90,6 +90,7 @@ sqlite.exec(`
 ;[
   `ALTER TABLE models ADD COLUMN coordinate_system TEXT NOT NULL DEFAULT 'unknown'`,
   `ALTER TABLE models ADD COLUMN geoid_offset REAL NOT NULL DEFAULT 0`,
+  `ALTER TABLE share_links ADD COLUMN can_edit INTEGER NOT NULL DEFAULT 0`,
 ].forEach((sql) => {
   try { sqlite.exec(sql) } catch { /* column already exists */ }
 })

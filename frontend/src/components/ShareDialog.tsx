@@ -13,6 +13,7 @@ export function ShareDialog({ modelId, modelName, onClose }: Props) {
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
   const [label, setLabel] = useState('')
+  const [canEdit, setCanEdit] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
 
   const origin = window.location.origin
@@ -27,10 +28,11 @@ export function ShareDialog({ modelId, modelName, onClose }: Props) {
   async function handleCreate() {
     setCreating(true)
     try {
-      const { token } = await createShareLink(modelId, label.trim() || undefined)
-      const newLink: ShareLink = { token, label: label.trim() || null, created_at: new Date().toISOString() }
+      const { token } = await createShareLink(modelId, label.trim() || undefined, canEdit)
+      const newLink: ShareLink = { token, label: label.trim() || null, can_edit: canEdit, created_at: new Date().toISOString() }
       setLinks((prev) => [newLink, ...prev])
       setLabel('')
+      setCanEdit(false)
     } catch (err) {
       console.error(err)
     } finally {
@@ -64,24 +66,40 @@ export function ShareDialog({ modelId, modelName, onClose }: Props) {
         </div>
 
         {/* Create new link */}
-        <div className="px-4 py-3 border-b border-border shrink-0 flex gap-2">
-          <input
-            type="text"
-            placeholder="Label (optional)"
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') void handleCreate() }}
-            className="flex-1 h-8 rounded-md border border-input bg-background px-2.5 text-sm
-                       focus:outline-none focus:ring-1 focus:ring-ring"
-          />
-          <button
-            onClick={() => void handleCreate()}
-            disabled={creating}
-            className="h-8 px-3 rounded-md text-sm bg-primary text-primary-foreground
-                       hover:bg-primary/90 disabled:opacity-40 transition-colors whitespace-nowrap"
-          >
-            {creating ? '…' : '+ New link'}
-          </button>
+        <div className="px-4 py-3 border-b border-border shrink-0 flex flex-col gap-2">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="Label (optional)"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') void handleCreate() }}
+              className="flex-1 h-8 rounded-md border border-input bg-background px-2.5 text-sm
+                         focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+            <button
+              onClick={() => void handleCreate()}
+              disabled={creating}
+              className="h-8 px-3 rounded-md text-sm bg-primary text-primary-foreground
+                         hover:bg-primary/90 disabled:opacity-40 transition-colors whitespace-nowrap"
+            >
+              {creating ? '…' : '+ New link'}
+            </button>
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={canEdit}
+              onChange={(e) => setCanEdit(e.target.checked)}
+              className="h-3.5 w-3.5 rounded accent-primary"
+            />
+            <span className="text-xs text-muted-foreground">Allow editing</span>
+          </label>
+          {canEdit && (
+            <p className="text-[11px] text-muted-foreground leading-tight ml-5">
+              Recipient can adjust position &amp; orientation but cannot delete the model.
+            </p>
+          )}
         </div>
 
         {/* Link list */}
@@ -100,7 +118,15 @@ export function ShareDialog({ modelId, modelName, onClose }: Props) {
             <div key={link.token}
               className="flex items-center gap-2 px-4 py-2.5 border-b border-border/50 group">
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium truncate">{link.label ?? 'Untitled link'}</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-xs font-medium truncate">{link.label ?? 'Untitled link'}</p>
+                  {link.can_edit && (
+                    <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium
+                                     bg-indigo-500/15 text-indigo-400 border border-indigo-500/20">
+                      Edit
+                    </span>
+                  )}
+                </div>
                 <p className="text-[11px] text-muted-foreground font-mono truncate">
                   {origin}/v/{link.token}
                 </p>

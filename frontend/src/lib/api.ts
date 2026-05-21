@@ -55,6 +55,11 @@ export interface UpdateModelPayload {
   geoid_offset?: number
 }
 
+function getAuthHeader(): { Authorization: string } | Record<string, never> {
+  const token = localStorage.getItem('admin_token')
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { 'Content-Type': 'application/json', ...init?.headers },
@@ -66,6 +71,23 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (res.status === 204) return undefined as unknown as T
   return res.json() as Promise<T>
+}
+
+// ── Auth ─────────────────────────────────────────────────────────────────────
+export const login = (username: string, password: string) =>
+  apiFetch<{ token: string }>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ username, password }),
+  })
+
+export const getMe = () =>
+  apiFetch<{ username: string }>('/auth/me', { headers: getAuthHeader() })
+
+// ── Age helper ────────────────────────────────────────────────────────────────
+export function getAgeInfo(createdAt: string): { days: number; status: 'ok' | 'warning' | 'overdue' } {
+  const days = Math.floor((Date.now() - new Date(createdAt).getTime()) / 86_400_000)
+  const status = days > 365 ? 'overdue' : days > 270 ? 'warning' : 'ok'
+  return { days, status }
 }
 
 export const listModels = () =>
@@ -118,13 +140,14 @@ export function uploadToSpaces(
 export interface ShareLink {
   token: string
   label: string | null
+  can_edit: boolean
   created_at: string
 }
 
-export const createShareLink = (model_id: string, label?: string) =>
+export const createShareLink = (model_id: string, label?: string, can_edit?: boolean) =>
   apiFetch<{ token: string; path: string }>('/share', {
     method: 'POST',
-    body: JSON.stringify({ model_id, label }),
+    body: JSON.stringify({ model_id, label, can_edit }),
   })
 
 export const listShareLinks = (model_id: string) =>
@@ -133,9 +156,15 @@ export const listShareLinks = (model_id: string) =>
 export const deleteShareLink = (token: string) =>
   apiFetch<void>(`/share/${token}`, { method: 'DELETE' })
 
-// Resolve a share token to its model (used on the public viewer page)
+// Resolve a share token → { model, can_edit } (used on the public viewer page)
 export const resolveShareToken = (token: string) =>
-  apiFetch<Model>(`/share/${token}`)
+  apiFetch<{ model: Model; can_edit: boolean }>(`/share/${token}`)
+
+export const updateModelViaToken = (
+  token: string,
+  patch: Partial<Pick<Model, 'longitude' | 'latitude' | 'altitude' | 'heading' | 'pitch' | 'roll' | 'scale'>>,
+): Promise<Model> =>
+  apiFetch<Model>(`/share/${token}/model`, { method: 'PATCH', body: JSON.stringify(patch) })
 
 // ── Layers ───────────────────────────────────────────────────────────────────
 export interface Layer {
