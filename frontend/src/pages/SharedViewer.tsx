@@ -54,7 +54,7 @@ export function SharedViewer() {
 
   if (err) {
     return (
-      <div className="flex items-center justify-center h-screen bg-background text-foreground">
+      <div className="flex items-center justify-center h-svh bg-background text-foreground">
         <div className="text-center max-w-sm">
           <p className="text-sm text-muted-foreground">{err}</p>
         </div>
@@ -64,7 +64,7 @@ export function SharedViewer() {
 
   if (!model || !editModel) {
     return (
-      <div className="flex items-center justify-center h-screen bg-background text-foreground">
+      <div className="flex items-center justify-center h-svh bg-background text-foreground">
         <p className="text-xs text-muted-foreground">Loading…</p>
       </div>
     )
@@ -122,7 +122,7 @@ export function SharedViewer() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-background text-foreground">
+    <div className="flex flex-col h-svh bg-background text-foreground">
       <header className="flex items-center px-4 border-b border-border shrink-0 gap-3" style={{ height: '52px' }}>
         <img src="/logo.png" alt="Quadspectat" className="h-8 w-auto shrink-0" />
         <div className="w-px h-5 bg-border mx-1 shrink-0" />

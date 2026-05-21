@@ -2,11 +2,11 @@ import { cn } from '@/lib/utils'
 
 export type BaseMap = 'none' | 'osm' | 'satellite' | 'google3d'
 
-const OPTIONS: { value: BaseMap; label: string }[] = [
-  { value: 'none',      label: 'None' },
-  { value: 'osm',       label: 'OSM' },
-  { value: 'satellite', label: 'Satellite' },
-  { value: 'google3d',  label: 'Google 3D' },
+const OPTIONS: { value: BaseMap; label: string; shortLabel: string }[] = [
+  { value: 'none',      label: 'None',      shortLabel: 'None' },
+  { value: 'osm',       label: 'OSM',       shortLabel: 'OSM' },
+  { value: 'satellite', label: 'Satellite', shortLabel: 'Sat' },
+  { value: 'google3d',  label: 'Google 3D', shortLabel: 'G3D' },
 ]
 
 interface Props {
@@ -18,7 +18,7 @@ export function MapSwitcher({ value, onChange }: Props) {
   return (
     <div className="absolute bottom-4 right-4 z-10 flex rounded-xl overflow-hidden
                     border border-white/[0.07] bg-[#080c18]/80 backdrop-blur-md shadow-lg">
-      {OPTIONS.map(({ value: v, label }) => (
+      {OPTIONS.map(({ value: v, label, shortLabel }) => (
         <button
           key={v}
           type="button"
@@ -30,7 +30,8 @@ export function MapSwitcher({ value, onChange }: Props) {
               : 'text-white/65 hover:text-white/90 hover:bg-white/[0.07]',
           )}
         >
-          {label}
+          <span className="hidden sm:inline">{label}</span>
+          <span className="sm:hidden">{shortLabel}</span>
         </button>
       ))}
     </div>

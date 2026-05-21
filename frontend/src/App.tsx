@@ -111,7 +111,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-background text-foreground">
+    <div className="flex flex-col h-svh bg-background text-foreground">
       <header className="flex items-center px-4 h-13 border-b border-border shrink-0 gap-3" style={{ height: '52px' }}>
         <button
           onClick={() => navigate('/')}

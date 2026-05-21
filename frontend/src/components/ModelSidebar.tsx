@@ -97,12 +97,13 @@ export function ModelSidebar({
       {/* Mobile: hamburger button */}
       <button
         onClick={() => setMobileOpen(true)}
-        className="md:hidden absolute top-14 left-3 z-30 h-9 w-9 flex items-center justify-center
-                   rounded-md border border-input bg-background/90 backdrop-blur shadow
-                   text-muted-foreground hover:text-foreground transition-colors"
+        className="md:hidden absolute top-14 left-3 z-30 h-9 flex items-center justify-center gap-1.5
+                   rounded-lg border border-input bg-background/95 backdrop-blur shadow-md
+                   px-3 text-sm font-medium text-foreground hover:bg-accent transition-colors"
         style={{ position: 'fixed' }}
       >
-        ☰
+        <span className="text-base leading-none">☰</span>
+        <span className="text-xs">Models</span>
       </button>
 
       {/* Mobile drawer */}

@@ -967,7 +967,7 @@ export function AdminPage() {
   // ── Spinner while auth check in flight ─────────────────────────────────────
   if (!authChecked) {
     return (
-      <div className="flex items-center justify-center h-screen bg-[#070a12]">
+      <div className="flex items-center justify-center h-svh bg-[#070a12]">
         <Loader2 size={22} className="animate-spin text-white/30" />
       </div>
     )
@@ -976,7 +976,7 @@ export function AdminPage() {
   // ── Login card ─────────────────────────────────────────────────────────────
   if (!authed) {
     return (
-      <div className="flex items-center justify-center h-screen bg-[#070a12] text-white">
+      <div className="flex items-center justify-center h-svh bg-[#070a12] text-white">
         <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#0d1220] shadow-2xl shadow-black/80 p-8 flex flex-col gap-5">
           <div className="flex items-center gap-2.5 mb-2">
             <div className="h-8 w-8 rounded-xl bg-indigo-600 flex items-center justify-center">
@@ -1007,7 +1007,7 @@ export function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#070a12] text-white flex flex-col">
+    <div className="min-h-svh bg-[#070a12] text-white flex flex-col">
       {/* Top bar */}
       <header className="shrink-0 flex items-center gap-4 px-6 py-3 border-b border-white/10 bg-[#0a0e1a]/80 backdrop-blur-xl">
         <div className="flex items-center gap-2.5">
