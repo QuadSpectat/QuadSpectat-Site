@@ -37,9 +37,19 @@ async function getCogMeta(cogKey: string): Promise<CogMeta> {
   if (hit && hit.expiry > Date.now()) return hit
 
   const promise = (async (): Promise<CogMeta> => {
-    const url   = await presignDownload(cogKey)
-    const tiff  = await fromUrl(url)
-    const image = await tiff.getImage(0)
+    const url        = await presignDownload(cogKey)
+    const tiff       = await fromUrl(url)
+    const imageCount = await tiff.getImageCount()
+
+    // COG IFDs are not always ordered full-res first — find the largest image.
+    let image = await tiff.getImage(0)
+    let maxPx = image.getWidth() * image.getHeight()
+    for (let i = 1; i < imageCount; i++) {
+      const img = await tiff.getImage(i)
+      const px  = img.getWidth() * img.getHeight()
+      if (px > maxPx) { maxPx = px; image = img }
+    }
+
     const meta: CogMeta = {
       image,
       origin:     image.getOrigin(),
@@ -50,6 +60,7 @@ async function getCogMeta(cogKey: string): Promise<CogMeta> {
       imageH:     image.getHeight(),
       expiry:     Date.now() + 50 * 60 * 1000,
     }
+    console.log(`[cog] ${cogKey.split('/').pop()} IFDs:${imageCount} fullRes:${meta.imageW}x${meta.imageH} res:${meta.resolution[0].toFixed(3)},${meta.resolution[1].toFixed(3)}`)
     cogMetaCache.set(cogKey, meta)
     return meta
   })()
