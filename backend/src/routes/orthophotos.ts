@@ -6,13 +6,53 @@ import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { unlink } from 'node:fs/promises'
-import { fromUrl } from 'geotiff'
+import { fromUrl, GeoTIFFImage } from 'geotiff'
 import sharp from 'sharp'
 
 const router = Router()
 
 // Half-extent of EPSG:3857: π × 6378137
 const EARTH_HALF = 20037508.342789244
+
+// ── COG metadata cache ────────────────────────────────────────────────────────
+// Avoids re-fetching the TIFF header on every tile request.
+// Each entry lives for 50 min — well within the 1-hour presigned URL expiry.
+
+interface CogMeta {
+  image:      GeoTIFFImage
+  origin:     number[]
+  resolution: number[]
+  bands:      number
+  nodata:     number | null
+  expiry:     number
+}
+
+const cogMetaCache = new Map<string, CogMeta | Promise<CogMeta>>()
+
+async function getCogMeta(cogKey: string): Promise<CogMeta> {
+  const hit = cogMetaCache.get(cogKey)
+  if (hit instanceof Promise) return hit
+  if (hit && hit.expiry > Date.now()) return hit
+
+  const promise = (async (): Promise<CogMeta> => {
+    const url   = await presignDownload(cogKey)
+    const tiff  = await fromUrl(url)
+    const image = await tiff.getImage(0)
+    const meta: CogMeta = {
+      image,
+      origin:     image.getOrigin(),
+      resolution: image.getResolution(),
+      bands:      image.getSamplesPerPixel(),
+      nodata:     image.getGDALNoData(),
+      expiry:     Date.now() + 50 * 60 * 1000,
+    }
+    cogMetaCache.set(cogKey, meta)
+    return meta
+  })()
+
+  cogMetaCache.set(cogKey, promise)
+  return promise
+}
 
 // ── List ──────────────────────────────────────────────────────────────────────
 router.get('/', async (_req, res, next) => {
@@ -177,21 +217,15 @@ router.get('/:id([0-9a-f-]{36})/tiles/:z/:x/:y', async (req: Request, res: Respo
       }
     }
 
-    // Open COG via HTTP range requests
-    const cogUrl = await presignDownload(photo.cog_key)
+    // Read tile from cached COG metadata (avoids re-fetching TIFF header per tile)
     let png: Buffer
     try {
-      const tiff  = await fromUrl(cogUrl)
-      // Always use IFD 0 (full resolution) — geotiff.js overview auto-selection
-      // miscomputes pixel offsets inside overview IFDs, producing wrong tile content.
-      const image = await tiff.getImage(0)
-      const bands = image.getSamplesPerPixel()
+      const { image, origin: [origX, origY], resolution: [xRes, yRes], bands, nodata } =
+        await getCogMeta(photo.cog_key)
 
-      // Convert tile bbox (EPSG:3857 m) → pixel window using the image's own GeoTransform.
-      // This bypasses geotiff.js's bbox→overview logic entirely.
-      const [origX, origY] = image.getOrigin()   // top-left corner in CRS units
-      const [xRes, yRes]   = image.getResolution()  // yRes is negative for north-up
-
+      // Convert tile bbox (EPSG:3857 m) → pixel window via the image's GeoTransform.
+      // Uses IFD 0 directly — bypasses geotiff.js overview auto-selection which
+      // miscomputes pixel offsets inside overview IFDs, causing seams/wrong content.
       const pixLeft   = Math.round((xMin - origX) / xRes)
       const pixRight  = Math.round((xMax - origX) / xRes)
       const pixTop    = Math.round((yMax - origY) / yRes)  // yRes < 0 flips direction
@@ -205,11 +239,12 @@ router.get('/:id([0-9a-f-]{36})/tiles/:z/:x/:y', async (req: Request, res: Respo
         fillValue: 0,
       })
 
-      const nodata = image.getGDALNoData()
       const raw = toRGBA(rasters as unknown as ArrayLike<number> & { BYTES_PER_ELEMENT: number }, bands, nodata)
       png = await sharp(raw, { raw: { width: 256, height: 256, channels: 4 } }).png({ compressionLevel: 1 }).toBuffer()
     } catch (err) {
       console.error(`[tile ${id}/${tz}/${tx}/${ty}] raster read failed:`, err instanceof Error ? err.message : err)
+      // Invalidate cache on error so next request retries a fresh URL
+      cogMetaCache.delete(photo.cog_key)
       png = await emptyTile()
     }
 
