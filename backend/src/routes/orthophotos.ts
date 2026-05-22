@@ -182,12 +182,23 @@ router.get('/:id([0-9a-f-]{36})/tiles/:z/:x/:y', async (req: Request, res: Respo
     let png: Buffer
     try {
       const tiff  = await fromUrl(cogUrl)
-      const image = await tiff.getImage()
+      // Always use IFD 0 (full resolution) — geotiff.js overview auto-selection
+      // miscomputes pixel offsets inside overview IFDs, producing wrong tile content.
+      const image = await tiff.getImage(0)
       const bands = image.getSamplesPerPixel()
 
-      // readRasters with bbox in image CRS (EPSG:3857 metres)
+      // Convert tile bbox (EPSG:3857 m) → pixel window using the image's own GeoTransform.
+      // This bypasses geotiff.js's bbox→overview logic entirely.
+      const [origX, origY] = image.getOrigin()   // top-left corner in CRS units
+      const [xRes, yRes]   = image.getResolution()  // yRes is negative for north-up
+
+      const pixLeft   = Math.round((xMin - origX) / xRes)
+      const pixRight  = Math.round((xMax - origX) / xRes)
+      const pixTop    = Math.round((yMax - origY) / yRes)  // yRes < 0 flips direction
+      const pixBottom = Math.round((yMin - origY) / yRes)
+
       const rasters = await image.readRasters({
-        bbox: [xMin, yMin, xMax, yMax],
+        window: [pixLeft, pixTop, pixRight, pixBottom],
         width: 256,
         height: 256,
         interleave: true,
@@ -196,7 +207,7 @@ router.get('/:id([0-9a-f-]{36})/tiles/:z/:x/:y', async (req: Request, res: Respo
 
       const nodata = image.getGDALNoData()
       const raw = toRGBA(rasters as unknown as ArrayLike<number> & { BYTES_PER_ELEMENT: number }, bands, nodata)
-      png = await sharp(raw, { raw: { width: 256, height: 256, channels: 4 } }).png().toBuffer()
+      png = await sharp(raw, { raw: { width: 256, height: 256, channels: 4 } }).png({ compressionLevel: 1 }).toBuffer()
     } catch (err) {
       console.error(`[tile ${id}/${tz}/${tx}/${ty}] raster read failed:`, err instanceof Error ? err.message : err)
       png = await emptyTile()
