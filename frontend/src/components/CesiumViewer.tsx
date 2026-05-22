@@ -614,8 +614,11 @@ export function CesiumViewer({
         }
         if (photo.bounds_west !== null && photo.bounds_south !== null &&
             photo.bounds_east !== null && photo.bounds_north !== null) {
+          // Small buffer so edge tiles are never cut off by rounding in bounds
+          const buf = 0.002
           providerOpts.rectangle = Cesium.Rectangle.fromDegrees(
-            photo.bounds_west, photo.bounds_south, photo.bounds_east, photo.bounds_north,
+            photo.bounds_west - buf, photo.bounds_south - buf,
+            photo.bounds_east + buf, photo.bounds_north + buf,
           )
         }
         const provider = new Cesium.UrlTemplateImageryProvider(providerOpts)
@@ -626,6 +629,27 @@ export function CesiumViewer({
       }
     }
   }, [orthophotos, orthoCompare])
+
+  // Lock camera to nadir (top-down) when any orthophoto is visible
+  const hasActiveOrtho = orthophotos.some((p) => p.status === 'ready' && p.visible)
+  useEffect(() => {
+    const v = viewerRef.current
+    if (!v) return
+    const ctrl = v.scene.screenSpaceCameraController
+    ctrl.enableTilt = !hasActiveOrtho
+    ctrl.enableLook = !hasActiveOrtho
+    if (hasActiveOrtho) {
+      // Snap to straight-down if camera is tilted more than 5° off nadir
+      if (v.camera.pitch > Cesium.Math.toRadians(-85)) {
+        const cart = Cesium.Cartographic.fromCartesian(v.camera.position)
+        v.camera.flyTo({
+          destination: Cesium.Cartesian3.fromRadians(cart.longitude, cart.latitude, cart.height),
+          orientation: { heading: v.camera.heading, pitch: Cesium.Math.toRadians(-90), roll: 0 },
+          duration: 0.5,
+        })
+      }
+    }
+  }, [hasActiveOrtho])
 
   // Measurement
   useMeasure(viewer, measureMode, baseElevation, measureKey, onMeasureResult)

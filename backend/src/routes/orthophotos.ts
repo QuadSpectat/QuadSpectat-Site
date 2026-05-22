@@ -24,6 +24,8 @@ interface CogMeta {
   resolution: number[]
   bands:      number
   nodata:     number | null
+  imageW:     number
+  imageH:     number
   expiry:     number
 }
 
@@ -44,6 +46,8 @@ async function getCogMeta(cogKey: string): Promise<CogMeta> {
       resolution: image.getResolution(),
       bands:      image.getSamplesPerPixel(),
       nodata:     image.getGDALNoData(),
+      imageW:     image.getWidth(),
+      imageH:     image.getHeight(),
       expiry:     Date.now() + 50 * 60 * 1000,
     }
     cogMetaCache.set(cogKey, meta)
@@ -220,7 +224,7 @@ router.get('/:id([0-9a-f-]{36})/tiles/:z/:x/:y', async (req: Request, res: Respo
     // Read tile from cached COG metadata (avoids re-fetching TIFF header per tile)
     let png: Buffer
     try {
-      const { image, origin: [origX, origY], resolution: [xRes, yRes], bands, nodata } =
+      const { image, origin: [origX, origY], resolution: [xRes, yRes], bands, nodata, imageW, imageH } =
         await getCogMeta(photo.cog_key)
 
       // Convert tile bbox (EPSG:3857 m) → pixel window via the image's GeoTransform.
@@ -230,6 +234,11 @@ router.get('/:id([0-9a-f-]{36})/tiles/:z/:x/:y', async (req: Request, res: Respo
       const pixRight  = Math.round((xMax - origX) / xRes)
       const pixTop    = Math.round((yMax - origY) / yRes)  // yRes < 0 flips direction
       const pixBottom = Math.round((yMin - origY) / yRes)
+
+      // Skip tiles entirely outside the image extent
+      if (pixRight <= 0 || pixLeft >= imageW || pixBottom <= 0 || pixTop >= imageH) {
+        return res.end(await emptyTile())
+      }
 
       const rasters = await image.readRasters({
         window: [pixLeft, pixTop, pixRight, pixBottom],
