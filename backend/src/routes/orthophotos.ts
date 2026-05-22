@@ -191,11 +191,11 @@ router.get('/:id([0-9a-f-]{36})/tiles/:z/:x/:y', async (req: Request, res: Respo
         width: 256,
         height: 256,
         interleave: true,
-        resampleMethod: 'bilinear',
         fillValue: 0,
       })
 
-      const raw = toRGBA(rasters as unknown as ArrayLike<number> & { BYTES_PER_ELEMENT: number }, bands)
+      const nodata = image.getGDALNoData()
+      const raw = toRGBA(rasters as unknown as ArrayLike<number> & { BYTES_PER_ELEMENT: number }, bands, nodata)
       png = await sharp(raw, { raw: { width: 256, height: 256, channels: 4 } }).png().toBuffer()
     } catch (err) {
       console.error(`[tile ${id}/${tz}/${tx}/${ty}] raster read failed:`, err instanceof Error ? err.message : err)
@@ -244,17 +244,20 @@ function lat2merc(lat: number): number {
 function toRGBA(
   data: ArrayLike<number> & { BYTES_PER_ELEMENT: number },
   bands: number,
+  nodata: number | null,
 ): Buffer {
   const pixels = 256 * 256
   const scale  = data.BYTES_PER_ELEMENT === 2 ? 256 : 1  // 16-bit → 8-bit
   const rgba   = Buffer.alloc(pixels * 4)
+  // gdalwarp fills OOB pixels with 0 even without explicit -dstnodata
+  const nd = nodata ?? 0
 
   for (let i = 0; i < pixels; i++) {
     const b = i * bands
     if (bands === 1) {
       const v = data[b] / scale
       rgba[i*4] = rgba[i*4+1] = rgba[i*4+2] = v
-      rgba[i*4+3] = 255
+      rgba[i*4+3] = data[b] === nd ? 0 : 255
     } else if (bands === 2) {
       const v = data[b] / scale
       rgba[i*4] = rgba[i*4+1] = rgba[i*4+2] = v
@@ -263,7 +266,8 @@ function toRGBA(
       rgba[i*4]   = data[b]   / scale
       rgba[i*4+1] = data[b+1] / scale
       rgba[i*4+2] = data[b+2] / scale
-      rgba[i*4+3] = 255
+      // All-zero pixels at tile edges are gdalwarp fill (OOB), not valid black pixels
+      rgba[i*4+3] = (data[b] === nd && data[b+1] === nd && data[b+2] === nd) ? 0 : 255
     } else {
       rgba[i*4]   = data[b]   / scale
       rgba[i*4+1] = data[b+1] / scale

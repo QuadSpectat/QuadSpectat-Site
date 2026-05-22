@@ -177,6 +177,8 @@ interface Props {
   snapRef?: React.MutableRefObject<(() => void) | null>
   /** Parent passes a ref; CesiumViewer writes the reset-camera function into it */
   resetCameraRef?: React.MutableRefObject<(() => void) | null>
+  /** Parent passes a ref; CesiumViewer writes the fly-to-orthophoto function into it */
+  flyToOrthoRef?: React.MutableRefObject<((photo: ResolvedOrthophoto) => void) | null>
 }
 
 export function CesiumViewer({
@@ -193,6 +195,7 @@ export function CesiumViewer({
   onSnapToGround,
   snapRef,
   resetCameraRef,
+  flyToOrthoRef,
 }: Props) {
   const containerRef  = useRef<HTMLDivElement>(null)
   const creditRef     = useRef<HTMLDivElement>(null)
@@ -284,12 +287,26 @@ export function CesiumViewer({
     viewerRef.current = v
     setViewer(v)
 
+    if (flyToOrthoRef) {
+      flyToOrthoRef.current = (photo: ResolvedOrthophoto) => {
+        const vv = viewerRef.current
+        if (!vv || photo.bounds_west == null) return
+        vv.camera.flyTo({
+          destination: Cesium.Rectangle.fromDegrees(
+            photo.bounds_west, photo.bounds_south!, photo.bounds_east!, photo.bounds_north!,
+          ),
+          duration: 1.5,
+        })
+      }
+    }
+
     return () => {
       v.destroy()
       viewerRef.current = null
       google3dRef.current = null
       overlayEntityRef.current = null
       overlayTilesetRef.current = null
+      if (flyToOrthoRef) flyToOrthoRef.current = null
       setViewer(null)
     }
   }, [])

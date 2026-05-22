@@ -25,6 +25,7 @@ interface Props {
   onOrthoDelete: (id: string) => void
   onOrthoToggleVisible: (id: string) => void
   onOrthoSetOpacity: (id: string, v: number) => void
+  onOrthoFlyTo: (id: string) => void
 }
 
 function formatBytes(bytes: number | null): string {
@@ -40,7 +41,7 @@ function formatBytes(bytes: number | null): string {
 export function ModelSidebar({
   models, loading, error, selectedId, onSelect, onDelete, onShare, onUploadClick,
   orthophotos, orthoUploading, orthoUploadError, onOrthoFile, onOrthoDelete,
-  onOrthoToggleVisible, onOrthoSetOpacity,
+  onOrthoToggleVisible, onOrthoSetOpacity, onOrthoFlyTo,
 }: Props) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<'models' | 'orthophotos'>('models')
@@ -104,6 +105,7 @@ export function ModelSidebar({
           onToggleVisible={() => onOrthoToggleVisible(photo.id)}
           onDelete={() => onOrthoDelete(photo.id)}
           onSetOpacity={(v) => onOrthoSetOpacity(photo.id, v)}
+          onFlyTo={() => onOrthoFlyTo(photo.id)}
         />
       ))}
     </>
@@ -301,13 +303,16 @@ function ModelRow({
 }
 
 function OrthoRow({
-  photo, onToggleVisible, onDelete, onSetOpacity,
+  photo, onToggleVisible, onDelete, onSetOpacity, onFlyTo,
 }: {
   photo: ResolvedOrthophoto
   onToggleVisible: () => void
   onDelete: () => void
   onSetOpacity: (v: number) => void
+  onFlyTo: () => void
 }) {
+  const canFlyTo = photo.status === 'ready' && photo.bounds_west != null
+
   return (
     <div className="border-b border-border">
       {/* Main row */}
@@ -337,7 +342,11 @@ function OrthoRow({
         )}
 
         {/* Name + status */}
-        <div className="flex-1 min-w-0">
+        <div
+          className={cn('flex-1 min-w-0', canFlyTo && 'cursor-pointer')}
+          onClick={canFlyTo ? onFlyTo : undefined}
+          title={canFlyTo ? 'Fly to location' : undefined}
+        >
           <span className={cn(
             'block text-sm truncate leading-tight',
             photo.status === 'ready' && photo.visible ? 'text-foreground' :

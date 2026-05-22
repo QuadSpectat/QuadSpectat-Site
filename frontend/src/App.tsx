@@ -63,9 +63,10 @@ export default function App() {
   const [compareBlend, setCompareBlend]         = useState(0.5)
   const [orthoCompare, setOrthoCompare]         = useState<OrthoCompare | null>(null)
 
-  // Snap-to-ground ref and reset-camera ref
+  // Snap-to-ground ref, reset-camera ref, fly-to-ortho ref
   const snapRef        = useRef<(() => void) | null>(null)
   const resetCameraRef = useRef<(() => void) | null>(null)
+  const flyToOrthoRef  = useRef<((photo: ResolvedOrthophoto) => void) | null>(null)
 
   // Load orthophotos on mount
   useEffect(() => {
@@ -219,6 +220,10 @@ export default function App() {
           onOrthoDelete={(id) => void handleOrthoDelete(id)}
           onOrthoToggleVisible={handleOrthoToggleVisible}
           onOrthoSetOpacity={handleOrthoSetOpacity}
+          onOrthoFlyTo={(id) => {
+            const photo = orthoPhotos.find((p) => p.id === id)
+            if (photo) flyToOrthoRef.current?.(photo)
+          }}
         />
 
         {/* Viewer + floating toolbar share this relative container */}
@@ -241,6 +246,7 @@ export default function App() {
             onSnapToGround={(offset) => void handleSnapToGround(offset)}
             snapRef={snapRef}
             resetCameraRef={resetCameraRef}
+            flyToOrthoRef={flyToOrthoRef}
           />
           <MeasureToolbar
             mode={measureMode}
