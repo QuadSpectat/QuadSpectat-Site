@@ -4,7 +4,7 @@ import modelsRouter from './routes/models'
 import uploadsRouter from './routes/uploads'
 import shareRouter from './routes/share'
 import layersRouter from './routes/layers'
-import orthophotosRouter from './routes/orthophotos'
+import orthophotosRouter, { warmupOrthophotos } from './routes/orthophotos'
 import authRouter from './routes/auth'
 
 const app = express()
@@ -52,4 +52,5 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
 
 app.listen(Number(env.PORT), () => {
   console.log(`Backend running on http://localhost:${env.PORT}`)
+  warmupOrthophotos().catch(console.error)
 })

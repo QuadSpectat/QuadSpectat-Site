@@ -433,4 +433,19 @@ async function processOrthophoto(id: string, fileKey: string, cogReady = false):
   }
 }
 
+// Pre-loads COG metadata for all ready orthophotos at server startup so the
+// first tile request is fast instead of waiting ~10s for TIFF header reads.
+export async function warmupOrthophotos(): Promise<void> {
+  const { rows } = await db.query<{ cog_key: string }>(
+    "SELECT cog_key FROM orthophotos WHERE status = 'ready' AND cog_key IS NOT NULL",
+  )
+  if (rows.length === 0) return
+  console.log(`[cog warmup] warming ${rows.length} orthophoto(s)`)
+  for (const { cog_key } of rows) {
+    getCogMeta(cog_key).catch((err: unknown) => {
+      console.error('[cog warmup] failed:', cog_key.split('/').pop(), err instanceof Error ? err.message : err)
+    })
+  }
+}
+
 export default router
