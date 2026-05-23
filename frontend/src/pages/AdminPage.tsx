@@ -6,7 +6,7 @@ import { useState, useEffect, useRef, useCallback, type ChangeEvent, type DragEv
 import {
   LayoutDashboard, Box, Map, Upload, Trash2, ExternalLink,
   RefreshCw, AlertCircle, CheckCircle2, Loader2, X, ChevronRight,
-  FileImage, Globe, Eye, Info, LogOut, Bell,
+  FileImage, Globe, Eye, Info, LogOut, Bell, Copy, Zap,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -18,7 +18,7 @@ import type { Model, Orthophoto, CreateOrthophotoPayload } from '@/lib/api'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type AdminTab = 'dashboard' | 'models' | 'orthophotos' | 'reminders'
+type AdminTab = 'dashboard' | 'models' | 'orthophotos' | 'cog-convert' | 'reminders'
 
 interface Toast {
   id: number
@@ -848,6 +848,170 @@ function OrthophotosTab({
   )
 }
 
+// ─── COG Converter Tab ────────────────────────────────────────────────────────
+
+function CogConverterTab({
+  onCreated, toast,
+}: {
+  onCreated: (o: Orthophoto) => void
+  toast: (type: Toast['type'], msg: string) => void
+}) {
+  const [inputFile,  setInputFile]  = useState('input.tif')
+  const [outputFile, setOutputFile] = useState('output_cog.tif')
+  const [copied, setCopied] = useState(false)
+
+  const [file,      setFile]      = useState<File | null>(null)
+  const [name,      setName]      = useState('')
+  const [uploading, setUploading] = useState(false)
+  const [progress,  setProgress]  = useState(0)
+  const [error,     setError]     = useState<string | null>(null)
+
+  const command = `gdalwarp -t_srs EPSG:3857 -r bilinear -of COG -co COMPRESS=LZW -co OVERVIEW_LEVEL=AUTO -co BIGTIFF=IF_SAFER "${inputFile}" "${outputFile}"`
+
+  function copyCommand() {
+    void navigator.clipboard.writeText(command).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  function handleFileDrop(f: File) {
+    setFile(f)
+    if (!name) setName(f.name.replace(/\.[^.]+$/, ''))
+  }
+
+  async function handleUpload(e: FormEvent) {
+    e.preventDefault()
+    if (!file) return
+    setError(null)
+    setUploading(true)
+    setProgress(0)
+    try {
+      const { key, url } = await presignOrthophotoUpload(file.name, 'application/octet-stream')
+      setProgress(5)
+      await uploadToSpaces(url, file, (p) => setProgress(5 + p * 0.9))
+      setProgress(95)
+      const ortho = await createOrthophoto({
+        name,
+        raw_key: key,
+        original_format: 'GeoTIFF',
+        cog_ready: true,
+      } satisfies CreateOrthophotoPayload)
+      setProgress(100)
+      onCreated(ortho)
+      toast('success', `"${ortho.name}" registered — no processing needed`)
+      setFile(null)
+      setName('')
+      setProgress(0)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-6 max-w-2xl">
+      {/* Step 1 */}
+      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 flex flex-col gap-4">
+        <div className="flex items-center gap-2.5">
+          <span className="h-5 w-5 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">1</span>
+          <h2 className="text-sm font-semibold text-white">Convert locally with GDAL</h2>
+        </div>
+        <p className="text-xs text-white/40">
+          Run this command on your machine to produce a Cloud-Optimized GeoTIFF in EPSG:3857.
+          Faster than server-side conversion for large files.
+          Requires GDAL installed.
+        </p>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Input file path" value={inputFile} onChange={setInputFile} placeholder="input.tif" />
+          <Field label="Output file path" value={outputFile} onChange={setOutputFile} placeholder="output_cog.tif" />
+        </div>
+
+        <div className="relative">
+          <pre className="text-[11px] font-mono text-emerald-300 bg-black/50 border border-white/10 rounded-lg px-4 py-3 pr-20 overflow-x-auto whitespace-pre-wrap break-all leading-relaxed select-all">
+            {command}
+          </pre>
+          <button
+            type="button"
+            onClick={copyCommand}
+            className="absolute top-2 right-2 h-7 px-2.5 rounded-md bg-white/10 hover:bg-white/20 text-xs text-white/60 hover:text-white transition-colors flex items-center gap-1.5"
+          >
+            {copied
+              ? <><CheckCircle2 size={11} className="text-emerald-400" />Copied</>
+              : <><Copy size={11} />Copy</>}
+          </button>
+        </div>
+
+        <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300">
+          <Info size={13} className="mt-0.5 shrink-0" />
+          <span>
+            Install GDAL:{' '}
+            <code className="font-mono bg-white/10 px-1 rounded">conda install gdal</code>
+            {' · '}
+            <code className="font-mono bg-white/10 px-1 rounded">apt install gdal-bin</code>
+            {' · '}
+            OSGeo4W on Windows
+          </span>
+        </div>
+      </div>
+
+      {/* Step 2 */}
+      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 flex flex-col gap-4">
+        <div className="flex items-center gap-2.5">
+          <span className="h-5 w-5 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">2</span>
+          <h2 className="text-sm font-semibold text-white">Upload converted COG</h2>
+        </div>
+        <p className="text-xs text-white/40">
+          Upload the output file. It will be registered instantly — no server-side processing.
+        </p>
+
+        <form onSubmit={(e) => { void handleUpload(e) }} className="flex flex-col gap-4">
+          {file ? (
+            <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10">
+              <FileImage size={18} className="text-emerald-400 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-white truncate">{file.name}</p>
+                <p className="text-[11px] text-white/40">{formatBytes(file.size)}</p>
+              </div>
+              <button type="button" onClick={() => setFile(null)} className="text-white/30 hover:text-red-400 transition-colors">
+                <X size={14} />
+              </button>
+            </div>
+          ) : (
+            <DropZone
+              accept=".tif,.tiff"
+              onFile={handleFileDrop}
+              label="Drop converted COG here or click to browse"
+              sublabel="Must be a GeoTIFF COG in EPSG:3857"
+            />
+          )}
+
+          <Field label="Name" value={name} onChange={setName} required placeholder="Beer Yaakov 2026" />
+
+          {error && (
+            <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-400">
+              <AlertCircle size={13} className="mt-0.5 shrink-0" />{error}
+            </div>
+          )}
+          {uploading && <ProgressBar pct={progress} />}
+
+          <button
+            type="submit"
+            disabled={uploading || !file || !name.trim()}
+            className="h-9 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-xs font-semibold text-white transition-colors disabled:opacity-40 flex items-center justify-center gap-1.5"
+          >
+            {uploading
+              ? <><Loader2 size={13} className="animate-spin" />Uploading…</>
+              : <><Upload size={13} />Upload COG</>}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 // ─── Reminders Tab ────────────────────────────────────────────────────────────
 
 function RemindersTab({ models, orthophotos }: { models: Model[]; orthophotos: Orthophoto[] }) {
@@ -983,6 +1147,7 @@ export function AdminPage() {
     { tab: 'dashboard',   icon: <LayoutDashboard size={15} />, label: 'Dashboard' },
     { tab: 'models',      icon: <Box size={15} />,             label: 'Models' },
     { tab: 'orthophotos', icon: <Map size={15} />,             label: 'Orthophotos' },
+    { tab: 'cog-convert', icon: <Zap size={15} />,             label: 'COG Convert' },
     { tab: 'reminders',   icon: <Bell size={15} />,            label: 'Reminders', dot: hasReminders },
   ]
 
@@ -1096,6 +1261,18 @@ export function AdminPage() {
                 onRefresh={fetchOrthos}
                 onDelete={(id) => setOrthophotos((os) => os.filter((o) => o.id !== id))}
                 onUpload={() => setShowUploadOrtho(true)}
+                toast={addToast}
+              />
+            </>
+          )}
+          {activeTab === 'cog-convert' && (
+            <>
+              <h1 className="text-lg font-semibold text-white mb-5">COG Converter</h1>
+              <CogConverterTab
+                onCreated={(o) => {
+                  setOrthophotos((os) => [o, ...os])
+                  setActiveTab('orthophotos')
+                }}
                 toast={addToast}
               />
             </>
