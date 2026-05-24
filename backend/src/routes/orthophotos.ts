@@ -103,7 +103,8 @@ router.post('/presign', async (req: Request, res: Response, next: NextFunction) 
 // ── Create (after presigned upload) ──────────────────────────────────────────
 router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { name, description, raw_key, original_format, cog_ready } = req.body as Record<string, unknown>
+    const { asset_name, name, description, raw_key, original_format, cog_ready } = req.body as Record<string, unknown>
+    if (typeof asset_name !== 'string' || !asset_name) return res.status(400).json({ error: 'asset_name is required' })
     if (typeof name !== 'string' || !name) return res.status(400).json({ error: 'name is required' })
     if (typeof raw_key !== 'string' || !raw_key) return res.status(400).json({ error: 'raw_key is required' })
 
@@ -113,9 +114,9 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     const cogReady  = cog_ready === true
 
     const { rows } = await db.query<OrthoRow>(
-      `INSERT INTO orthophotos (id, name, description, file_key, original_format, status)
-       VALUES ($1, $2, $3, $4, $5, 'pending') RETURNING *`,
-      [id, name, desc, raw_key, fmt],
+      `INSERT INTO orthophotos (id, asset_name, name, description, file_key, original_format, status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'pending') RETURNING *`,
+      [id, asset_name, name, desc, raw_key, fmt],
     )
     res.status(201).json(rows[0])
 

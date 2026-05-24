@@ -44,114 +44,64 @@ export function ModelSidebar({
   onOrthoToggleVisible, onOrthoSetOpacity, onOrthoFlyTo,
 }: Props) {
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [selectedAsset, setSelectedAsset] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'models' | 'orthophotos'>('models')
   const orthoFileRef = useRef<HTMLInputElement>(null)
 
-  const readyOrthos = orthophotos.filter((p) => p.status === 'ready').length
+  // Group models and orthophotos by asset_name
+  const assetMap: Record<string, { models: Model[]; orthos: ResolvedOrthophoto[] }> = {}
+  for (const m of models) {
+    if (!assetMap[m.asset_name]) assetMap[m.asset_name] = { models: [], orthos: [] }
+    assetMap[m.asset_name].models.push(m)
+  }
+  for (const o of orthophotos) {
+    if (!assetMap[o.asset_name]) assetMap[o.asset_name] = { models: [], orthos: [] }
+    assetMap[o.asset_name].orthos.push(o)
+  }
+  const assetNames = Object.keys(assetMap).sort()
 
-  const modelsContent = (
-    <>
-      {loading && (
-        <div className="flex items-center justify-center h-20 text-xs text-muted-foreground">
-          Loading…
-        </div>
-      )}
-      {!loading && error && (
-        <div className="p-3 text-xs text-destructive">{error}</div>
-      )}
-      {!loading && !error && models.length === 0 && (
+  // Sidebar asset list
+  const assetList = (
+    <div className="flex-1 overflow-y-auto">
+      {assetNames.length === 0 && (
         <div className="flex flex-col items-center justify-center gap-2 h-32 px-4 text-center">
-          <span className="text-xs text-muted-foreground">No models yet.</span>
+          <span className="text-xs text-muted-foreground">No assets yet.</span>
           <button onClick={onUploadClick} className="text-xs text-primary hover:underline">
-            Upload your first model
+            Upload your first asset
           </button>
         </div>
       )}
-      {models.map((model) => (
-        <ModelRow
-          key={model.id}
-          model={model}
-          selected={model.id === selectedId}
-          onSelect={() => { onSelect(model); setMobileOpen(false) }}
-          onShare={() => onShare(model)}
-          onDelete={() => void onDelete(model.id)}
-        />
+      {assetNames.map((an) => (
+        <div
+          key={an}
+          className={cn(
+            'flex items-center gap-2 px-3 py-2 cursor-pointer rounded transition-colors',
+            selectedAsset === an ? 'bg-accent/60' : 'hover:bg-accent/30',
+          )}
+          onClick={() => setSelectedAsset(an)}
+        >
+          <span className="font-semibold text-xs truncate flex-1">{an}</span>
+          <span className="text-[10px] text-muted-foreground">{assetMap[an].models.length} model{assetMap[an].models.length !== 1 ? 's' : ''}</span>
+          <span className="text-[10px] text-muted-foreground">{assetMap[an].orthos.length} ortho</span>
+        </div>
       ))}
-    </>
+    </div>
   )
 
-  const orthosContent = (
-    <>
-      {orthoUploadError && (
-        <div className="px-3 py-2 text-[11px] text-destructive border-b border-border">
-          {orthoUploadError}
-        </div>
-      )}
-      {orthophotos.length === 0 && !orthoUploading && (
-        <div className="flex flex-col items-center justify-center gap-2 h-32 px-4 text-center">
-          <span className="text-xs text-muted-foreground">No orthophotos yet.</span>
-          <button
-            onClick={() => orthoFileRef.current?.click()}
-            className="text-xs text-primary hover:underline"
-          >
-            Upload a GeoTIFF / ECW / JP2
-          </button>
-        </div>
-      )}
-      {orthophotos.map((photo) => (
-        <OrthoRow
-          key={photo.id}
-          photo={photo}
-          onToggleVisible={() => onOrthoToggleVisible(photo.id)}
-          onDelete={() => onOrthoDelete(photo.id)}
-          onSetOpacity={(v) => onOrthoSetOpacity(photo.id, v)}
-          onFlyTo={() => onOrthoFlyTo(photo.id)}
-        />
-      ))}
-    </>
-  )
-
-  const content = (
-    <>
-      {/* Sidebar header */}
+  // Asset detail panel
+  const assetPanel = selectedAsset && assetMap[selectedAsset] ? (
+    <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-3 py-2 border-b border-border shrink-0">
         <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-          Assets
+          {selectedAsset}
         </span>
-        <div className="flex items-center gap-1">
-          {activeTab === 'models' ? (
-            <button
-              onClick={onUploadClick}
-              title="Upload model"
-              className="h-7 w-7 flex items-center justify-center rounded hover:bg-accent
-                         text-muted-foreground hover:text-foreground transition-colors text-base leading-none"
-            >
-              +
-            </button>
-          ) : (
-            <button
-              onClick={() => orthoFileRef.current?.click()}
-              disabled={orthoUploading}
-              title="Upload orthophoto"
-              className="h-7 flex items-center gap-1 px-2 rounded hover:bg-accent
-                         text-muted-foreground hover:text-foreground transition-colors text-xs disabled:opacity-40"
-            >
-              <Upload size={11} />
-              {orthoUploading ? 'Uploading…' : 'Upload'}
-            </button>
-          )}
-          {/* Close button — mobile only */}
-          <button
-            onClick={() => setMobileOpen(false)}
-            className="md:hidden h-7 w-7 flex items-center justify-center rounded hover:bg-accent
-                       text-muted-foreground transition-colors text-sm"
-          >
-            ✕
-          </button>
-        </div>
+        <button
+          onClick={() => setSelectedAsset(null)}
+          className="h-7 w-7 flex items-center justify-center rounded hover:bg-accent text-muted-foreground transition-colors text-sm"
+        >
+          ✕
+        </button>
       </div>
-
-      {/* Tabs */}
       <div className="flex border-b border-border shrink-0">
         <button
           onClick={() => setActiveTab('models')}
@@ -174,19 +124,54 @@ export function ModelSidebar({
           )}
         >
           Orthophotos
-          {readyOrthos > 0 && (
-            <span className="bg-primary/20 text-primary rounded-full px-1.5 text-[10px] font-semibold">
-              {readyOrthos}
-            </span>
-          )}
         </button>
       </div>
-
-      {/* List area */}
       <div className="flex-1 overflow-y-auto">
-        {activeTab === 'models' ? modelsContent : orthosContent}
+        {activeTab === 'models' ? (
+          assetMap[selectedAsset].models.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-2 h-32 px-4 text-center">
+              <span className="text-xs text-muted-foreground">No models for this asset.</span>
+              <button onClick={onUploadClick} className="text-xs text-primary hover:underline">
+                Upload model
+              </button>
+            </div>
+          ) : (
+            assetMap[selectedAsset].models.map((model) => (
+              <ModelRow
+                key={model.id}
+                model={model}
+                selected={model.id === selectedId}
+                onSelect={() => { onSelect(model); setMobileOpen(false) }}
+                onShare={() => onShare(model)}
+                onDelete={() => void onDelete(model.id)}
+              />
+            ))
+          )
+        ) : (
+          assetMap[selectedAsset].orthos.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-2 h-32 px-4 text-center">
+              <span className="text-xs text-muted-foreground">No orthophotos for this asset.</span>
+              <button
+                onClick={() => orthoFileRef.current?.click()}
+                className="text-xs text-primary hover:underline"
+              >
+                Upload orthophoto
+              </button>
+            </div>
+          ) : (
+            assetMap[selectedAsset].orthos.map((photo) => (
+              <OrthoRow
+                key={photo.id}
+                photo={photo}
+                onToggleVisible={() => onOrthoToggleVisible(photo.id)}
+                onDelete={() => onOrthoDelete(photo.id)}
+                onSetOpacity={(v) => onOrthoSetOpacity(photo.id, v)}
+                onFlyTo={() => onOrthoFlyTo(photo.id)}
+              />
+            ))
+          )
+        )}
       </div>
-
       <input
         ref={orthoFileRef}
         type="file"
@@ -194,14 +179,14 @@ export function ModelSidebar({
         className="hidden"
         onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onOrthoFile(f) }}
       />
-    </>
-  )
+    </div>
+  ) : assetList
 
   return (
     <>
       {/* Desktop sidebar */}
       <aside className="hidden md:flex flex-col w-64 shrink-0 border-r border-border bg-background overflow-hidden">
-        {content}
+        {assetPanel}
       </aside>
 
       {/* Mobile: hamburger button */}
@@ -222,7 +207,7 @@ export function ModelSidebar({
           <div className="absolute inset-0 bg-black/50" onClick={() => setMobileOpen(false)} />
           <aside className="relative z-10 flex flex-col w-72 max-w-[85vw] h-full border-r
                              border-border bg-background overflow-hidden shadow-xl">
-            {content}
+            {assetPanel}
           </aside>
         </div>
       )}

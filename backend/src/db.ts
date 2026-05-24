@@ -28,6 +28,7 @@ sqlite.pragma('foreign_keys = ON')
 sqlite.exec(`
   CREATE TABLE IF NOT EXISTS models (
     id           TEXT PRIMARY KEY,
+    asset_name   TEXT NOT NULL,
     name         TEXT NOT NULL,
     description  TEXT,
     file_key     TEXT UNIQUE,
@@ -65,6 +66,7 @@ sqlite.exec(`
 
   CREATE TABLE IF NOT EXISTS orthophotos (
     id              TEXT PRIMARY KEY,
+    asset_name      TEXT NOT NULL,
     name            TEXT NOT NULL,
     description     TEXT,
     file_key        TEXT UNIQUE,
@@ -88,8 +90,10 @@ sqlite.exec(`
 // ── Migrations: add new columns if they don't exist ─────────────────────────
 // SQLite doesn't support IF NOT EXISTS for ALTER TABLE, so we try/catch each one.
 ;[
+  `ALTER TABLE models ADD COLUMN asset_name TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE models ADD COLUMN coordinate_system TEXT NOT NULL DEFAULT 'unknown'`,
   `ALTER TABLE models ADD COLUMN geoid_offset REAL NOT NULL DEFAULT 0`,
+  `ALTER TABLE orthophotos ADD COLUMN asset_name TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE share_links ADD COLUMN can_edit INTEGER NOT NULL DEFAULT 0`,
 ].forEach((sql) => {
   try { sqlite.exec(sql) } catch { /* column already exists */ }

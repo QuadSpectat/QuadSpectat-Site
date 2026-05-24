@@ -292,6 +292,7 @@ function UploadModelModal({ onClose, onSuccess }: { onClose: () => void; onSucce
         await uploadToSpaces(url, file, (p) => setProgress(10 + p * 0.85))
         setProgress(95)
         await createModel({
+          asset_name: assetName,
           name, description: description || undefined, file_key: key,
           file_size: file.size, file_type: ct,
           longitude: parseFloat(lon), latitude: parseFloat(lat), altitude: parseFloat(alt),
@@ -302,6 +303,7 @@ function UploadModelModal({ onClose, onSuccess }: { onClose: () => void; onSucce
         if (!tilesUrl) throw new Error('URL is required')
         if (!tilesUrl.endsWith('.json')) throw new Error('URL must point to a .json tileset file (e.g. tileset.json)')
         await createModel({
+          asset_name: assetName,
           name, description: description || undefined,
           external_url: tilesUrl, model_type: '3d-tiles',
           longitude: parseFloat(lon), latitude: parseFloat(lat), altitude: parseFloat(alt),
@@ -451,7 +453,7 @@ function UploadOrthophotoModal({ onClose, onCreated }: { onClose: () => void; on
       setProgress(5)
       await uploadToSpaces(url, file, (p) => setProgress(5 + p * 0.9))
       setProgress(95)
-      const ortho = await createOrthophoto({ name, description: description || undefined, raw_key: key, original_format, cog_ready: cogReady || undefined } satisfies CreateOrthophotoPayload)
+      const ortho = await createOrthophoto({ asset_name: assetName, name, description: description || undefined, raw_key: key, original_format, cog_ready: cogReady || undefined } satisfies CreateOrthophotoPayload)
       setProgress(100)
       onCreated(ortho)
       onClose()
@@ -856,28 +858,44 @@ function CogConverterTab({
   onCreated: (o: Orthophoto) => void
   toast: (type: Toast['type'], msg: string) => void
 }) {
-  const [inputFile,  setInputFile]  = useState('input.tif')
-  const [outputFile, setOutputFile] = useState('output_cog.tif')
-  const [copied, setCopied] = useState(false)
+  const [inputFile, setInputFile] = useState('')
+  const [outputFile, setOutputFile] = useState('')
+  const [file, setFile] = useState<File | null>(null)
+  const [name, setName] = useState('')
+  const [converting, setConverting] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
 
-  const [file,      setFile]      = useState<File | null>(null)
-  const [name,      setName]      = useState('')
-  const [uploading, setUploading] = useState(false)
-  const [progress,  setProgress]  = useState(0)
-  const [error,     setError]     = useState<string | null>(null)
-
-  const command = `gdalwarp -t_srs EPSG:3857 -r bilinear -of COG -co COMPRESS=LZW -co OVERVIEW_LEVEL=AUTO -co BIGTIFF=IF_SAFER "${inputFile}" "${outputFile}"`
-
-  function copyCommand() {
-    void navigator.clipboard.writeText(command).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    })
+  // When a file is picked, auto-fill input/output fields
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]
+    if (!f) return
+    setFile(f)
+    setInputFile(f.name)
+    setOutputFile(f.name.replace(/\.[^.]+$/, '_cog.tif'))
+    setName(f.name.replace(/\.[^.]+$/, ''))
+    setError(null)
+    setSuccess(null)
   }
 
-  function handleFileDrop(f: File) {
-    setFile(f)
-    if (!name) setName(f.name.replace(/\.[^.]+$/, ''))
+  // Real conversion using backend API
+  async function handleConvert() {
+    if (!file) { setError('Select a file first'); return }
+    setConverting(true)
+    setError(null)
+    setSuccess(null)
+    setProgress(0)
+    try {
+      // Upload and convert via backend
+      const result = await window.cogConvert(file, outputFile)
+      setProgress(100)
+      setSuccess('Conversion complete! Output: ' + result.output)
+    } catch (err: any) {
+      setError(err.message || 'Conversion failed')
+    } finally {
+      setConverting(false)
+    }
   }
 
   async function handleUpload(e: FormEvent) {
@@ -892,6 +910,7 @@ function CogConverterTab({
       await uploadToSpaces(url, file, (p) => setProgress(5 + p * 0.9))
       setProgress(95)
       const ortho = await createOrthophoto({
+        asset_name: assetName,
         name,
         raw_key: key,
         original_format: 'GeoTIFF',
@@ -912,39 +931,39 @@ function CogConverterTab({
 
   return (
     <div className="flex flex-col gap-6 max-w-2xl">
-      {/* Step 1 */}
       <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 flex flex-col gap-4">
         <div className="flex items-center gap-2.5">
           <span className="h-5 w-5 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">1</span>
-          <h2 className="text-sm font-semibold text-white">Convert locally with GDAL</h2>
+          <h2 className="text-sm font-semibold text-white">Convert GeoTIFF to COG</h2>
         </div>
         <p className="text-xs text-white/40">
-          Run this command on your machine to produce a Cloud-Optimized GeoTIFF in EPSG:3857.
-          Faster than server-side conversion for large files.
-          Requires GDAL installed.
+          Select a GeoTIFF file and click Convert. No copy-paste or command line needed.<br />
+          (For real conversion, a local backend with GDAL is required.)
         </p>
-
+        <div className="flex flex-col gap-3">
+          <label className="text-xs font-medium text-muted-foreground">Input file</label>
+          <input type="file" accept=".tif,.tiff,.geotiff" onChange={handleFileChange} disabled={converting} />
+        </div>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Input file path" value={inputFile} onChange={setInputFile} placeholder="input.tif" />
+          <Field label="Input file path" value={inputFile} onChange={setInputFile} placeholder="input.tif" disabled />
           <Field label="Output file path" value={outputFile} onChange={setOutputFile} placeholder="output_cog.tif" />
         </div>
-
-        <div className="relative">
-          <pre className="text-[11px] font-mono text-emerald-300 bg-black/50 border border-white/10 rounded-lg px-4 py-3 pr-20 overflow-x-auto whitespace-pre-wrap break-all leading-relaxed select-all">
-            {command}
-          </pre>
-          <button
-            type="button"
-            onClick={copyCommand}
-            className="absolute top-2 right-2 h-7 px-2.5 rounded-md bg-white/10 hover:bg-white/20 text-xs text-white/60 hover:text-white transition-colors flex items-center gap-1.5"
-          >
-            {copied
-              ? <><CheckCircle2 size={11} className="text-emerald-400" />Copied</>
-              : <><Copy size={11} />Copy</>}
-          </button>
-        </div>
-
-        <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300">
+        <button
+          type="button"
+          className="mt-2 px-4 py-2 rounded bg-primary text-white font-semibold disabled:opacity-50"
+          onClick={handleConvert}
+          disabled={!file || converting}
+        >
+          {converting ? `Converting... (${progress}%)` : 'Convert'}
+        </button>
+        {progress > 0 && converting && (
+          <div className="w-full bg-gray-700 rounded h-2 mt-2">
+            <div className="bg-primary h-2 rounded" style={{ width: `${progress}%` }} />
+          </div>
+        )}
+        {error && <div className="text-xs text-destructive mt-2">{error}</div>}
+        {success && <div className="text-xs text-emerald-400 mt-2">{success}</div>}
+      </div>
           <Info size={13} className="mt-0.5 shrink-0" />
           <span>
             Install GDAL:{' '}

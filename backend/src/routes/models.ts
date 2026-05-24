@@ -37,11 +37,15 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
 router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const {
-      name, file_key, file_size, file_type, description,
+      asset_name, name, file_key, file_size, file_type, description,
       longitude, latitude, altitude, heading, pitch, roll, scale,
       model_type, external_url, coordinate_system, geoid_offset,
     } = req.body as Record<string, unknown>
 
+    if (!asset_name || typeof asset_name !== 'string') {
+      res.status(400).json({ error: 'asset_name is required' })
+      return
+    }
     if (!name || (!file_key && !external_url)) {
       res.status(400).json({ error: 'name and either file_key or external_url are required' })
       return
@@ -49,13 +53,14 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 
     const { rows } = await db.query(
       `INSERT INTO models
-         (id, name, description, file_key, file_size, file_type,
+         (id, asset_name, name, description, file_key, file_size, file_type,
           longitude, latitude, altitude, heading, pitch, roll, scale,
           model_type, external_url, coordinate_system, geoid_offset)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
        RETURNING *`,
       [
         randomUUID(),
+        asset_name,
         name,
         description ?? null,
         file_key ?? null,

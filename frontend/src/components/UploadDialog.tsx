@@ -57,6 +57,7 @@ function Field({
 
 export function UploadDialog({ onClose, onSuccess }: Props) {
   const [inputMode, setInputMode] = useState<ModelInputMode>('file')
+  const [assetName, setAssetName] = useState('')
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
 
@@ -100,6 +101,11 @@ export function UploadDialog({ onClose, onSuccess }: Props) {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
 
+    if (!assetName.trim()) {
+      setError('Asset name is required')
+      return
+    }
+
     try {
       setError(null)
       setUploading(true)
@@ -115,6 +121,7 @@ export function UploadDialog({ onClose, onSuccess }: Props) {
           return
         }
         await createModel({
+          asset_name: assetName.trim(),
           name: name.trim(),
           description: description.trim() || undefined,
           model_type: '3d-tiles',
@@ -133,6 +140,7 @@ export function UploadDialog({ onClose, onSuccess }: Props) {
 
         // 3. Create model record
         await createModel({
+          asset_name: assetName.trim(),
           name: name.trim(),
           description: description.trim() || undefined,
           file_key: key,
@@ -159,6 +167,7 @@ export function UploadDialog({ onClose, onSuccess }: Props) {
   }
 
   const submitDisabled = uploading
+    || !assetName.trim()
     || !name.trim()
     || (inputMode === 'file' ? !file : !tilesUrl.trim())
 
@@ -182,6 +191,17 @@ export function UploadDialog({ onClose, onSuccess }: Props) {
           >
             ✕
           </button>
+        </div>
+
+        {/* Asset Name Field */}
+        <div className="px-4 pt-4">
+          <Field
+            label="Asset Name"
+            value={assetName}
+            onChange={setAssetName}
+            required
+            placeholder="Enter or select asset name"
+          />
         </div>
 
         {/* Mode toggle */}

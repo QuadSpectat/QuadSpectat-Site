@@ -6,6 +6,7 @@ import shareRouter from './routes/share'
 import layersRouter from './routes/layers'
 import orthophotosRouter, { warmupOrthophotos } from './routes/orthophotos'
 import authRouter from './routes/auth'
+import cogRouter from './routes/cog'
 
 const app = express()
 
@@ -42,6 +43,7 @@ app.use('/api/uploads', uploadsRouter)
 app.use('/api/share', shareRouter)
 app.use('/api/layers', layersRouter)
 app.use('/api/orthophotos', orthophotosRouter)
+app.use('/api/cog', cogRouter)
 
 // Central error handler — include message outside production for easier debugging
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {

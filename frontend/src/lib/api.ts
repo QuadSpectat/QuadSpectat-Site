@@ -1,7 +1,20 @@
+// ── COG Conversion ─────────────────────────────────────────────────────────
+export async function cogConvert(file: File, outputName: string): Promise<{ success: boolean; output: string }> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('outputName', outputName)
+  const res = await fetch(`${BASE}/cog/convert`, {
+    method: 'POST',
+    body: form,
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
 const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? '/api'
 
 export interface Model {
   id: string
+  asset_name: string
   name: string
   description: string | null
   file_key: string | null
@@ -23,6 +36,7 @@ export interface Model {
 }
 
 export interface CreateModelPayload {
+  asset_name: string
   name: string
   description?: string
   file_key?: string
@@ -198,6 +212,7 @@ export const deleteLayer = (id: string) =>
 // ── Orthophotos ───────────────────────────────────────────────────────────────
 export interface Orthophoto {
   id: string
+  asset_name: string
   name: string
   description: string | null
   file_key: string | null
@@ -236,6 +251,7 @@ export const presignOrthophotoUpload = (filename: string, contentType: string) =
   })
 
 export interface CreateOrthophotoPayload {
+  asset_name: string
   name: string
   description?: string
   raw_key: string
