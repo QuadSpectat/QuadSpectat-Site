@@ -852,200 +852,237 @@ function OrthophotosTab({
 
 // ─── COG Converter Tab ────────────────────────────────────────────────────────
 
+type ConvertPhase = 'idle' | 'uploading' | 'processing' | 'done'
+
 function CogConverterTab({
   onCreated, toast,
 }: {
   onCreated: (o: Orthophoto) => void
   toast: (type: Toast['type'], msg: string) => void
 }) {
-  // Step 1 state
-  const [inputName,  setInputName]  = useState('')   // filename shown in command
-  const [outputName, setOutputName] = useState('')   // editable output filename
+  const [file,     setFile]     = useState<File | null>(null)
+  const [name,     setName]     = useState('')
+  const [cogReady, setCogReady] = useState(false)
+  const [phase,    setPhase]    = useState<ConvertPhase>('idle')
+  const [pct,      setPct]      = useState(0)
+  const [error,    setError]    = useState<string | null>(null)
+
+  // Manual GDAL command (collapsed)
+  const [showCmd,    setShowCmd]    = useState(false)
+  const [cmdInput,   setCmdInput]   = useState('')
+  const [cmdOutput,  setCmdOutput]  = useState('')
   const [copied,     setCopied]     = useState(false)
-  const inputPickRef = useRef<HTMLInputElement>(null)
+  const cmdPickRef = useRef<HTMLInputElement>(null)
 
-  // Step 2 state
-  const [cogFile,    setCogFile]    = useState<File | null>(null)
-  const [name,       setName]       = useState('')
-  const [uploading,  setUploading]  = useState(false)
-  const [progress,   setProgress]   = useState(0)
-  const [error,      setError]      = useState<string | null>(null)
+  function handleFileDrop(f: File) {
+    setFile(f)
+    if (!name) setName(f.name.replace(/\.[^.]+$/, ''))
+    setError(null)
+  }
 
-  function handleInputPick(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleCmdPick(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
     if (!f) return
     const base = f.name.replace(/\.[^.]+$/, '')
-    setInputName(f.name)
-    setOutputName(`${base}_cog.tif`)
-    e.target.value = ''  // reset so same file can be re-picked
+    setCmdInput(f.name)
+    setCmdOutput(`${base}_cog.tif`)
+    e.target.value = ''
   }
 
-  const command = inputName
-    ? `gdalwarp -t_srs EPSG:3857 -r bilinear -of COG -co COMPRESS=LZW -co OVERVIEW_LEVEL=AUTO -co BIGTIFF=IF_SAFER "${inputName}" "${outputName}"`
+  const gdalCmd = cmdInput
+    ? `gdalwarp -t_srs EPSG:3857 -r bilinear -of COG -co COMPRESS=LZW -co OVERVIEW_LEVEL=AUTO -co BIGTIFF=IF_SAFER "${cmdInput}" "${cmdOutput || cmdInput.replace(/\.[^.]+$/, '_cog.tif')}"`
     : 'gdalwarp -t_srs EPSG:3857 -r bilinear -of COG -co COMPRESS=LZW -co OVERVIEW_LEVEL=AUTO -co BIGTIFF=IF_SAFER "input.tif" "output_cog.tif"'
 
-  function copyCommand() {
-    void navigator.clipboard.writeText(command).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+  function copyCmd() {
+    void navigator.clipboard.writeText(gdalCmd).then(() => {
+      setCopied(true); setTimeout(() => setCopied(false), 2000)
     })
   }
 
-  async function handleUpload(e: FormEvent) {
+  const busy = phase === 'uploading' || phase === 'processing'
+
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!cogFile) return
+    if (!file) return
     setError(null)
-    setUploading(true)
-    setProgress(0)
+    setPhase('uploading')
+    setPct(0)
     try {
-      const { key, url } = await presignOrthophotoUpload(cogFile.name, 'application/octet-stream')
-      setProgress(5)
-      await uploadToSpaces(url, cogFile, (p) => setProgress(5 + p * 0.9))
-      setProgress(95)
+      const ext = file.name.split('.').pop()?.toLowerCase() ?? 'tif'
+      const fmt = ORTHO_FORMATS[ext] ?? ext.toUpperCase()
+      const { key, url } = await presignOrthophotoUpload(file.name, 'application/octet-stream')
+      await uploadToSpaces(url, file, (p) => setPct(p))
+      setPhase('processing')
       const ortho = await createOrthophoto({
         name,
         raw_key: key,
-        original_format: 'GeoTIFF',
-        cog_ready: true,
+        original_format: fmt,
+        cog_ready: cogReady || undefined,
       } satisfies CreateOrthophotoPayload)
-      setProgress(100)
+      setPhase('done')
       onCreated(ortho)
-      toast('success', `"${ortho.name}" registered — no processing needed`)
-      setCogFile(null)
-      setName('')
-      setProgress(0)
+      toast('info', cogReady
+        ? `"${ortho.name}" registered — no processing needed`
+        : `"${ortho.name}" uploaded — converting on server…`)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setUploading(false)
+      setPhase('idle')
     }
   }
 
-  return (
-    <div className="flex flex-col gap-6 max-w-2xl">
-      {/* Step 1 */}
-      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 flex flex-col gap-4">
-        <div className="flex items-center gap-2.5">
-          <span className="h-5 w-5 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">1</span>
-          <h2 className="text-sm font-semibold text-white">Convert locally with GDAL</h2>
-        </div>
-        <p className="text-xs text-white/40">
-          Browse to your source file — the GDAL command is generated automatically.
-          Run it from the file's folder. Output lands in the same directory.
+  if (phase === 'done') {
+    return (
+      <div className="max-w-2xl flex flex-col items-center justify-center py-16 gap-4">
+        <CheckCircle2 size={40} className="text-emerald-400" />
+        <p className="text-sm font-semibold text-white">
+          {cogReady ? 'Orthophoto registered!' : 'Upload complete — converting on server…'}
         </p>
-
-        {/* Input file browser */}
-        <div className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-white/50">Input file</span>
-          <div
-            onClick={() => inputPickRef.current?.click()}
-            className="flex items-center gap-2 h-9 rounded-md border border-white/10 bg-white/5 px-2.5 cursor-pointer hover:border-white/25 transition-colors"
-          >
-            <FileImage size={13} className="text-white/30 shrink-0" />
-            <span className={cn('text-sm flex-1 truncate', inputName ? 'text-white' : 'text-white/25')}>
-              {inputName || 'Click to browse…'}
-            </span>
-            {inputName && (
-              <button type="button" onClick={(e) => { e.stopPropagation(); setInputName(''); setOutputName('') }}
-                className="text-white/30 hover:text-red-400 transition-colors shrink-0">
-                <X size={13} />
-              </button>
-            )}
-          </div>
-          <input ref={inputPickRef} type="file" accept=".tif,.tiff,.ecw,.jp2,.j2k,.sid" className="sr-only" onChange={handleInputPick} />
-        </div>
-
-        {/* Output filename (editable) */}
-        <Field
-          label="Output filename"
-          value={outputName}
-          onChange={setOutputName}
-          placeholder="output_cog.tif"
-          hint="Output is saved to the same folder as the input file"
-        />
-
-        {/* Generated command */}
-        <div className="relative">
-          <pre className={cn(
-            'text-[11px] font-mono bg-black/50 border border-white/10 rounded-lg px-4 py-3 pr-20 overflow-x-auto whitespace-pre-wrap break-all leading-relaxed select-all',
-            inputName ? 'text-emerald-300' : 'text-white/30',
-          )}>
-            {command}
-          </pre>
-          <button
-            type="button"
-            onClick={copyCommand}
-            className="absolute top-2 right-2 h-7 px-2.5 rounded-md bg-white/10 hover:bg-white/20 text-xs text-white/60 hover:text-white transition-colors flex items-center gap-1.5"
-          >
-            {copied
-              ? <><CheckCircle2 size={11} className="text-emerald-400" />Copied</>
-              : <><Copy size={11} />Copy</>}
-          </button>
-        </div>
-
-        <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300">
-          <Info size={13} className="mt-0.5 shrink-0" />
-          <span>
-            Install GDAL:{' '}
-            <code className="font-mono bg-white/10 px-1 rounded">conda install gdal</code>
-            {' · '}
-            <code className="font-mono bg-white/10 px-1 rounded">apt install gdal-bin</code>
-            {' · '}
-            OSGeo4W on Windows
-          </span>
-        </div>
+        <p className="text-xs text-white/40 text-center max-w-xs">
+          {cogReady
+            ? 'Your COG is ready in the Orthophotos tab.'
+            : 'The server is reprojecting and building overviews. Check the Orthophotos tab — it will turn Ready in a few minutes.'}
+        </p>
+        <button
+          onClick={() => { setFile(null); setName(''); setPhase('idle'); setPct(0) }}
+          className="h-8 px-4 rounded-lg border border-white/10 text-xs text-white/60 hover:text-white hover:border-white/25 transition-colors"
+        >
+          Convert another file
+        </button>
       </div>
+    )
+  }
 
-      {/* Step 2 */}
+  return (
+    <div className="flex flex-col gap-5 max-w-2xl">
+      {/* Main auto-convert card */}
       <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 flex flex-col gap-4">
         <div className="flex items-center gap-2.5">
-          <span className="h-5 w-5 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">2</span>
-          <h2 className="text-sm font-semibold text-white">Upload converted COG</h2>
+          <Zap size={16} className="text-indigo-400 shrink-0" />
+          <h2 className="text-sm font-semibold text-white">Auto Convert &amp; Add to Viewer</h2>
         </div>
         <p className="text-xs text-white/40">
-          Upload the output file. Registered instantly — no server-side processing.
+          Upload any GeoTIFF, ECW or JPEG2000 — the server reprojects it to Web Mercator
+          and builds COG overviews automatically.
         </p>
 
-        <form onSubmit={(e) => { void handleUpload(e) }} className="flex flex-col gap-4">
-          {cogFile ? (
-            <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10">
-              <FileImage size={18} className="text-emerald-400 shrink-0" />
+        <form onSubmit={(e) => { void handleSubmit(e) }} className="flex flex-col gap-4">
+          {file ? (
+            <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10">
+              <FileImage size={18} className="text-indigo-400 shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-white truncate">{cogFile.name}</p>
-                <p className="text-[11px] text-white/40">{formatBytes(cogFile.size)}</p>
+                <p className="text-xs font-medium text-white truncate">{file.name}</p>
+                <p className="text-[11px] text-white/40">{formatBytes(file.size)}</p>
               </div>
-              <button type="button" onClick={() => setCogFile(null)} className="text-white/30 hover:text-red-400 transition-colors">
+              <button type="button" disabled={busy} onClick={() => { setFile(null); setName('') }}
+                className="text-white/30 hover:text-red-400 transition-colors disabled:opacity-40">
                 <X size={14} />
               </button>
             </div>
           ) : (
             <DropZone
-              accept=".tif,.tiff"
-              onFile={(f) => { setCogFile(f); if (!name) setName(f.name.replace(/\.[^.]+$/, '')) }}
-              label="Drop converted COG here or click to browse"
-              sublabel="GeoTIFF COG in EPSG:3857"
+              accept=".tif,.tiff,.ecw,.jp2,.j2k,.sid"
+              onFile={handleFileDrop}
+              label="Drop orthophoto here or click to browse"
+              sublabel="GeoTIFF · ECW · JPEG2000 · MrSID"
             />
           )}
 
-          <Field label="Name" value={name} onChange={setName} required placeholder="Beer Yaakov 2026" />
+          <Field label="Name" value={name} onChange={setName} required placeholder="Barkai 2025" />
+
+          <label className="flex items-center gap-2.5 cursor-pointer select-none">
+            <input type="checkbox" checked={cogReady} onChange={(e) => setCogReady(e.target.checked)}
+              className="h-4 w-4 rounded border-white/20 bg-white/5 accent-emerald-500" />
+            <span className="text-xs text-white/60">
+              File is already a COG in EPSG:3857
+              <span className="text-white/30"> — skip server conversion</span>
+            </span>
+          </label>
 
           {error && (
             <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-400">
               <AlertCircle size={13} className="mt-0.5 shrink-0" />{error}
             </div>
           )}
-          {uploading && <ProgressBar pct={progress} />}
+
+          {phase === 'uploading' && (
+            <div className="flex flex-col gap-1.5">
+              <ProgressBar pct={pct} />
+              <span className="text-[11px] text-white/40 text-right">Uploading… {pct}%</span>
+            </div>
+          )}
+          {phase === 'processing' && (
+            <div className="flex items-center gap-2 text-xs text-amber-400">
+              <Loader2 size={13} className="animate-spin shrink-0" />
+              Server converting to COG — this takes a few minutes for large files…
+            </div>
+          )}
 
           <button
             type="submit"
-            disabled={uploading || !cogFile || !name.trim()}
-            className="h-9 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-xs font-semibold text-white transition-colors disabled:opacity-40 flex items-center justify-center gap-1.5"
+            disabled={busy || !file || !name.trim()}
+            className="h-9 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white transition-colors disabled:opacity-40 flex items-center justify-center gap-1.5"
           >
-            {uploading
-              ? <><Loader2 size={13} className="animate-spin" />Uploading…</>
-              : <><Upload size={13} />Upload COG</>}
+            {busy
+              ? <><Loader2 size={13} className="animate-spin" />{phase === 'uploading' ? 'Uploading…' : 'Converting…'}</>
+              : <><Zap size={13} />Convert &amp; Add to Viewer</>}
           </button>
         </form>
+      </div>
+
+      {/* Manual GDAL command (collapsed) */}
+      <div className="rounded-xl border border-white/10 bg-white/[0.02] overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setShowCmd((v) => !v)}
+          className="w-full flex items-center gap-2 px-5 py-3 text-xs font-medium text-white/40 hover:text-white/70 transition-colors"
+        >
+          <ChevronRight size={13} className={cn('transition-transform shrink-0', showCmd && 'rotate-90')} />
+          Advanced: run GDAL conversion locally (OSGeo4W / QGIS shell)
+        </button>
+
+        {showCmd && (
+          <div className="px-5 pb-5 flex flex-col gap-3 border-t border-white/10 pt-4">
+            <p className="text-xs text-white/40">
+              Open the <strong className="text-white/60">OSGeo4W Shell</strong> that came with QGIS, browse to your file's folder, and run:
+            </p>
+            <div className="flex flex-col gap-1">
+              <span className="text-xs font-medium text-white/50">Input file</span>
+              <div
+                onClick={() => cmdPickRef.current?.click()}
+                className="flex items-center gap-2 h-9 rounded-md border border-white/10 bg-white/5 px-2.5 cursor-pointer hover:border-white/25 transition-colors"
+              >
+                <FileImage size={13} className="text-white/30 shrink-0" />
+                <span className={cn('text-sm flex-1 truncate', cmdInput ? 'text-white' : 'text-white/25')}>
+                  {cmdInput || 'Click to browse…'}
+                </span>
+                {cmdInput && (
+                  <button type="button" onClick={(e) => { e.stopPropagation(); setCmdInput(''); setCmdOutput('') }}
+                    className="text-white/30 hover:text-red-400 transition-colors shrink-0">
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+              <input ref={cmdPickRef} type="file" accept=".tif,.tiff,.ecw,.jp2,.j2k,.sid" className="sr-only" onChange={handleCmdPick} />
+            </div>
+            <Field label="Output filename" value={cmdOutput} onChange={setCmdOutput} placeholder="output_cog.tif"
+              hint="Saved to the same folder as the input file" />
+            <div className="relative">
+              <pre className={cn(
+                'text-[11px] font-mono bg-black/50 border border-white/10 rounded-lg px-4 py-3 pr-20 overflow-x-auto whitespace-pre-wrap break-all leading-relaxed select-all',
+                cmdInput ? 'text-emerald-300' : 'text-white/30',
+              )}>
+                {gdalCmd}
+              </pre>
+              <button type="button" onClick={copyCmd}
+                className="absolute top-2 right-2 h-7 px-2.5 rounded-md bg-white/10 hover:bg-white/20 text-xs text-white/60 hover:text-white transition-colors flex items-center gap-1.5">
+                {copied ? <><CheckCircle2 size={11} className="text-emerald-400" />Copied</> : <><Copy size={11} />Copy</>}
+              </button>
+            </div>
+            <p className="text-[11px] text-white/30">
+              After conversion, upload the output .tif using the form above with "Already a COG" checked.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   )
