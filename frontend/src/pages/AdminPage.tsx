@@ -453,7 +453,7 @@ function UploadOrthophotoModal({ onClose, onCreated }: { onClose: () => void; on
       setProgress(5)
       await uploadToSpaces(url, file, (p) => setProgress(5 + p * 0.9))
       setProgress(95)
-      const ortho = await createOrthophoto({ asset_name: assetName, name, description: description || undefined, raw_key: key, original_format, cog_ready: cogReady || undefined } satisfies CreateOrthophotoPayload)
+      const ortho = await createOrthophoto({ asset_name: name, name, description: description || undefined, raw_key: key, original_format, cog_ready: cogReady || undefined } satisfies CreateOrthophotoPayload)
       setProgress(100)
       onCreated(ortho)
       onClose()
@@ -899,7 +899,7 @@ function CogConverterTab({
       await uploadToSpaces(url, file, (p) => setPct(p))
       setPhase('processing')
       const ortho = await createOrthophoto({
-        name, raw_key: key, original_format: fmt,
+        asset_name: name, name, raw_key: key, original_format: fmt,
       } satisfies CreateOrthophotoPayload)
       setPhase('done')
       onCreated(ortho)
@@ -949,7 +949,7 @@ function CogConverterTab({
       await uploadToSpaces(url, cogFile, (p) => setCogPct(p))
       setCogPhase('processing')
       const ortho = await createOrthophoto({
-        name: cogName, raw_key: key, original_format: 'GeoTIFF', cog_ready: true,
+        asset_name: cogName, name: cogName, raw_key: key, original_format: 'GeoTIFF', cog_ready: true,
       } satisfies CreateOrthophotoPayload)
       setCogPhase('done')
       onCreated(ortho)
