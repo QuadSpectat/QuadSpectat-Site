@@ -7,17 +7,23 @@ on:
 
 permissions:
   contents: read
+  pages: write
+  id-token: write
 
 concurrency:
-  group: "deploy"
+  group: "pages"
   cancel-in-progress: true
 
 jobs:
 
-  # ── 1. Build + deploy frontend to VPS via rsync ─────────────────────────────
+  # ── 1. Build + deploy frontend to GitHub Pages ──────────────────────────────
   deploy-frontend:
-    name: Frontend → VPS
+    name: Frontend → GitHub Pages
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -37,22 +43,28 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build frontend
-        run: pnpm --filter frontend build
+        working-directory: frontend
+        env:
+          VITE_API_URL: https://quadspectat-api.fly.dev/api
+        run: pnpm build
 
-      - name: Deploy to VPS
-        uses: easingthemes/ssh-deploy@main
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          ARGS: "-avz --delete"
-          SOURCE: frontend/dist/
-          REMOTE_HOST: ${{ secrets.DEPLOY_HOST }}
-          REMOTE_USER: ${{ secrets.DEPLOY_USER }}
-          TARGET: /var/www/quadspectat/
+          path: frontend/dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
 
   # ── 2. Deploy backend to Fly.io ─────────────────────────────────────────────
   deploy-backend:
     name: Backend → Fly.io
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
