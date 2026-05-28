@@ -5,11 +5,13 @@ import 'cesium/Build/Cesium/Widgets/widgets.css'
 // Disable Ion so Cesium doesn't attempt Ion network calls without a token
 Cesium.Ion.defaultAccessToken = ''
 import { useMeasure } from '@/hooks/useMeasure'
+import { useGeopoints } from '@/hooks/useGeopoints'
 import type { Model } from '@/lib/api'
 import type { MeasureMode } from '@/lib/measure'
 import type { VisualSettings } from '@/lib/visualControls'
 import { DEFAULT_VISUAL, qualityToSSE } from '@/lib/visualControls'
 import type { BaseMap } from '@/components/MapSwitcher'
+import type { GeoPoint } from '@/lib/geopoints'
 
 // ── Height-offset helper ─────────────────────────────────────────────────────
 // Translates a tileset vertically by `metres` along the ellipsoid normal at
@@ -179,6 +181,9 @@ interface Props {
   resetCameraRef?: React.MutableRefObject<(() => void) | null>
   /** Parent passes a ref; CesiumViewer writes the fly-to-orthophoto function into it */
   flyToOrthoRef?: React.MutableRefObject<((photo: ResolvedOrthophoto) => void) | null>
+  geopointActive?: boolean
+  geopoints?: GeoPoint[]
+  onGeopointAdd?: (pt: GeoPoint) => void
 }
 
 export function CesiumViewer({
@@ -196,6 +201,9 @@ export function CesiumViewer({
   snapRef,
   resetCameraRef,
   flyToOrthoRef,
+  geopointActive = false,
+  geopoints = [],
+  onGeopointAdd,
 }: Props) {
   const containerRef  = useRef<HTMLDivElement>(null)
   const creditRef     = useRef<HTMLDivElement>(null)
@@ -653,6 +661,7 @@ export function CesiumViewer({
 
   // Measurement
   useMeasure(viewer, measureMode, baseElevation, measureKey, onMeasureResult)
+  useGeopoints(viewer, geopointActive, geopoints, onGeopointAdd ?? (() => {}))
 
   // Sync KML/overlay layers
   useEffect(() => {

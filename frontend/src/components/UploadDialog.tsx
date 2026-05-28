@@ -1,6 +1,6 @@
-import { useState, useRef, type ChangeEvent, type FormEvent } from 'react'
+import { useState, useRef, useEffect, type ChangeEvent, type FormEvent } from 'react'
 import { cn } from '@/lib/utils'
-import { presignUpload, uploadToSpaces, createModel } from '@/lib/api'
+import { presignUpload, uploadToSpaces, createModel, listModels, type Model } from '@/lib/api'
 
 interface Props {
   onClose: () => void
@@ -58,6 +58,13 @@ function Field({
 export function UploadDialog({ onClose, onSuccess }: Props) {
   const [inputMode, setInputMode] = useState<ModelInputMode>('file')
   const [assetName, setAssetName] = useState('')
+  const [assetMode, setAssetMode] = useState<'select' | 'new'>('select')
+  const [models, setModels] = useState<Model[]>([])
+  const [selectedAssetId, setSelectedAssetId] = useState<string>('')
+    // Fetch all assets (models) on mount
+    useEffect(() => {
+      listModels().then(setModels).catch(() => setModels([]))
+    }, [])
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
 
@@ -98,10 +105,30 @@ export function UploadDialog({ onClose, onSuccess }: Props) {
     setTilesUrl('')
   }
 
+  // Handle asset selection
+  function handleAssetChange(e: ChangeEvent<HTMLSelectElement>) {
+    const value = e.target.value
+    if (value === '__new__') {
+      setAssetMode('new')
+      setAssetName('')
+      setSelectedAssetId('')
+    } else {
+      setAssetMode('select')
+      setSelectedAssetId(value)
+      const selected = models.find(m => m.id === value)
+      setAssetName(selected ? selected.asset_name : '')
+    }
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
 
-    if (!assetName.trim()) {
+    // Use assetName from new or selected
+    const finalAssetName = assetMode === 'new'
+      ? assetName.trim()
+      : (models.find(m => m.id === selectedAssetId)?.asset_name || '')
+
+    if (!finalAssetName) {
       setError('Asset name is required')
       return
     }
@@ -121,7 +148,7 @@ export function UploadDialog({ onClose, onSuccess }: Props) {
           return
         }
         await createModel({
-          asset_name: assetName.trim(),
+          asset_name: finalAssetName,
           name: name.trim(),
           description: description.trim() || undefined,
           model_type: '3d-tiles',
@@ -140,7 +167,7 @@ export function UploadDialog({ onClose, onSuccess }: Props) {
 
         // 3. Create model record
         await createModel({
-          asset_name: assetName.trim(),
+          asset_name: finalAssetName,
           name: name.trim(),
           description: description.trim() || undefined,
           file_key: key,
@@ -167,7 +194,7 @@ export function UploadDialog({ onClose, onSuccess }: Props) {
   }
 
   const submitDisabled = uploading
-    || !assetName.trim()
+    || (assetMode === 'new' ? !assetName.trim() : !selectedAssetId)
     || !name.trim()
     || (inputMode === 'file' ? !file : !tilesUrl.trim())
 
@@ -193,15 +220,32 @@ export function UploadDialog({ onClose, onSuccess }: Props) {
           </button>
         </div>
 
-        {/* Asset Name Field */}
-        <div className="px-4 pt-4">
-          <Field
-            label="Asset Name"
-            value={assetName}
-            onChange={setAssetName}
-            required
-            placeholder="Enter or select asset name"
-          />
+        {/* Asset Name Field: select or new */}
+        <div className="px-4 pt-4 flex flex-col gap-2">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted-foreground">Asset Name<span className="text-destructive ml-0.5">*</span></span>
+            <select
+              value={assetMode === 'new' ? '__new__' : selectedAssetId}
+              onChange={handleAssetChange}
+              className="h-8 rounded-md border border-input bg-background px-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              disabled={uploading}
+            >
+              <option value="" disabled>Select existing asset…</option>
+              {models.map(m => (
+                <option key={m.id} value={m.id}>{m.asset_name}</option>
+              ))}
+              <option value="__new__">➕ Add new asset…</option>
+            </select>
+          </label>
+          {assetMode === 'new' && (
+            <Field
+              label="New Asset Name"
+              value={assetName}
+              onChange={setAssetName}
+              required
+              placeholder="Enter new asset name"
+            />
+          )}
         </div>
 
         {/* Mode toggle */}

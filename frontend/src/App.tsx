@@ -7,10 +7,12 @@ import { UploadDialog } from '@/components/UploadDialog'
 import { ShareDialog } from '@/components/ShareDialog'
 import { LayerPanel } from '@/components/LayerPanel'
 import { ComparePanel } from '@/components/ComparePanel'
+import { GeopointPanel } from '@/components/GeopointPanel'
 import { VisualControls } from '@/components/VisualControls'
 import { MapSwitcher } from '@/components/MapSwitcher'
 import { useModels } from '@/hooks/useModels'
 import { getDownloadUrl, updateModel, listOrthophotos, deleteOrthophoto } from '@/lib/api'
+import type { GeoPoint } from '@/lib/geopoints'
 import { DEFAULT_VISUAL } from '@/lib/visualControls'
 import type { Model, Orthophoto } from '@/lib/api'
 import type { MeasureMode } from '@/lib/measure'
@@ -62,6 +64,9 @@ export default function App() {
   const [overlayModelUrl, setOverlayModelUrl]   = useState<string | null>(null)
   const [compareBlend, setCompareBlend]         = useState(0.5)
   const [orthoCompare, setOrthoCompare]         = useState<OrthoCompare | null>(null)
+
+  const [geopoints, setGeopoints]           = useState<GeoPoint[]>([])
+  const [geopointActive, setGeopointActive] = useState(false)
 
   // Snap-to-ground ref, reset-camera ref, fly-to-ortho ref
   const snapRef        = useRef<(() => void) | null>(null)
@@ -247,6 +252,9 @@ export default function App() {
             snapRef={snapRef}
             resetCameraRef={resetCameraRef}
             flyToOrthoRef={flyToOrthoRef}
+            geopointActive={geopointActive}
+            geopoints={geopoints}
+            onGeopointAdd={(pt) => setGeopoints((prev) => [...prev, pt])}
           />
           <MeasureToolbar
             mode={measureMode}
@@ -263,11 +271,19 @@ export default function App() {
             crsLabel={crsLabel()}
           />
           <MapSwitcher value={baseMap} onChange={setBaseMap} />
-          {/* Bottom-right overlay controls: LayerPanel + ComparePanel */}
+          {/* Bottom-right overlay controls: GeopointPanel + LayerPanel + ComparePanel */}
           <div className="absolute bottom-14 right-4 z-20 flex flex-row-reverse items-end gap-2">
             {selectedModel && (
               <LayerPanel modelId={selectedModel.id} onLayersChange={setLayers} />
             )}
+            <GeopointPanel
+              geopoints={geopoints}
+              active={geopointActive}
+              onToggleActive={() => setGeopointActive((v) => !v)}
+              onDelete={(id) => setGeopoints((prev) => prev.filter((p) => p.id !== id))}
+              onUpdateNote={(id, note) => setGeopoints((prev) => prev.map((p) => p.id === id ? { ...p, note } : p))}
+              onClear={() => { setGeopoints([]); setGeopointActive(false) }}
+            />
             <ComparePanel
               models={models}
               selectedModel={selectedModel}
