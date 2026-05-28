@@ -88,7 +88,7 @@ export function exportCsv(points: GeoPoint[], crs: ExportCrs = 'wgs84'): void {
     ]
   }
 
-  triggerDownload(rows.join('\r\n'), `geopoints_${crs}.csv`, 'text/csv')
+  triggerDownload('﻿' + rows.join('\r\n'), `geopoints_${crs}.csv`, 'text/csv;charset=utf-8')
 }
 
 // ── KML export (always WGS84 — KML spec requires it) ─────────────────────────
