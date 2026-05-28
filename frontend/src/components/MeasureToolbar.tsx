@@ -2,7 +2,7 @@ import { useRef, useEffect, useState } from 'react'
 import { Ruler, Hexagon, Box, Trash2, Home, MapPin, X, FileText, Download, Pencil } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { MeasureMode } from '@/lib/measure'
-import type { GeoPoint } from '@/lib/geopoints'
+import type { GeoPoint, ExportCrs } from '@/lib/geopoints'
 import { exportCsv, exportKml } from '@/lib/geopoints'
 
 interface Props {
@@ -49,6 +49,7 @@ export function MeasureToolbar({
 
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState('')
+  const [exportCrs, setExportCrs] = useState<ExportCrs>('wgs84')
 
   useEffect(() => {
     const el = elevInputRef.current
@@ -192,7 +193,21 @@ export function MeasureToolbar({
               Points · {geopoints.length}
             </span>
             <div className="flex items-center gap-1">
-              <button onClick={() => exportCsv(geopoints)} title="Export CSV"
+              {/* CRS toggle */}
+              <div className="flex rounded overflow-hidden border border-white/[0.12]">
+                {(['wgs84', 'itm'] as ExportCrs[]).map((c) => (
+                  <button key={c} onClick={() => setExportCrs(c)}
+                    className={cn(
+                      'h-5 px-1.5 text-[9px] font-semibold transition-colors',
+                      exportCrs === c
+                        ? 'bg-orange-500/30 text-orange-300'
+                        : 'text-white/35 hover:text-white/60 bg-transparent',
+                    )}>
+                    {c.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+              <button onClick={() => exportCsv(geopoints, exportCrs)} title={`Export CSV (${exportCrs.toUpperCase()})`}
                 className="flex items-center gap-1 h-5 px-1.5 rounded text-[9px] font-medium
                            text-white/40 hover:text-white/70 border border-white/[0.10] hover:border-white/20 transition-all">
                 <FileText size={9} />CSV
