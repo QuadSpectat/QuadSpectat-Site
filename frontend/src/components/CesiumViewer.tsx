@@ -638,24 +638,53 @@ export function CesiumViewer({
     }
   }, [orthophotos, orthoCompare])
 
-  // Lock camera to nadir (top-down) when any orthophoto is visible
-  const hasActiveOrtho = orthophotos.some((p) => p.status === 'ready' && p.visible)
+  // Track camera lat/lon so we can check if it's over an orthophoto's bounds.
+  // Updated on moveEnd (after each navigation gesture) — not per-frame.
+  const [camPos, setCamPos] = useState<{ lat: number; lon: number } | null>(null)
+  useEffect(() => {
+    if (!viewer) return
+    const v = viewer
+    function readPos() {
+      if (v.isDestroyed()) return
+      const cart = Cesium.Cartographic.fromCartesian(v.camera.position)
+      setCamPos({
+        lat: Cesium.Math.toDegrees(cart.latitude),
+        lon: Cesium.Math.toDegrees(cart.longitude),
+      })
+    }
+    readPos()
+    v.camera.moveEnd.addEventListener(readPos)
+    return () => { if (!v.isDestroyed()) v.camera.moveEnd.removeEventListener(readPos) }
+  }, [viewer])
+
+  // Nadir lock: only engage when camera is actually over a visible ortho's bounds
+  const PAD = 0.005 // ~500 m padding around bounds in degrees
+  const hasActiveOrtho = camPos != null && orthophotos.some((p) => {
+    if (p.status !== 'ready' || !p.visible) return false
+    if (p.bounds_west == null || p.bounds_east == null ||
+        p.bounds_south == null || p.bounds_north == null) return false
+    return camPos.lon >= p.bounds_west  - PAD && camPos.lon <= p.bounds_east  + PAD
+        && camPos.lat >= p.bounds_south - PAD && camPos.lat <= p.bounds_north + PAD
+  })
+
+  const prevActiveRef = useRef(false)
   useEffect(() => {
     const v = viewerRef.current
     if (!v) return
     const ctrl = v.scene.screenSpaceCameraController
     ctrl.enableTilt = !hasActiveOrtho
     ctrl.enableLook = !hasActiveOrtho
-    if (hasActiveOrtho) {
-      // Snap to straight-down if camera is tilted more than 5° off nadir
-      if (v.camera.pitch > Cesium.Math.toRadians(-85)) {
-        const cart = Cesium.Cartographic.fromCartesian(v.camera.position)
-        v.camera.flyTo({
-          destination: Cesium.Cartesian3.fromRadians(cart.longitude, cart.latitude, cart.height),
-          orientation: { heading: v.camera.heading, pitch: Cesium.Math.toRadians(-90), roll: 0 },
-          duration: 0.5,
-        })
-      }
+
+    // Snap to nadir only when first entering an ortho area, not on every move
+    const justEntered = hasActiveOrtho && !prevActiveRef.current
+    prevActiveRef.current = hasActiveOrtho
+    if (justEntered && v.camera.pitch > Cesium.Math.toRadians(-85)) {
+      const cart = Cesium.Cartographic.fromCartesian(v.camera.position)
+      v.camera.flyTo({
+        destination: Cesium.Cartesian3.fromRadians(cart.longitude, cart.latitude, cart.height),
+        orientation: { heading: v.camera.heading, pitch: Cesium.Math.toRadians(-90), roll: 0 },
+        duration: 0.5,
+      })
     }
   }, [hasActiveOrtho])
 
