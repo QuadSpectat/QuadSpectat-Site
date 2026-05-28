@@ -7,6 +7,7 @@ import { WheelSlider } from '@/components/WheelSlider'
 
 export interface ResolvedOrthophoto {
   id: string
+  asset_name: string
   name: string
   status: string
   error_message: string | null

@@ -26,6 +26,7 @@ const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? '/api'
 function toOrthoState(o: Orthophoto): ResolvedOrthophoto {
   return {
     id:           o.id,
+    asset_name:   o.asset_name?.trim() || o.name,   // fallback for legacy rows
     name:         o.name,
     status:       o.status,
     error_message: o.error_message,

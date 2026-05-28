@@ -136,20 +136,23 @@ router.post('/upload',
   express.raw({ type: '*/*', limit: '2gb' }),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { filename } = req.query as Record<string, string>
+      const { filename, asset_name } = req.query as Record<string, string>
       if (!filename) return res.status(400).json({ error: 'filename required' })
 
       const ext = filename.split('.').pop()?.toLowerCase() ?? 'tif'
       const id = randomUUID()
       const fileKey = `orthophotos/${id}/original.${ext}`
       const body = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0)
+      // Use filename (without extension) as asset_name if not provided
+      const finalAssetName = asset_name?.trim() || filename.replace(/\.[^.]+$/, '')
+      const displayName = filename.replace(/\.[^.]+$/, '')
 
       await uploadObject(fileKey, body, 'image/tiff')
 
       const { rows } = await db.query<OrthoRow>(
-        `INSERT INTO orthophotos (id, name, file_key, original_format, status)
-         VALUES ($1, $2, $3, $4, 'pending') RETURNING *`,
-        [id, filename, fileKey, ext],
+        `INSERT INTO orthophotos (id, asset_name, name, file_key, original_format, status)
+         VALUES ($1, $2, $3, $4, $5, 'pending') RETURNING *`,
+        [id, finalAssetName, displayName, fileKey, ext],
       )
       res.status(201).json(rows[0])
 

@@ -48,15 +48,18 @@ export function ModelSidebar({
   const [activeTab, setActiveTab] = useState<'models' | 'orthophotos'>('models')
   const orthoFileRef = useRef<HTMLInputElement>(null)
 
-  // Group models and orthophotos by asset_name
+  // Group models and orthophotos by asset_name — fall back to the item's own
+  // name for legacy rows where asset_name is missing/empty
   const assetMap: Record<string, { models: Model[]; orthos: ResolvedOrthophoto[] }> = {}
   for (const m of models) {
-    if (!assetMap[m.asset_name]) assetMap[m.asset_name] = { models: [], orthos: [] }
-    assetMap[m.asset_name].models.push(m)
+    const key = m.asset_name?.trim() || m.name || 'Untitled'
+    if (!assetMap[key]) assetMap[key] = { models: [], orthos: [] }
+    assetMap[key].models.push(m)
   }
   for (const o of orthophotos) {
-    if (!assetMap[o.asset_name]) assetMap[o.asset_name] = { models: [], orthos: [] }
-    assetMap[o.asset_name].orthos.push(o)
+    const key = o.asset_name?.trim() || o.name || 'Untitled'
+    if (!assetMap[key]) assetMap[key] = { models: [], orthos: [] }
+    assetMap[key].orthos.push(o)
   }
   const assetNames = Object.keys(assetMap).sort()
 
