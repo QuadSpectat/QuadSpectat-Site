@@ -39,7 +39,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     const {
       asset_name, name, file_key, file_size, file_type, description,
       longitude, latitude, altitude, heading, pitch, roll, scale,
-      model_type, external_url, coordinate_system, geoid_offset,
+      model_type, external_url, coordinate_system, geoid_offset, show_watermark,
     } = req.body as Record<string, unknown>
 
     if (!asset_name || typeof asset_name !== 'string') {
@@ -55,8 +55,8 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       `INSERT INTO models
          (id, asset_name, name, description, file_key, file_size, file_type,
           longitude, latitude, altitude, heading, pitch, roll, scale,
-          model_type, external_url, coordinate_system, geoid_offset)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+          model_type, external_url, coordinate_system, geoid_offset, show_watermark)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
        RETURNING *`,
       [
         randomUUID(),
@@ -77,6 +77,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         external_url ?? null,
         coordinate_system ?? 'unknown',
         geoid_offset ?? 0,
+        show_watermark === false || show_watermark === 0 ? 0 : 1,
       ],
     )
     res.status(201).json(rows[0])

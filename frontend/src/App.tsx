@@ -293,8 +293,8 @@ export default function App() {
               onOrthoCompareChange={setOrthoCompare}
             />
           </div>
-          {/* Stamp */}
-          <div
+          {/* Stamp — hidden when selected model has show_watermark=0 */}
+          {(selectedModel?.show_watermark ?? 1) !== 0 && <div
             className="absolute bottom-2 left-4 z-30 pointer-events-none select-none"
             style={{ direction: 'rtl' }}
           >
@@ -308,7 +308,7 @@ export default function App() {
             >
               אא מערכות מידע וניהול משאבים בע&quot;מ
             </span>
-          </div>
+          </div>}
         </div>
       </div>
 

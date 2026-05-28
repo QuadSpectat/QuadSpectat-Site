@@ -93,6 +93,7 @@ sqlite.exec(`
   `ALTER TABLE models ADD COLUMN asset_name TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE models ADD COLUMN coordinate_system TEXT NOT NULL DEFAULT 'unknown'`,
   `ALTER TABLE models ADD COLUMN geoid_offset REAL NOT NULL DEFAULT 0`,
+  `ALTER TABLE models ADD COLUMN show_watermark INTEGER NOT NULL DEFAULT 1`,
   `ALTER TABLE orthophotos ADD COLUMN asset_name TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE share_links ADD COLUMN can_edit INTEGER NOT NULL DEFAULT 0`,
 ].forEach((sql) => {

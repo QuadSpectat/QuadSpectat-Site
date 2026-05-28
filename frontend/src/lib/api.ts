@@ -31,6 +31,7 @@ export interface Model {
   external_url: string | null
   coordinate_system: string
   geoid_offset: number
+  show_watermark: number  // 1 = show, 0 = hide
   created_at: string
   updated_at: string
 }
@@ -53,6 +54,7 @@ export interface CreateModelPayload {
   external_url?: string
   coordinate_system?: string
   geoid_offset?: number
+  show_watermark?: boolean
 }
 
 export interface UpdateModelPayload {

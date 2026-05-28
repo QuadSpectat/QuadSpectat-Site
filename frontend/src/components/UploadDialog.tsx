@@ -86,6 +86,7 @@ export function UploadDialog({ onClose, onSuccess }: Props) {
   const [crsValue, setCrsValue] = useState('itm')
   const [customOffset, setCustomOffset] = useState('-17.5')
 
+  const [showWatermark, setShowWatermark] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
@@ -153,6 +154,7 @@ export function UploadDialog({ onClose, onSuccess }: Props) {
           description: description.trim() || undefined,
           model_type: '3d-tiles',
           external_url: url,
+          show_watermark: showWatermark,
           ...resolvedCrs(),
         })
       } else {
@@ -181,6 +183,7 @@ export function UploadDialog({ onClose, onSuccess }: Props) {
           pitch: parseFloat(pitch),
           roll: parseFloat(roll),
           scale: parseFloat(scale),
+          show_watermark: showWatermark,
           ...resolvedCrs(),
         })
       }
@@ -407,6 +410,19 @@ export function UploadDialog({ onClose, onSuccess }: Props) {
               <span className="text-xs text-muted-foreground text-right">{progress}%</span>
             </div>
           )}
+
+          {/* Watermark toggle */}
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={showWatermark}
+              onChange={(e) => setShowWatermark(e.target.checked)}
+              className="h-4 w-4 rounded border-input accent-primary"
+            />
+            <span className="text-xs text-muted-foreground">
+              Show watermark on this model
+            </span>
+          </label>
 
           {error && (
             <p className="text-xs text-destructive">{error}</p>

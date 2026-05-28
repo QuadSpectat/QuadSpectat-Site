@@ -269,6 +269,7 @@ function UploadModelModal({ onClose, onSuccess }: { onClose: () => void; onSucce
   const [crsValue, setCrsValue] = useState('itm')
   const [customOffset, setCustomOffset] = useState('-17.5')
   const [showTransform, setShowTransform] = useState(false)
+  const [showWatermark, setShowWatermark] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
@@ -292,22 +293,24 @@ function UploadModelModal({ onClose, onSuccess }: { onClose: () => void; onSucce
         await uploadToSpaces(url, file, (p) => setProgress(10 + p * 0.85))
         setProgress(95)
         await createModel({
-          asset_name: assetName,
+          asset_name: name,
           name, description: description || undefined, file_key: key,
           file_size: file.size, file_type: ct,
           longitude: parseFloat(lon), latitude: parseFloat(lat), altitude: parseFloat(alt),
           heading: parseFloat(heading), pitch: parseFloat(pitch), roll: parseFloat(roll),
           scale: parseFloat(scale), coordinate_system, geoid_offset,
+          show_watermark: showWatermark,
         })
       } else {
         if (!tilesUrl) throw new Error('URL is required')
         if (!tilesUrl.endsWith('.json')) throw new Error('URL must point to a .json tileset file (e.g. tileset.json)')
         await createModel({
-          asset_name: assetName,
+          asset_name: name,
           name, description: description || undefined,
           external_url: tilesUrl, model_type: '3d-tiles',
           longitude: parseFloat(lon), latitude: parseFloat(lat), altitude: parseFloat(alt),
           coordinate_system, geoid_offset,
+          show_watermark: showWatermark,
         })
       }
       setProgress(100)
@@ -394,6 +397,15 @@ function UploadModelModal({ onClose, onSuccess }: { onClose: () => void; onSucce
             </div>
           )}
         </div>
+
+        <label className="flex items-center gap-2.5 cursor-pointer select-none">
+          <input type="checkbox" checked={showWatermark} onChange={(e) => setShowWatermark(e.target.checked)}
+            className="h-4 w-4 rounded border-white/20 bg-white/5 accent-indigo-500" />
+          <span className="text-xs text-white/60">
+            Show watermark
+            <span className="text-white/30"> — display company branding on this model</span>
+          </span>
+        </label>
 
         {error && (
           <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-400">
