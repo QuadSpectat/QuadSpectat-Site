@@ -232,7 +232,7 @@ export default function App() {
         />
 
         {/* Viewer + floating toolbar share this relative container */}
-        <div className="relative flex-1 overflow-hidden">
+        <div className={`relative flex-1 overflow-hidden${geopointActive ? ' cursor-crosshair' : ''}`}>
           <CesiumViewer
             selectedModel={selectedModel}
             modelUrl={modelUrl}
@@ -296,6 +296,17 @@ export default function App() {
               onOrthoCompareChange={setOrthoCompare}
             />
           </div>
+          {/* Geopoint collect overlay */}
+          {geopointActive && (
+            <div className="absolute top-14 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium
+                              bg-orange-500/20 border border-orange-400/50 text-orange-300
+                              backdrop-blur-md shadow-lg animate-pulse">
+                <span className="h-2 w-2 rounded-full bg-orange-400" />
+                Click to collect points — open the Points panel to stop
+              </div>
+            </div>
+          )}
           {/* Stamp */}
           <div
             className="absolute bottom-2 left-4 z-30 pointer-events-none select-none"

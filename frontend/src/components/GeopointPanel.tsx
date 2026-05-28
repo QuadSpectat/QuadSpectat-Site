@@ -20,6 +20,11 @@ export function GeopointPanel({ geopoints, active, onToggleActive, onDelete, onU
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState('')
 
+  function toggleCollect() {
+    onToggleActive()
+    if (!active) setOpen(false)  // close panel when activating so globe is fully clickable
+  }
+
   function startEdit(pt: GeoPoint) {
     setEditingId(pt.id)
     setEditDraft(pt.note)
@@ -32,9 +37,9 @@ export function GeopointPanel({ geopoints, active, onToggleActive, onDelete, onU
 
   return (
     <div className="relative">
-      {/* Toggle button */}
+      {/* Toggle button — opening the panel while collecting stops collect mode */}
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => { setOpen((o) => !o); if (active && !open) onToggleActive() }}
         className={cn(
           'flex items-center gap-2 h-8 px-3 rounded-xl text-xs font-medium select-none',
           'bg-[#080c18]/80 backdrop-blur-md border shadow-lg transition-all duration-200',
@@ -74,7 +79,7 @@ export function GeopointPanel({ geopoints, active, onToggleActive, onDelete, onU
             <div className="flex items-center gap-1.5 ml-auto">
               {/* Collect toggle */}
               <button
-                onClick={onToggleActive}
+                onClick={toggleCollect}
                 className={cn(
                   'flex items-center gap-1.5 h-6 px-2.5 rounded-lg text-[10px] font-medium transition-all',
                   active
@@ -83,7 +88,7 @@ export function GeopointPanel({ geopoints, active, onToggleActive, onDelete, onU
                 )}
               >
                 <MapPin className="w-2.5 h-2.5" />
-                {active ? 'Collecting…' : 'Collect'}
+                {active ? 'Stop' : 'Collect'}
               </button>
 
               {/* Export CSV */}
