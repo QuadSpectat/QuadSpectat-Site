@@ -5,24 +5,54 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Required for GitHub Pages deployment
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
-# Only one deployment at a time
 concurrency:
-  group: "pages"
+  group: "deploy"
   cancel-in-progress: true
 
 jobs:
+
+  # ── 1. Build + deploy frontend to VPS via rsync ─────────────────────────────
+  deploy-frontend:
+    name: Frontend → VPS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend
+        run: pnpm --filter frontend build
+
+      - name: Deploy to VPS
+        uses: easingthemes/ssh-deploy@main
+        with:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          ARGS: "-avz --delete"
+          SOURCE: frontend/dist/
+          REMOTE_HOST: ${{ secrets.DEPLOY_HOST }}
+          REMOTE_USER: ${{ secrets.DEPLOY_USER }}
+          TARGET: /var/www/quadspectat/
 
   # ── 2. Deploy backend to Fly.io ─────────────────────────────────────────────
   deploy-backend:
     name: Backend → Fly.io
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
