@@ -228,6 +228,7 @@ export function MeasureToolbar({
 
                   {editingId === pt.id ? (
                     <input autoFocus value={editDraft}
+                      dir="auto"
                       onChange={(e) => setEditDraft(e.target.value)}
                       onBlur={() => commitNote(pt.id)}
                       onKeyDown={(e) => {
@@ -248,7 +249,7 @@ export function MeasureToolbar({
                       )}
                     >
                       <Pencil size={9} className="shrink-0" />
-                      <span className="truncate max-w-[150px]">{pt.note || 'Add note…'}</span>
+                      <span dir="auto" className="truncate max-w-[150px]">{pt.note || 'Add note…'}</span>
                     </button>
                   )}
                 </div>
