@@ -184,7 +184,7 @@ export function SharedViewer() {
 
         {/* Edit panel — only when can_edit */}
         {canEdit && (
-          <div className="absolute bottom-14 left-4 z-20 flex flex-col items-start gap-1">
+          <div className="absolute top-3 left-4 z-20 flex flex-col items-start gap-1">
             <button
               onClick={() => setEditOpen((o) => !o)}
               className="h-8 px-3 rounded-xl text-xs font-medium
@@ -226,15 +226,6 @@ export function SharedViewer() {
           </div>
         )}
 
-        {/* Stamp */}
-        <div className="absolute bottom-2 left-4 z-30 pointer-events-none select-none" style={{ direction: 'rtl' }}>
-          <span
-            className="text-[10px] font-medium tracking-wide px-2 py-0.5 rounded"
-            style={{ background: 'rgba(0,0,0,0.35)', color: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(4px)' }}
-          >
-            אא מערכות מידע וניהול משאבים בע&quot;מ
-          </span>
-        </div>
       </div>
     </div>
   )
