@@ -12,9 +12,29 @@ function pickPos(v: Cesium.Viewer, win: Cesium.Cartesian2): Cesium.Cartesian3 | 
   return v.scene.globe.pick(ray, v.scene) ?? undefined
 }
 
+// Capture a cropped thumbnail around the click point from the Cesium canvas.
+// Requires preserveDrawingBuffer: true on the viewer (set in CesiumViewer.tsx).
+function captureThumbnail(canvas: HTMLCanvasElement, cx: number, cy: number): string {
+  try {
+    const THUMB_W = 320, THUMB_H = 200
+    const CROP_W  = 640, CROP_H  = 400
+    const thumb = document.createElement('canvas')
+    thumb.width  = THUMB_W
+    thumb.height = THUMB_H
+    const ctx = thumb.getContext('2d')
+    if (!ctx) return ''
+    const sx = Math.max(0, Math.min(Math.round(cx - CROP_W / 2), canvas.width  - CROP_W))
+    const sy = Math.max(0, Math.min(Math.round(cy - CROP_H / 2), canvas.height - CROP_H))
+    ctx.drawImage(canvas, sx, sy, CROP_W, CROP_H, 0, 0, THUMB_W, THUMB_H)
+    return thumb.toDataURL('image/jpeg', 0.82)
+  } catch {
+    return ''
+  }
+}
+
 /**
  * Manages geopoint pin entities in a Cesium viewer.
- * When `active`, LEFT_CLICK adds a point via `onAdd`.
+ * When `active`, LEFT_CLICK adds a point via `onAdd` with a canvas thumbnail.
  * Entities are synced with the `points` array (add / remove on diff).
  */
 export function useGeopoints(
@@ -35,7 +55,6 @@ export function useGeopoints(
     const map = entityMap.current
     const ids  = new Set(points.map((p) => p.id))
 
-    // Remove orphaned entities
     for (const [id, entity] of map) {
       if (!ids.has(id)) {
         viewer.entities.remove(entity)
@@ -43,7 +62,6 @@ export function useGeopoints(
       }
     }
 
-    // Add missing entities
     for (const pt of points) {
       if (map.has(pt.id)) continue
       const pos = Cesium.Cartesian3.fromDegrees(pt.lon, pt.lat, pt.alt)
@@ -91,8 +109,9 @@ export function useGeopoints(
     handler.setInputAction((e: Cesium.ScreenSpaceEventHandler.PositionedEvent) => {
       const pos = pickPos(v, e.position)
       if (!pos) return
-      const cart = Cesium.Cartographic.fromCartesian(pos)
+      const cart  = Cesium.Cartographic.fromCartesian(pos)
       const next  = pointsRef.current.length + 1
+      const thumbnail = captureThumbnail(v.scene.canvas, e.position.x, e.position.y)
       onAddRef.current({
         id:    crypto.randomUUID(),
         lat:   Cesium.Math.toDegrees(cart.latitude),
@@ -100,6 +119,7 @@ export function useGeopoints(
         alt:   Math.round(cart.height * 100) / 100,
         label: `P${next}`,
         note:  '',
+        thumbnail,
       })
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK)
 

@@ -271,6 +271,7 @@ export function CesiumViewer({
       skyBox: false,             // no starfield
       skyAtmosphere: false,      // no atmosphere glow
       creditContainer: creditRef.current, // redirect credits to hidden element
+      contextOptions: { webgl: { preserveDrawingBuffer: true } }, // needed for canvas.toDataURL()
     })
 
     v.imageryLayers.removeAll()

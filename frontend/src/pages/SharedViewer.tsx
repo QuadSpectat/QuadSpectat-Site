@@ -10,6 +10,7 @@ import { DEFAULT_VISUAL } from '@/lib/visualControls'
 import type { MeasureMode } from '@/lib/measure'
 import type { VisualSettings } from '@/lib/visualControls'
 import type { BaseMap } from '@/components/MapSwitcher'
+import type { GeoPoint } from '@/lib/geopoints'
 
 export function SharedViewer() {
   const { token } = useParams<{ token: string }>()
@@ -24,6 +25,8 @@ export function SharedViewer() {
   const [measureResult, setMeasureResult] = useState<string | null>(null)
   const [visualSettings, setVisualSettings] = useState<VisualSettings>(DEFAULT_VISUAL)
   const [baseMap, setBaseMap] = useState<BaseMap>('none')
+  const [geopoints, setGeopoints] = useState<GeoPoint[]>([])
+  const [geopointActive, setGeopointActive] = useState(false)
 
   // Edit panel state — mirrors model for live preview
   const [editModel, setEditModel] = useState<Model | null>(null)
@@ -36,11 +39,28 @@ export function SharedViewer() {
     if (!token) { setErr('Invalid link'); return }
     resolveShareToken(token)
       .then(({ model: m, can_edit }) => {
-        setModel(m)
-        setEditModel(m)
+        // Log the model object for debugging
+        console.log('[SharedViewer] Loaded model:', m)
+        // Defensive: ensure all required fields exist
+        const safeModel = {
+          ...m,
+          name: m.name ?? '',
+          description: m.description ?? '',
+          file_key: m.file_key ?? '',
+          file_type: m.file_type ?? '',
+          external_url: m.external_url ?? '',
+          coordinate_system: m.coordinate_system ?? '',
+          geoid_offset: typeof m.geoid_offset === 'number' ? m.geoid_offset : 0,
+          show_watermark: typeof m.show_watermark === 'number' ? m.show_watermark : 0,
+        }
+        setModel(safeModel)
+        setEditModel(safeModel)
         setCanEdit(can_edit)
       })
-      .catch(() => setErr('This link is invalid or has been removed.'))
+      .catch((e) => {
+        setErr('This link is invalid or has been removed.')
+        console.error('[SharedViewer] Failed to resolve share token:', e)
+      })
   }, [token])
 
   // Resolve model URL
@@ -142,6 +162,9 @@ export function SharedViewer() {
           onMeasureResult={setMeasureResult}
           visualSettings={visualSettings}
           baseMap={baseMap}
+          geopointActive={geopointActive}
+          geopoints={geopoints}
+          onGeopointAdd={(pt) => setGeopoints((prev) => [...prev, pt])}
         />
         <MeasureToolbar
           mode={measureMode}
@@ -149,6 +172,12 @@ export function SharedViewer() {
           baseElevation={baseElevation}
           onBaseElevationChange={setBaseElevation}
           result={measureResult}
+          geopointActive={geopointActive}
+          onGeopointToggle={() => setGeopointActive((v) => !v)}
+          geopoints={geopoints}
+          onGeopointDelete={(id) => setGeopoints((prev) => prev.filter((p) => p.id !== id))}
+          onGeopointNote={(id, note) => setGeopoints((prev) => prev.map((p) => p.id === id ? { ...p, note } : p))}
+          onGeopointClear={() => { setGeopoints([]); setGeopointActive(false) }}
         />
         <VisualControls settings={visualSettings} onChange={setVisualSettings} />
         <MapSwitcher value={baseMap} onChange={setBaseMap} />
