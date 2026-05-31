@@ -207,7 +207,8 @@ export function MeasureToolbar({
                   </button>
                 ))}
               </div>
-              <button onClick={() => exportCsv(geopoints, exportCrs)} title={`Export CSV (${exportCrs.toUpperCase()})`}
+              <button onClick={() => { void exportCsv(geopoints, exportCrs) }}
+                title={`Export CSV (${exportCrs.toUpperCase()}) — ZIP with thumbnails if any point has one`}
                 className="flex items-center gap-1 h-5 px-1.5 rounded text-[9px] font-medium
                            text-white/40 hover:text-white/70 border border-white/[0.10] hover:border-white/20 transition-all">
                 <FileText size={9} />CSV

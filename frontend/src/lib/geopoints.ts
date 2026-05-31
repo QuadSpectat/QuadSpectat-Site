@@ -69,27 +69,53 @@ export function wgs84ToItm(latDeg: number, lonDeg: number): { easting: number; n
 
 // ── CSV export ────────────────────────────────────────────────────────────────
 
-export function exportCsv(points: GeoPoint[], crs: ExportCrs = 'wgs84'): void {
-  let rows: string[]
+// When any point has a thumbnail, the export is a ZIP bundle containing the
+// CSV plus a `thumbs/` folder of JPEGs; the CSV's Thumbnail column references
+// each file by name (e.g. `thumbs/p3.jpg`). When no thumbnails are present,
+// falls back to a plain CSV file.
+export async function exportCsv(points: GeoPoint[], crs: ExportCrs = 'wgs84'): Promise<void> {
+  const hasThumbs = points.some((p) => p.thumbnail)
 
+  let header: string
+  let dataRows: string[]
   if (crs === 'itm') {
-    rows = [
-      'Point,Label,Easting (m),Northing (m),Altitude (m),Note',
-      ...points.map((p, i) => {
-        const { easting, northing } = wgs84ToItm(p.lat, p.lon)
-        return `${i + 1},${p.label},${easting.toFixed(3)},${northing.toFixed(3)},${p.alt.toFixed(2)},"${p.note.replace(/"/g, '""')}"`
-      }),
-    ]
+    header = 'Point,Label,Easting (m),Northing (m),Altitude (m),Note'
+    dataRows = points.map((p, i) => {
+      const { easting, northing } = wgs84ToItm(p.lat, p.lon)
+      return `${i + 1},${p.label},${easting.toFixed(3)},${northing.toFixed(3)},${p.alt.toFixed(2)},"${p.note.replace(/"/g, '""')}"`
+    })
   } else {
-    rows = [
-      'Point,Label,Latitude (°),Longitude (°),Altitude (m),Note',
-      ...points.map((p, i) =>
-        `${i + 1},${p.label},${p.lat.toFixed(7)},${p.lon.toFixed(7)},${p.alt.toFixed(2)},"${p.note.replace(/"/g, '""')}"`
-      ),
-    ]
+    header = 'Point,Label,Latitude (°),Longitude (°),Altitude (m),Note'
+    dataRows = points.map((p, i) =>
+      `${i + 1},${p.label},${p.lat.toFixed(7)},${p.lon.toFixed(7)},${p.alt.toFixed(2)},"${p.note.replace(/"/g, '""')}"`
+    )
   }
 
-  triggerDownload('﻿' + rows.join('\r\n'), `geopoints_${crs}.csv`, 'text/csv;charset=utf-8')
+  if (hasThumbs) {
+    header += ',Thumbnail'
+    dataRows = dataRows.map((row, i) =>
+      row + (points[i].thumbnail ? `,thumbs/p${i + 1}.jpg` : ',')
+    )
+  }
+
+  const csvText = '﻿' + [header, ...dataRows].join('\r\n')
+
+  if (!hasThumbs) {
+    triggerDownload(csvText, `geopoints_${crs}.csv`, 'text/csv;charset=utf-8')
+    return
+  }
+
+  const { default: JSZip } = await import('jszip')
+  const zip = new JSZip()
+  zip.file('geopoints.csv', csvText)
+  const thumbs = zip.folder('thumbs')!
+  points.forEach((p, i) => {
+    if (!p.thumbnail) return
+    const b64 = p.thumbnail.split(',')[1]
+    if (b64) thumbs.file(`p${i + 1}.jpg`, b64, { base64: true })
+  })
+  const blob = await zip.generateAsync({ type: 'blob' })
+  triggerBlobDownload(blob, `geopoints_${crs}.zip`)
 }
 
 // ── HTML report export (with embedded thumbnails) ────────────────────────────
@@ -194,7 +220,10 @@ function escapeXml(s: string) {
 }
 
 function triggerDownload(content: string, filename: string, mime: string) {
-  const blob = new Blob([content], { type: mime })
+  triggerBlobDownload(new Blob([content], { type: mime }), filename)
+}
+
+function triggerBlobDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
