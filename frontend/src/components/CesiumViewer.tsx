@@ -621,15 +621,25 @@ export function CesiumViewer({
           tileHeight: 256,
           credit: '',
         }
-        if (photo.bounds_west !== null && photo.bounds_south !== null &&
-            photo.bounds_east !== null && photo.bounds_north !== null) {
-          // Small buffer so edge tiles are never cut off by rounding in bounds
+        // Only set a bounding rectangle when every bound is a finite number AND
+        // east>west / north>south. Anything else (null, undefined, NaN, degenerate)
+        // would yield an invalid Rectangle and Cesium would silently never fetch tiles.
+        const w = photo.bounds_west, e = photo.bounds_east
+        const s = photo.bounds_south, n = photo.bounds_north
+        const validBounds =
+          Number.isFinite(w) && Number.isFinite(e) && Number.isFinite(s) && Number.isFinite(n)
+          && (e as number) > (w as number) && (n as number) > (s as number)
+        if (validBounds) {
           const buf = 0.002
           providerOpts.rectangle = Cesium.Rectangle.fromDegrees(
-            photo.bounds_west - buf, photo.bounds_south - buf,
-            photo.bounds_east + buf, photo.bounds_north + buf,
+            (w as number) - buf, (s as number) - buf,
+            (e as number) + buf, (n as number) + buf,
           )
         }
+        console.log('[ortho] add layer', photo.id, photo.name, {
+          visible: photo.visible, opacity: photo.opacity, validBounds,
+          bounds: [w, s, e, n], zoom: [photo.zoom_min, photo.zoom_max],
+        })
         const provider = new Cesium.UrlTemplateImageryProvider(providerOpts)
         const layer    = v.imageryLayers.addImageryProvider(provider)
         layer.show  = photo.visible
