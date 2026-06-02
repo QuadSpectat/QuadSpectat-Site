@@ -1,4 +1,4 @@
-/**
+﻿/**
  * AdminPage — Backoffice for uploading and managing models & orthophotos.
  * Route: /admin
  */
@@ -249,15 +249,41 @@ function useToasts() {
   return { toasts, add, remove }
 }
 
-// ─── Upload Model Modal ───────────────────────────────────────────────────────
+// ─── Unified Upload Asset Modal ───────────────────────────────────────────────
 
+const ORTHO_FORMATS: Record<string, string> = {
+  'tif': 'GeoTIFF', 'tiff': 'GeoTIFF', 'ecw': 'ECW', 'jp2': 'JPEG2000',
+  'j2k': 'JPEG2000', 'sid': 'MrSID',
+}
+
+type AssetType = 'model' | 'orthophoto'
 type ModelInputMode = 'file' | 'url'
 
-function UploadModelModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
-  const [mode, setMode] = useState<ModelInputMode>('file')
-  const [file, setFile] = useState<File | null>(null)
+interface UploadAssetModalProps {
+  onClose: () => void
+  onSuccess: () => void
+  /** All existing asset names (models + orthophotos) for the asset dropdown */
+  existingAssets: string[]
+  /** All existing watermark texts for the watermark dropdown */
+  existingWatermarks: string[]
+}
+
+function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermarks }: UploadAssetModalProps) {
+  // ── Step 1: Asset ─────────────────────────────────────────────────────────
+  const [assetMode, setAssetMode] = useState<'select' | 'new'>(existingAssets.length === 0 ? 'new' : 'select')
+  const [selectedAsset, setSelectedAsset] = useState(existingAssets[0] ?? '')
+  const [newAssetName, setNewAssetName] = useState('')
+
+  // ── Step 2: Type ──────────────────────────────────────────────────────────
+  const [assetType, setAssetType] = useState<AssetType>('model')
+
+  // ── Step 3: Name + content ────────────────────────────────────────────────
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+
+  // Model-specific
+  const [modelMode, setModelMode] = useState<ModelInputMode>('file')
+  const [modelFile, setModelFile] = useState<File | null>(null)
   const [tilesUrl, setTilesUrl] = useState('')
   const [lon, setLon] = useState('0')
   const [lat, setLat] = useState('0')
@@ -269,50 +295,122 @@ function UploadModelModal({ onClose, onSuccess }: { onClose: () => void; onSucce
   const [crsValue, setCrsValue] = useState('itm')
   const [customOffset, setCustomOffset] = useState('-17.5')
   const [showTransform, setShowTransform] = useState(false)
+
+  // Orthophoto-specific
+  const [orthoFile, setOrthoFile] = useState<File | null>(null)
+  const [cogReady, setCogReady] = useState(false)
+
+  // ── Step 4: Watermark ─────────────────────────────────────────────────────
   const [showWatermark, setShowWatermark] = useState(true)
+  // watermarkSelection: '' = none, '__custom__' = custom text, or a known watermark string
+  const [watermarkSelection, setWatermarkSelection] = useState<string>(
+    existingWatermarks.length > 0 ? existingWatermarks[0] : ''
+  )
+  const [customWatermark, setCustomWatermark] = useState('')
+
+  // ── Upload state ──────────────────────────────────────────────────────────
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
 
-  function handleFileDrop(f: File) {
-    setFile(f)
+  const assetName = assetMode === 'new' ? newAssetName.trim() : selectedAsset
+
+  function resolvedCrs() {
+    const preset = CRS_PRESETS.find((p) => p.value === crsValue)!
+    const geoid_offset = preset.offset !== null ? preset.offset : parseFloat(customOffset) || 0
+    return { coordinate_system: crsValue, geoid_offset }
+  }
+
+  function resolvedWatermarkText(): string {
+    if (watermarkSelection === '' || watermarkSelection === '__custom__') {
+      return watermarkSelection === '__custom__' ? customWatermark.trim() : ''
+    }
+    return watermarkSelection
+  }
+
+  function handleModelFileDrop(f: File) {
+    setModelFile(f)
+    if (!name) setName(f.name.replace(/\.[^.]+$/, ''))
+  }
+
+  function handleOrthoFileDrop(f: File) {
+    setOrthoFile(f)
     if (!name) setName(f.name.replace(/\.[^.]+$/, ''))
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    if (!assetName) { setError('Asset name is required'); return }
+    if (!name.trim()) { setError('Name is required'); return }
     setError(null)
     setUploading(true)
+    setProgress(0)
+
     try {
-      const { coordinate_system, geoid_offset } = resolveCrs(crsValue, customOffset)
-      if (mode === 'file') {
-        if (!file) throw new Error('No file selected')
-        const ct = file.name.endsWith('.glb') ? 'model/gltf-binary' : 'model/gltf+json'
-        const { key, url } = await presignUpload(file.name, ct)
-        setProgress(10)
-        await uploadToSpaces(url, file, (p) => setProgress(10 + p * 0.85))
-        setProgress(95)
-        await createModel({
-          asset_name: name,
-          name, description: description || undefined, file_key: key,
-          file_size: file.size, file_type: ct,
-          longitude: parseFloat(lon), latitude: parseFloat(lat), altitude: parseFloat(alt),
-          heading: parseFloat(heading), pitch: parseFloat(pitch), roll: parseFloat(roll),
-          scale: parseFloat(scale), coordinate_system, geoid_offset,
-          show_watermark: showWatermark,
-        })
+      if (assetType === 'model') {
+        const { coordinate_system, geoid_offset } = resolvedCrs()
+        const wt = resolvedWatermarkText()
+
+        if (modelMode === 'file') {
+          if (!modelFile) throw new Error('Select a model file first')
+          const ct = modelFile.name.endsWith('.glb') ? 'model/gltf-binary' : 'model/gltf+json'
+          const { key, url } = await presignUpload(modelFile.name, ct)
+          setProgress(10)
+          await uploadToSpaces(url, modelFile, (p) => setProgress(10 + p * 0.85))
+          setProgress(95)
+          await createModel({
+            asset_name: assetName,
+            name: name.trim(),
+            description: description.trim() || undefined,
+            file_key: key,
+            file_size: modelFile.size,
+            file_type: ct,
+            longitude: parseFloat(lon),
+            latitude: parseFloat(lat),
+            altitude: parseFloat(alt),
+            heading: parseFloat(heading),
+            pitch: parseFloat(pitch),
+            roll: parseFloat(roll),
+            scale: parseFloat(scale),
+            coordinate_system,
+            geoid_offset,
+            show_watermark: showWatermark,
+            watermark_text: wt,
+          })
+        } else {
+          if (!tilesUrl.trim()) throw new Error('URL is required')
+          if (!tilesUrl.endsWith('.json')) throw new Error('URL must point to a .json tileset file (e.g. tileset.json)')
+          await createModel({
+            asset_name: assetName,
+            name: name.trim(),
+            description: description.trim() || undefined,
+            external_url: tilesUrl.trim(),
+            model_type: '3d-tiles',
+            coordinate_system,
+            geoid_offset,
+            show_watermark: showWatermark,
+            watermark_text: wt,
+          })
+        }
       } else {
-        if (!tilesUrl) throw new Error('URL is required')
-        if (!tilesUrl.endsWith('.json')) throw new Error('URL must point to a .json tileset file (e.g. tileset.json)')
-        await createModel({
-          asset_name: name,
-          name, description: description || undefined,
-          external_url: tilesUrl, model_type: '3d-tiles',
-          longitude: parseFloat(lon), latitude: parseFloat(lat), altitude: parseFloat(alt),
-          coordinate_system, geoid_offset,
-          show_watermark: showWatermark,
-        })
+        // Orthophoto
+        if (!orthoFile) throw new Error('Select a file first')
+        const ext = orthoFile.name.split('.').pop()?.toLowerCase() ?? 'tif'
+        const original_format = ORTHO_FORMATS[ext] ?? ext.toUpperCase()
+        const { key, url } = await presignOrthophotoUpload(orthoFile.name, 'application/octet-stream')
+        setProgress(5)
+        await uploadToSpaces(url, orthoFile, (p) => setProgress(5 + p * 0.9))
+        setProgress(95)
+        await createOrthophoto({
+          asset_name: assetName,
+          name: name.trim(),
+          description: description.trim() || undefined,
+          raw_key: key,
+          original_format,
+          cog_ready: cogReady || undefined,
+        } satisfies CreateOrthophotoPayload)
       }
+
       setProgress(100)
       onSuccess()
       onClose()
@@ -326,212 +424,176 @@ function UploadModelModal({ onClose, onSuccess }: { onClose: () => void; onSucce
   const crsPreset = CRS_PRESETS.find((p) => p.value === crsValue)!
 
   return (
-    <Modal title="Upload Model" onClose={onClose}>
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        {/* Mode switcher */}
-        <div className="flex rounded-lg border border-white/10 overflow-hidden">
-          {(['file', 'url'] as const).map((m) => (
-            <button key={m} type="button" onClick={() => { setMode(m); setError(null) }}
-              className={cn('flex-1 py-2 text-xs font-medium transition-colors',
-                mode === m ? 'bg-indigo-600 text-white' : 'text-white/50 hover:text-white hover:bg-white/5'
-              )}>
-              {m === 'file' ? '📁 File Upload (GLB / GLTF)' : '🔗 3D Tiles URL'}
-            </button>
-          ))}
-        </div>
+    <Modal title="Upload Asset" onClose={onClose}>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-5">
 
-        {/* File drop / URL input */}
-        {mode === 'file' ? (
-          file ? (
-            <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10">
-              <Box size={18} className="text-indigo-400 shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-white truncate">{file.name}</p>
-                <p className="text-[11px] text-white/40">{formatBytes(file.size)}</p>
-              </div>
-              <button type="button" onClick={() => setFile(null)} className="text-white/30 hover:text-red-400 transition-colors"><X size={14} /></button>
+        {/* ── Asset Name ─────────────────────────────────────────────────── */}
+        <div className="flex flex-col gap-2">
+          <span className="text-xs font-semibold text-white/60 uppercase tracking-wider">1. Asset</span>
+          {existingAssets.length > 0 && (
+            <div className="flex rounded-lg border border-white/10 overflow-hidden">
+              {(['select', 'new'] as const).map((m) => (
+                <button key={m} type="button" onClick={() => setAssetMode(m)}
+                  className={cn('flex-1 py-1.5 text-xs font-medium transition-colors',
+                    assetMode === m ? 'bg-indigo-600 text-white' : 'text-white/50 hover:text-white hover:bg-white/5')}>
+                  {m === 'select' ? 'Existing asset' : '➕ New asset'}
+                </button>
+              ))}
             </div>
+          )}
+          {assetMode === 'select' ? (
+            <select value={selectedAsset} onChange={(e) => setSelectedAsset(e.target.value)}
+              className="h-8 rounded-md border border-white/10 bg-[#0d1220] px-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors">
+              {existingAssets.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
           ) : (
-            <DropZone accept=".glb,.gltf" onFile={handleFileDrop} label="Drop GLB / GLTF here or click to browse" sublabel=".glb, .gltf — max 2 GB" />
-          )
-        ) : (
-          <Field label="Tileset URL" value={tilesUrl} onChange={setTilesUrl} required
-            placeholder="https://example.com/tileset/tileset.json"
-            hint="Must point directly to the root .json tileset file" />
-        )}
-
-        {/* Name + description */}
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Name" value={name} onChange={setName} required className="col-span-2" />
-          <Field label="Description" value={description} onChange={setDescription} placeholder="Optional" className="col-span-2" />
-        </div>
-
-        {/* CRS */}
-        <Select
-          label="Coordinate System"
-          value={crsValue}
-          onChange={setCrsValue}
-          options={CRS_PRESETS.map((p) => ({ value: p.value, label: p.label }))}
-          hint={crsPreset.hint}
-        />
-        {crsValue === 'custom' && (
-          <Field label="Geoid Offset (m)" value={customOffset} onChange={setCustomOffset} type="number" step="0.1" />
-        )}
-
-        {/* Transform (collapsible) */}
-        <div>
-          <button type="button" onClick={() => setShowTransform((s) => !s)}
-            className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white/70 transition-colors">
-            <ChevronRight size={13} className={cn('transition-transform', showTransform && 'rotate-90')} />
-            Position &amp; Orientation
-          </button>
-          {showTransform && (
-            <div className="mt-3 grid grid-cols-3 gap-3">
-              <Field label="Longitude (°)" value={lon} onChange={setLon} type="number" step="any" />
-              <Field label="Latitude (°)" value={lat} onChange={setLat} type="number" step="any" />
-              <Field label="Altitude (m)" value={alt} onChange={setAlt} type="number" step="any" />
-              <Field label="Heading (°)" value={heading} onChange={setHeading} type="number" step="any" />
-              <Field label="Pitch (°)" value={pitch} onChange={setPitch} type="number" step="any" />
-              <Field label="Roll (°)" value={roll} onChange={setRoll} type="number" step="any" />
-              <Field label="Scale" value={scale} onChange={setScale} type="number" step="any" />
-            </div>
+            <input type="text" value={newAssetName} onChange={(e) => setNewAssetName(e.target.value)}
+              placeholder="New asset name…" required
+              className="h-8 rounded-md border border-white/10 bg-white/5 px-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-indigo-500 transition-colors" />
           )}
         </div>
 
-        <label className="flex items-center gap-2.5 cursor-pointer select-none">
-          <input type="checkbox" checked={showWatermark} onChange={(e) => setShowWatermark(e.target.checked)}
-            className="h-4 w-4 rounded border-white/20 bg-white/5 accent-indigo-500" />
-          <span className="text-xs text-white/60">
-            Show watermark
-            <span className="text-white/30"> — display company branding on this model</span>
-          </span>
-        </label>
-
-        {error && (
-          <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-400">
-            <AlertCircle size={13} className="mt-0.5 shrink-0" />{error}
+        {/* ── Type ───────────────────────────────────────────────────────── */}
+        <div className="flex flex-col gap-2">
+          <span className="text-xs font-semibold text-white/60 uppercase tracking-wider">2. Type</span>
+          <div className="flex rounded-lg border border-white/10 overflow-hidden">
+            {([['model', '📦 3D Model'], ['orthophoto', '🗺 Orthophoto']] as const).map(([t, label]) => (
+              <button key={t} type="button" onClick={() => setAssetType(t)}
+                className={cn('flex-1 py-2 text-xs font-medium transition-colors',
+                  assetType === t ? 'bg-indigo-600 text-white' : 'text-white/50 hover:text-white hover:bg-white/5')}>
+                {label}
+              </button>
+            ))}
           </div>
-        )}
-
-        {uploading && <ProgressBar pct={progress} />}
-
-        <div className="flex gap-2 pt-1">
-          <button type="button" onClick={onClose} disabled={uploading}
-            className="flex-1 h-9 rounded-lg border border-white/10 text-xs font-medium text-white/60 hover:text-white hover:border-white/25 transition-colors disabled:opacity-40">
-            Cancel
-          </button>
-          <button type="submit" disabled={uploading || (mode === 'file' && !file)}
-            className="flex-1 h-9 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white transition-colors disabled:opacity-40 flex items-center justify-center gap-1.5">
-            {uploading ? <><Loader2 size={13} className="animate-spin" />Uploading…</> : <><Upload size={13} />Upload</>}
-          </button>
         </div>
-      </form>
-    </Modal>
-  )
-}
 
-// ─── Upload Orthophoto Modal ──────────────────────────────────────────────────
+        {/* ── Name + Description ─────────────────────────────────────────── */}
+        <div className="flex flex-col gap-2">
+          <span className="text-xs font-semibold text-white/60 uppercase tracking-wider">3. Details</span>
+          <Field label="Display Name" value={name} onChange={setName} required placeholder="e.g. Site A – May 2026" />
+          <Field label="Description" value={description} onChange={setDescription} placeholder="Optional notes" />
+        </div>
 
-const ORTHO_FORMATS: Record<string, string> = {
-  'tif': 'GeoTIFF', 'tiff': 'GeoTIFF', 'ecw': 'ECW', 'jp2': 'JPEG2000',
-  'j2k': 'JPEG2000', 'sid': 'MrSID',
-}
-
-function UploadOrthophotoModal({ onClose, onCreated }: { onClose: () => void; onCreated: (o: Orthophoto) => void }) {
-  const [file, setFile] = useState<File | null>(null)
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
-  const [cogReady, setCogReady] = useState(false)
-  const [uploading, setUploading] = useState(false)
-  const [progress, setProgress] = useState(0)
-  const [error, setError] = useState<string | null>(null)
-
-  function handleFileDrop(f: File) {
-    setFile(f)
-    if (!name) setName(f.name.replace(/\.[^.]+$/, ''))
-  }
-
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault()
-    if (!file) return
-    setError(null)
-    setUploading(true)
-    setProgress(0)
-    try {
-      const ext = file.name.split('.').pop()?.toLowerCase() ?? 'tif'
-      const original_format = ORTHO_FORMATS[ext] ?? ext.toUpperCase()
-      const ct = 'application/octet-stream'
-      const { key, url } = await presignOrthophotoUpload(file.name, ct)
-      setProgress(5)
-      await uploadToSpaces(url, file, (p) => setProgress(5 + p * 0.9))
-      setProgress(95)
-      const ortho = await createOrthophoto({ asset_name: name, name, description: description || undefined, raw_key: key, original_format, cog_ready: cogReady || undefined } satisfies CreateOrthophotoPayload)
-      setProgress(100)
-      onCreated(ortho)
-      onClose()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setUploading(false)
-    }
-  }
-
-  return (
-    <Modal title="Upload Orthophoto" onClose={onClose}>
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        {file ? (
-          <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10">
-            <FileImage size={18} className="text-emerald-400 shrink-0" />
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-white truncate">{file.name}</p>
-              <p className="text-[11px] text-white/40">{formatBytes(file.size)} · {ORTHO_FORMATS[file.name.split('.').pop()?.toLowerCase() ?? ''] ?? 'Raster'}</p>
+        {/* ── Content (type-conditional) ─────────────────────────────────── */}
+        {assetType === 'model' ? (
+          <div className="flex flex-col gap-3">
+            {/* Mode switcher */}
+            <div className="flex rounded-lg border border-white/10 overflow-hidden">
+              {(['file', 'url'] as const).map((m) => (
+                <button key={m} type="button" onClick={() => { setModelMode(m); setError(null) }}
+                  className={cn('flex-1 py-1.5 text-xs font-medium transition-colors',
+                    modelMode === m ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white hover:bg-white/5')}>
+                  {m === 'file' ? '📁 GLB / GLTF file' : '🔗 3D Tiles URL'}
+                </button>
+              ))}
             </div>
-            <button type="button" onClick={() => setFile(null)} className="text-white/30 hover:text-red-400 transition-colors"><X size={14} /></button>
+            {modelMode === 'file' ? (
+              modelFile ? (
+                <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10">
+                  <Box size={18} className="text-indigo-400 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-white truncate">{modelFile.name}</p>
+                    <p className="text-[11px] text-white/40">{formatBytes(modelFile.size)}</p>
+                  </div>
+                  <button type="button" onClick={() => setModelFile(null)} className="text-white/30 hover:text-red-400 transition-colors"><X size={14} /></button>
+                </div>
+              ) : (
+                <DropZone accept=".glb,.gltf" onFile={handleModelFileDrop} label="Drop GLB / GLTF here or click to browse" sublabel=".glb, .gltf — max 2 GB" />
+              )
+            ) : (
+              <Field label="Tileset URL" value={tilesUrl} onChange={setTilesUrl} required
+                placeholder="https://example.com/tileset/tileset.json"
+                hint="Must point directly to the root .json tileset file" />
+            )}
+            <Select label="Coordinate System" value={crsValue} onChange={setCrsValue}
+              options={CRS_PRESETS.map((p) => ({ value: p.value, label: p.label }))}
+              hint={crsPreset.hint} />
+            {crsValue === 'custom' && (
+              <Field label="Geoid Offset (m)" value={customOffset} onChange={setCustomOffset} type="number" step="0.1" />
+            )}
+            <div>
+              <button type="button" onClick={() => setShowTransform((s) => !s)}
+                className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white/70 transition-colors">
+                <ChevronRight size={13} className={cn('transition-transform', showTransform && 'rotate-90')} />
+                Position &amp; Orientation (optional)
+              </button>
+              {showTransform && (
+                <div className="mt-3 grid grid-cols-3 gap-3">
+                  <Field label="Longitude (°)" value={lon} onChange={setLon} type="number" step="any" />
+                  <Field label="Latitude (°)" value={lat} onChange={setLat} type="number" step="any" />
+                  <Field label="Altitude (m)" value={alt} onChange={setAlt} type="number" step="any" />
+                  <Field label="Heading (°)" value={heading} onChange={setHeading} type="number" step="any" />
+                  <Field label="Pitch (°)" value={pitch} onChange={setPitch} type="number" step="any" />
+                  <Field label="Roll (°)" value={roll} onChange={setRoll} type="number" step="any" />
+                  <Field label="Scale" value={scale} onChange={setScale} type="number" step="any" />
+                </div>
+              )}
+            </div>
           </div>
         ) : (
-          <DropZone
-            accept=".tif,.tiff,.ecw,.jp2,.j2k,.sid"
-            onFile={handleFileDrop}
-            label="Drop orthophoto here or click to browse"
-            sublabel="GeoTIFF · ECW · JPEG2000 · MrSID"
-          />
+          <div className="flex flex-col gap-3">
+            {orthoFile ? (
+              <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10">
+                <FileImage size={18} className="text-emerald-400 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-white truncate">{orthoFile.name}</p>
+                  <p className="text-[11px] text-white/40">{formatBytes(orthoFile.size)} · {ORTHO_FORMATS[orthoFile.name.split('.').pop()?.toLowerCase() ?? ''] ?? 'Raster'}</p>
+                </div>
+                <button type="button" onClick={() => setOrthoFile(null)} className="text-white/30 hover:text-red-400 transition-colors"><X size={14} /></button>
+              </div>
+            ) : (
+              <DropZone accept=".tif,.tiff,.ecw,.jp2,.j2k,.sid" onFile={handleOrthoFileDrop}
+                label="Drop orthophoto here or click to browse"
+                sublabel="GeoTIFF · ECW · JPEG2000 · MrSID" />
+            )}
+            <label className="flex items-center gap-2.5 cursor-pointer select-none">
+              <input type="checkbox" checked={cogReady} onChange={(e) => setCogReady(e.target.checked)}
+                className="h-4 w-4 rounded border-white/20 bg-white/5 accent-emerald-500" />
+              <span className="text-xs text-white/60">File is already a Cloud-Optimized GeoTIFF in EPSG:3857
+                <span className="text-white/30"> (skip server-side conversion)</span>
+              </span>
+            </label>
+          </div>
         )}
 
-        <Field label="Name" value={name} onChange={setName} required />
-        <Field label="Description" value={description} onChange={setDescription} placeholder="Optional notes" />
+        {/* ── Watermark (model only) ─────────────────────────────────────── */}
+        {assetType === 'model' && (
+          <div className="flex flex-col gap-2">
+            <span className="text-xs font-semibold text-white/60 uppercase tracking-wider">4. Watermark</span>
+            <label className="flex items-center gap-2.5 cursor-pointer select-none">
+              <input type="checkbox" checked={showWatermark} onChange={(e) => setShowWatermark(e.target.checked)}
+                className="h-4 w-4 rounded border-white/20 bg-white/5 accent-indigo-500" />
+              <span className="text-xs text-white/60">Show watermark on this model</span>
+            </label>
+            {showWatermark && (
+              <>
+                <select
+                  value={watermarkSelection}
+                  onChange={(e) => setWatermarkSelection(e.target.value)}
+                  className="h-8 rounded-md border border-white/10 bg-[#0d1220] px-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                >
+                  <option value="">— No watermark text —</option>
+                  {existingWatermarks.map((w) => (
+                    <option key={w} value={w}>{w}</option>
+                  ))}
+                  <option value="__custom__">✏️ Custom watermark text…</option>
+                </select>
+                {watermarkSelection === '__custom__' && (
+                  <input type="text" value={customWatermark} onChange={(e) => setCustomWatermark(e.target.value)}
+                    placeholder="e.g. אא מערכות מידע בע״מ"
+                    className="h-8 rounded-md border border-white/10 bg-white/5 px-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-indigo-500 transition-colors" />
+                )}
+              </>
+            )}
+          </div>
+        )}
 
-        <label className="flex items-center gap-2.5 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={cogReady}
-            onChange={(e) => setCogReady(e.target.checked)}
-            className="h-4 w-4 rounded border-white/20 bg-white/5 accent-emerald-500"
-          />
-          <span className="text-xs text-white/60">
-            File is already a Cloud-Optimized GeoTIFF in EPSG:3857
-            <span className="text-white/30"> (skip server-side processing)</span>
-          </span>
-        </label>
-
-        <div className={cn(
-          'flex items-start gap-2 px-3 py-2.5 rounded-lg border text-xs',
-          cogReady
-            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
-            : 'bg-blue-500/10 border-blue-500/20 text-blue-300',
-        )}>
-          <Info size={13} className="mt-0.5 shrink-0" />
-          {cogReady
-            ? <span>File will be registered as-is — bounds and zoom level will be read directly from the COG. No server-side processing.</span>
-            : <span>The file will be reprojected to Web Mercator and converted to Cloud-Optimized GeoTIFF on the server. Processing may take a few minutes for large files.</span>
-          }
-        </div>
-
+        {/* ── Errors + progress ─────────────────────────────────────────── */}
         {error && (
           <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-400">
             <AlertCircle size={13} className="mt-0.5 shrink-0" />{error}
           </div>
         )}
-
         {uploading && <ProgressBar pct={progress} />}
 
         <div className="flex gap-2 pt-1">
@@ -539,9 +601,9 @@ function UploadOrthophotoModal({ onClose, onCreated }: { onClose: () => void; on
             className="flex-1 h-9 rounded-lg border border-white/10 text-xs font-medium text-white/60 hover:text-white hover:border-white/25 transition-colors disabled:opacity-40">
             Cancel
           </button>
-          <button type="submit" disabled={uploading || !file}
-            className="flex-1 h-9 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-xs font-semibold text-white transition-colors disabled:opacity-40 flex items-center justify-center gap-1.5">
-            {uploading ? <><Loader2 size={13} className="animate-spin" />Uploading…</> : <><Upload size={13} />Upload &amp; Process</>}
+          <button type="submit" disabled={uploading || !assetName}
+            className="flex-1 h-9 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white transition-colors disabled:opacity-40 flex items-center justify-center gap-1.5">
+            {uploading ? <><Loader2 size={13} className="animate-spin" />Uploading…</> : <><Upload size={13} />Upload</>}
           </button>
         </div>
       </form>
@@ -1236,8 +1298,7 @@ export function AdminPage() {
   const [orthophotos, setOrthophotos] = useState<Orthophoto[]>([])
   const [modelsLoading, setModelsLoading] = useState(false)
   const [orthosLoading, setOrthosLoading] = useState(false)
-  const [showUploadModel, setShowUploadModel] = useState(false)
-  const [showUploadOrtho, setShowUploadOrtho] = useState(false)
+  const [showUpload, setShowUpload] = useState(false)
   const { toasts, add: addToast, remove: removeToast } = useToasts()
 
   // ── Auth state ─────────────────────────────────────────────────────────────
@@ -1403,7 +1464,7 @@ export function AdminPage() {
                 models={models} loading={modelsLoading}
                 onRefresh={fetchModels}
                 onDelete={(id) => setModels((ms) => ms.filter((m) => m.id !== id))}
-                onUpload={() => setShowUploadModel(true)}
+                onUpload={() => setShowUpload(true)}
                 toast={addToast}
               />
             </>
@@ -1415,7 +1476,7 @@ export function AdminPage() {
                 orthophotos={orthophotos} loading={orthosLoading}
                 onRefresh={fetchOrthos}
                 onDelete={(id) => setOrthophotos((os) => os.filter((o) => o.id !== id))}
-                onUpload={() => setShowUploadOrtho(true)}
+                onUpload={() => setShowUpload(true)}
                 toast={addToast}
               />
             </>
@@ -1442,22 +1503,27 @@ export function AdminPage() {
       </main>
 
       {/* Modals */}
-      {showUploadModel && (
-        <UploadModelModal
-          onClose={() => setShowUploadModel(false)}
-          onSuccess={() => { addToast('success', 'Model uploaded successfully'); void fetchModels() }}
-        />
-      )}
-      {showUploadOrtho && (
-        <UploadOrthophotoModal
-          onClose={() => setShowUploadOrtho(false)}
-          onCreated={(o) => {
-            addToast('info', `"${o.name}" uploaded — processing started`)
-            setOrthophotos((os) => [o, ...os])
-            setActiveTab('orthophotos')
-          }}
-        />
-      )}
+      {showUpload && (() => {
+        const existingAssets = [...new Set([
+          ...models.map((m) => m.asset_name).filter(Boolean),
+          ...orthophotos.map((o) => o.asset_name).filter(Boolean),
+        ])]
+        const existingWatermarks = [...new Set(
+          models.map((m) => m.watermark_text).filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
+        )]
+        return (
+          <UploadAssetModal
+            onClose={() => setShowUpload(false)}
+            onSuccess={() => {
+              addToast('success', 'Upload complete')
+              void fetchModels()
+              void fetchOrthos()
+            }}
+            existingAssets={existingAssets}
+            existingWatermarks={existingWatermarks}
+          />
+        )
+      })()}
 
       <ToastStack toasts={toasts} onRemove={removeToast} />
     </div>

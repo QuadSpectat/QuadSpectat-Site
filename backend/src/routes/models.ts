@@ -39,7 +39,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     const {
       asset_name, name, file_key, file_size, file_type, description,
       longitude, latitude, altitude, heading, pitch, roll, scale,
-      model_type, external_url, coordinate_system, geoid_offset, show_watermark,
+      model_type, external_url, coordinate_system, geoid_offset, show_watermark, watermark_text,
     } = req.body as Record<string, unknown>
 
     if (!asset_name || typeof asset_name !== 'string') {
@@ -55,8 +55,8 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       `INSERT INTO models
          (id, asset_name, name, description, file_key, file_size, file_type,
           longitude, latitude, altitude, heading, pitch, roll, scale,
-          model_type, external_url, coordinate_system, geoid_offset, show_watermark)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+          model_type, external_url, coordinate_system, geoid_offset, show_watermark, watermark_text)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
        RETURNING *`,
       [
         randomUUID(),
@@ -78,6 +78,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         coordinate_system ?? 'unknown',
         geoid_offset ?? 0,
         show_watermark === false || show_watermark === 0 ? 0 : 1,
+        typeof watermark_text === 'string' ? watermark_text : '',
       ],
     )
     res.status(201).json(rows[0])
@@ -94,7 +95,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
     const {
       name, description,
       longitude, latitude, altitude, heading, pitch, roll, scale,
-      coordinate_system, geoid_offset,
+      coordinate_system, geoid_offset, watermark_text,
     } = req.body as Record<string, unknown>
 
     const { rows } = await db.query(
@@ -110,8 +111,9 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
            scale              = COALESCE($9,  scale),
            coordinate_system  = COALESCE($10, coordinate_system),
            geoid_offset       = COALESCE($11, geoid_offset),
+           watermark_text     = COALESCE($12, watermark_text),
            updated_at         = NOW()
-       WHERE id = $12
+       WHERE id = $13
        RETURNING *`,
       [
         name ?? null,
@@ -125,6 +127,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
         scale ?? null,
         coordinate_system ?? null,
         geoid_offset ?? null,
+        typeof watermark_text === 'string' ? watermark_text : null,
         req.params.id,
       ],
     )

@@ -1,0 +1,3 @@
+PySide6>=6.6
+# GDAL must be installed separately — see README.md
+# Recommended: conda install -c conda-forge gdal

@@ -1,11 +1,9 @@
-import { useState, useRef } from 'react'
-import { Eye, EyeOff, Loader2, AlertCircle, X, Upload } from 'lucide-react'
+import { useState } from 'react'
+import { Eye, EyeOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Model } from '@/lib/api'
 import { WheelSlider } from '@/components/WheelSlider'
 import type { ResolvedOrthophoto } from '@/components/OrthophotoPanel'
-
-const ACCEPTED_ORTHO = '.tif,.tiff,.ecw,.jp2,.j2k,.sid'
 
 interface Props {
   // Models
@@ -16,12 +14,8 @@ interface Props {
   onSelect: (model: Model) => void
   onDelete: (id: string) => Promise<void>
   onShare: (model: Model) => void
-  onUploadClick: () => void
   // Orthophotos
   orthophotos: ResolvedOrthophoto[]
-  orthoUploading: boolean
-  orthoUploadError: string | null
-  onOrthoFile: (file: File) => void
   onOrthoDelete: (id: string) => void
   onOrthoToggleVisible: (id: string) => void
   onOrthoSetOpacity: (id: string, v: number) => void
@@ -39,14 +33,13 @@ function formatBytes(bytes: number | null): string {
 
 
 export function ModelSidebar({
-  models, loading, error, selectedId, onSelect, onDelete, onShare, onUploadClick,
-  orthophotos, orthoUploading, orthoUploadError, onOrthoFile, onOrthoDelete,
+  models, loading, error, selectedId, onSelect, onDelete, onShare,
+  orthophotos, onOrthoDelete,
   onOrthoToggleVisible, onOrthoSetOpacity, onOrthoFlyTo,
 }: Props) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'models' | 'orthophotos'>('models')
-  const orthoFileRef = useRef<HTMLInputElement>(null)
 
   // Group models and orthophotos by asset_name — fall back to the item's own
   // name for legacy rows where asset_name is missing/empty
@@ -69,9 +62,7 @@ export function ModelSidebar({
       {assetNames.length === 0 && (
         <div className="flex flex-col items-center justify-center gap-2 h-32 px-4 text-center">
           <span className="text-xs text-muted-foreground">No assets yet.</span>
-          <button onClick={onUploadClick} className="text-xs text-primary hover:underline">
-            Upload your first asset
-          </button>
+          <span className="text-xs text-muted-foreground/60">Upload via the Admin panel.</span>
         </div>
       )}
       {assetNames.map((an) => (
@@ -134,9 +125,7 @@ export function ModelSidebar({
           assetMap[selectedAsset].models.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 h-32 px-4 text-center">
               <span className="text-xs text-muted-foreground">No models for this asset.</span>
-              <button onClick={onUploadClick} className="text-xs text-primary hover:underline">
-                Upload model
-              </button>
+              <span className="text-xs text-muted-foreground/60">Upload via the Admin panel.</span>
             </div>
           ) : (
             assetMap[selectedAsset].models.map((model) => (
@@ -154,12 +143,7 @@ export function ModelSidebar({
           assetMap[selectedAsset].orthos.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 h-32 px-4 text-center">
               <span className="text-xs text-muted-foreground">No orthophotos for this asset.</span>
-              <button
-                onClick={() => orthoFileRef.current?.click()}
-                className="text-xs text-primary hover:underline"
-              >
-                Upload orthophoto
-              </button>
+              <span className="text-xs text-muted-foreground/60">Upload via the Admin panel.</span>
             </div>
           ) : (
             assetMap[selectedAsset].orthos.map((photo) => (
@@ -175,13 +159,6 @@ export function ModelSidebar({
           )
         )}
       </div>
-      <input
-        ref={orthoFileRef}
-        type="file"
-        accept={ACCEPTED_ORTHO}
-        className="hidden"
-        onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onOrthoFile(f) }}
-      />
     </div>
   ) : assetList
 

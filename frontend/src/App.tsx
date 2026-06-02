@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { CesiumViewer } from '@/components/CesiumViewer'
 import { ModelSidebar } from '@/components/ModelSidebar'
 import { MeasureToolbar } from '@/components/MeasureToolbar'
-import { UploadDialog } from '@/components/UploadDialog'
 import { ShareDialog } from '@/components/ShareDialog'
 import { LayerPanel } from '@/components/LayerPanel'
 import { ComparePanel } from '@/components/ComparePanel'
@@ -47,7 +46,6 @@ export default function App() {
 
   const [selectedModel, setSelectedModel] = useState<Model | null>(null)
   const [modelUrl, setModelUrl]           = useState<string | null>(null)
-  const [showUpload, setShowUpload]       = useState(false)
   const [shareModel, setShareModel]       = useState<Model | null>(null)
 
   const [measureMode, setMeasureMode]           = useState<MeasureMode>('none')
@@ -58,8 +56,6 @@ export default function App() {
   const [baseMap, setBaseMap]                   = useState<BaseMap>('none')
   const [layers, setLayers]                     = useState<ResolvedLayer[]>([])
   const [orthoPhotos, setOrthoPhotos]           = useState<ResolvedOrthophoto[]>([])
-  const [orthoUploading, setOrthoUploading]     = useState(false)
-  const [orthoUploadError, setOrthoUploadError] = useState<string | null>(null)
   const [overlayModel, setOverlayModel]         = useState<Model | null>(null)
   const [overlayModelUrl, setOverlayModelUrl]   = useState<string | null>(null)
   const [compareBlend, setCompareBlend]         = useState(0.5)
@@ -126,26 +122,6 @@ export default function App() {
   async function handleDelete(id: string) {
     await remove(id)
     if (selectedModel?.id === id) setSelectedModel(null)
-  }
-
-  async function handleOrthoFile(file: File) {
-    setOrthoUploading(true)
-    setOrthoUploadError(null)
-    try {
-      const params = new URLSearchParams({ filename: file.name })
-      const res = await fetch(`${API_BASE}/orthophotos/upload?${params.toString()}`, {
-        method: 'POST',
-        body: file,
-        headers: { 'Content-Type': file.type || 'image/tiff' },
-      })
-      if (!res.ok) throw new Error(`${res.status} ${await res.text().catch(() => res.statusText)}`)
-      const photo = await res.json() as Orthophoto
-      setOrthoPhotos((prev) => [...prev, toOrthoState(photo)])
-    } catch (err) {
-      setOrthoUploadError(err instanceof Error ? err.message : 'Upload failed')
-    } finally {
-      setOrthoUploading(false)
-    }
   }
 
   async function handleOrthoDelete(id: string) {
@@ -217,11 +193,7 @@ export default function App() {
           onSelect={setSelectedModel}
           onDelete={handleDelete}
           onShare={setShareModel}
-          onUploadClick={() => setShowUpload(true)}
           orthophotos={orthoPhotos}
-          orthoUploading={orthoUploading}
-          orthoUploadError={orthoUploadError}
-          onOrthoFile={handleOrthoFile}
           onOrthoDelete={(id) => void handleOrthoDelete(id)}
           onOrthoToggleVisible={handleOrthoToggleVisible}
           onOrthoSetOpacity={handleOrthoSetOpacity}
@@ -294,31 +266,26 @@ export default function App() {
               onOrthoCompareChange={setOrthoCompare}
             />
           </div>
-          {/* Stamp — hidden when selected model has show_watermark=0 */}
-          {(selectedModel?.show_watermark ?? 1) !== 0 && <div
-            className="absolute bottom-2 left-4 z-30 pointer-events-none select-none"
-            style={{ direction: 'rtl' }}
-          >
-            <span
-              className="text-[10px] font-medium tracking-wide px-2 py-0.5 rounded"
-              style={{
-                background: 'rgba(0,0,0,0.35)',
-                color: 'rgba(255,255,255,0.55)',
-                backdropFilter: 'blur(4px)',
-              }}
+          {/* Stamp — hidden when show_watermark=0 or watermark_text is empty */}
+          {(selectedModel?.show_watermark ?? 1) !== 0 && selectedModel?.watermark_text && (
+            <div
+              className="absolute bottom-2 left-4 z-30 pointer-events-none select-none"
+              style={{ direction: 'rtl' }}
             >
-              אא מערכות מידע וניהול משאבים בע&quot;מ
-            </span>
-          </div>}
+              <span
+                className="text-[10px] font-medium tracking-wide px-2 py-0.5 rounded"
+                style={{
+                  background: 'rgba(0,0,0,0.35)',
+                  color: 'rgba(255,255,255,0.55)',
+                  backdropFilter: 'blur(4px)',
+                }}
+              >
+                {selectedModel.watermark_text}
+              </span>
+            </div>
+          )}
         </div>
       </div>
-
-      {showUpload && (
-        <UploadDialog
-          onClose={() => setShowUpload(false)}
-          onSuccess={() => { setShowUpload(false); void refresh() }}
-        />
-      )}
 
       {shareModel && (
         <ShareDialog

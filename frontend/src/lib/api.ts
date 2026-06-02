@@ -32,6 +32,7 @@ export interface Model {
   coordinate_system: string
   geoid_offset: number
   show_watermark: number  // 1 = show, 0 = hide
+  watermark_text: string  // text shown as watermark; empty = no watermark
   created_at: string
   updated_at: string
 }
@@ -55,6 +56,7 @@ export interface CreateModelPayload {
   coordinate_system?: string
   geoid_offset?: number
   show_watermark?: boolean
+  watermark_text?: string
 }
 
 export interface UpdateModelPayload {
@@ -108,6 +110,15 @@ export function getAgeInfo(createdAt: string): { days: number; status: 'ok' | 'w
 
 export const listModels = () =>
   apiFetch<Model[]>('/models')
+
+export const listWatermarks = async (): Promise<string[]> => {
+  const models = await apiFetch<Model[]>('/models')
+  const seen = new Set<string>()
+  return models
+    .map((m) => m.watermark_text)
+    .filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
+    .filter((t) => { if (seen.has(t)) return false; seen.add(t); return true })
+}
 
 export const getModel = (id: string) =>
   apiFetch<Model>(`/models/${id}`)

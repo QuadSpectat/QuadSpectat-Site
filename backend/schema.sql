@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS models (
   model_type  TEXT             NOT NULL DEFAULT 'gltf',
   -- For 3D Tiles: the tileset URL (external or Spaces-hosted)
   external_url TEXT,
+  -- Watermark text displayed over the model in the viewer (empty = no watermark)
+  watermark_text TEXT            NOT NULL DEFAULT '',
   created_at  TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
   updated_at  TIMESTAMPTZ      NOT NULL DEFAULT NOW()
 );
