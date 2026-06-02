@@ -138,11 +138,16 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
 // DELETE /api/models/:id
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    console.log('[DELETE /models/:id] id =', JSON.stringify(req.params.id))
     const { rows } = await db.query(
       'DELETE FROM models WHERE id = $1 RETURNING *',
       [req.params.id],
     )
-    if (!rows[0]) { res.status(404).json({ error: 'Not found' }); return }
+    if (!rows[0]) {
+      console.warn('[DELETE /models/:id] no row matched id', req.params.id)
+      res.status(404).json({ error: 'Not found', id: req.params.id })
+      return
+    }
 
     // Best-effort S3 deletion — DB record is already gone
     deleteObject(rows[0].file_key as string).catch((err: unknown) => {

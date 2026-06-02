@@ -651,8 +651,21 @@ function ModelsTab({
 }) {
   async function handleDelete(m: Model) {
     if (!confirm(`Delete model "${m.name}"? This cannot be undone.`)) return
-    try { await deleteModel(m.id); onDelete(m.id); toast('success', `Deleted "${m.name}"`) }
-    catch (err) { toast('error', err instanceof Error ? err.message : 'Delete failed') }
+    try {
+      await deleteModel(m.id)
+      onDelete(m.id)
+      toast('success', `Deleted "${m.name}"`)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Delete failed'
+      // 404 = ghost row (already deleted or never existed in this DB).
+      // Refresh the list so the stale entry disappears.
+      if (msg.startsWith('404')) {
+        toast('error', `"${m.name}" was already gone — refreshing list`)
+        onRefresh()
+      } else {
+        toast('error', msg)
+      }
+    }
   }
 
   return (
