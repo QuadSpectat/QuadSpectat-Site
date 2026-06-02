@@ -188,6 +188,55 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => 
   } catch (err) { next(err) }
 })
 
+// ── Adopt an existing converted COG ───────────────────────────────────────────
+// POST /api/orthophotos/:id/adopt-cog  body: { cog_key: "orthophotos/.../cog.tif" }
+// Points the row at an already-converted EPSG:3857 COG and recomputes bounds +
+// zoom_max from it. Use when the raw upload is corrupt but a good COG was
+// uploaded separately (e.g. local-convert tool output).
+router.post('/:id([0-9a-f-]{36})/adopt-cog', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { cog_key } = req.body as Record<string, unknown>
+    if (typeof cog_key !== 'string' || !cog_key) {
+      return res.status(400).json({ error: 'cog_key (string) is required in body' })
+    }
+    const { rows } = await db.query<OrthoRow>(`SELECT * FROM orthophotos WHERE id = $1`, [req.params.id])
+    const photo = rows[0]
+    if (!photo) return res.status(404).json({ error: 'Not found' })
+
+    if (photo.cog_key) cogMetaCache.delete(photo.cog_key)
+    cogMetaCache.delete(cog_key)
+
+    const url      = await presignDownload(cog_key)
+    const infoJson = await runProcess('gdalinfo', ['-json', `/vsicurl/${url}`], {
+      GDAL_CACHEMAX: '128', GDAL_HTTP_TIMEOUT: '180',
+    })
+    const info = JSON.parse(infoJson) as { wgs84Extent?: { coordinates: number[][][] } }
+    const coords = info.wgs84Extent?.coordinates?.[0] ?? []
+    const lons = coords.map((c) => c[0])
+    const lats = coords.map((c) => c[1])
+    if (!lons.length) return res.status(400).json({ error: 'Could not read bounds from the COG' })
+    const bW = Math.min(...lons), bE = Math.max(...lons)
+    const bS = Math.min(...lats), bN = Math.max(...lats)
+
+    const tiff   = await fromUrl(url)
+    const image  = await tiff.getImage()
+    const [xRes] = image.getResolution()
+    const zoomMax = Math.max(0, Math.min(22,
+      Math.round(Math.log2((EARTH_HALF * 2) / (256 * Math.abs(xRes)))),
+    ))
+
+    const { rows: updated } = await db.query<OrthoRow>(
+      `UPDATE orthophotos SET
+         status = 'ready', cog_key = $1, error_message = NULL,
+         bounds_west = $2, bounds_south = $3, bounds_east = $4, bounds_north = $5,
+         zoom_max = $6, updated_at = datetime('now')
+       WHERE id = $7 RETURNING *`,
+      [cog_key, bW, bS, bE, bN, zoomMax, req.params.id],
+    )
+    res.json(updated[0])
+  } catch (err) { next(err) }
+})
+
 // ── Reprocess (server-side gdalwarp + COG) ────────────────────────────────────
 // Use when a row's cog_key points at a file that isn't actually an EPSG:3857 COG
 // (e.g. uploaded with cog_ready=true but produced bad output). Re-runs the full
@@ -416,12 +465,13 @@ async function processOrthophoto(id: string, fileKey: string, cogReady = false):
       cogKey = fileKey
     } else {
       // Single-pass: reproject + COG output (no large intermediate file)
+      // Note: COG driver builds overviews automatically — don't pass OVERVIEW_LEVEL
+      // (GDAL warns about it and recent versions can error).
       await runProcess('gdalwarp', [
         '-t_srs', 'EPSG:3857',
         '-r',     'bilinear',
         '-of',    'COG',
         '-co',    'COMPRESS=LZW',
-        '-co',    'OVERVIEW_LEVEL=AUTO',
         '-co',    'BIGTIFF=IF_SAFER',
         '-wm',    '128',
         `/vsicurl/${fileUrl}`,
