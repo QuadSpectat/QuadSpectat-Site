@@ -78,7 +78,15 @@ class ConversionWorker(QThread):
         if src_ds is None:
             raise IOError(f"Cannot open: {input_path}")
 
+        # The viewer's tile server expects EPSG:3857. If the source isn't
+        # already in that, reproject to a temp file and use that as the
+        # source for COG packaging. (No-op when src already is EPSG:3857.)
+        reproj_path = None
         try:
+            src_ds, reproj_path = self._reproject_to_web_mercator(
+                gdal, src_ds, output_path, resampling
+            )
+
             if gdal.GetDriverByName("COG") is not None:
                 self._convert_cog_driver(gdal, src_ds, output_path,
                                          compression, tile_size,
@@ -91,6 +99,72 @@ class ConversionWorker(QThread):
                                      jpeg_quality)
         finally:
             src_ds = None
+            if reproj_path and Path(reproj_path).exists():
+                try:
+                    os.remove(reproj_path)
+                except OSError:
+                    pass
+
+    def _reproject_to_web_mercator(self, gdal, src_ds, output_path, resampling):
+        """
+        Returns (dataset_to_use, temp_file_to_cleanup).
+        - If src is already EPSG:3857: returns (src_ds, None) — no reprojection.
+        - Else: warps to a temp file, returns (warped_ds, temp_path).
+        Falls back to forcing -s_srs EPSG:2039 when the first warp silently
+        skips (Israeli ITM sources often declare user-defined CRS).
+        """
+        srs = src_ds.GetSpatialRef()
+        src_epsg = srs.GetAuthorityCode(None) if srs is not None else None
+        if src_epsg == "3857":
+            return src_ds, None  # Already in Web Mercator
+
+        # resampling names from the UI match gdalwarp's: BILINEAR, CUBIC, NEAREST...
+        warp_alg = resampling.lower() if resampling else "bilinear"
+        tmp_path = output_path + ".reproj.tif"
+
+        def _warp(src_srs_override):
+            opts = {
+                "format": "GTiff",
+                "dstSRS": "EPSG:3857",
+                "resampleAlg": warp_alg,
+                "multithread": True,
+                "creationOptions": ["TILED=YES", "BIGTIFF=IF_SAFER", "COMPRESS=LZW"],
+            }
+            if src_srs_override:
+                opts["srcSRS"] = src_srs_override
+            warp_opts = gdal.WarpOptions(**opts)
+            return gdal.Warp(tmp_path, src_ds, options=warp_opts)
+
+        # First attempt: let GDAL auto-detect source SRS
+        out_ds = _warp(None)
+        if out_ds is None:
+            raise RuntimeError("gdal.Warp returned no dataset")
+
+        out_srs = out_ds.GetSpatialRef()
+        out_epsg = out_srs.GetAuthorityCode(None) if out_srs is not None else None
+        if out_epsg == "3857":
+            return out_ds, tmp_path
+
+        # Auto-detect failed (common for Israeli rasters with user-defined CRS
+        # citing IL05_2012Y-ILUM_2.0). Retry forcing source = EPSG:2039.
+        out_ds = None  # release the bad file before overwriting
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
+        out_ds = _warp("EPSG:2039")
+        if out_ds is None:
+            raise RuntimeError("gdal.Warp with -s_srs EPSG:2039 returned no dataset")
+
+        out_srs = out_ds.GetSpatialRef()
+        out_epsg = out_srs.GetAuthorityCode(None) if out_srs is not None else None
+        if out_epsg != "3857":
+            raise RuntimeError(
+                "Reprojection to EPSG:3857 failed even with -s_srs EPSG:2039 "
+                f"(got authority code {out_epsg}). Source CRS may be unusual."
+            )
+        return out_ds, tmp_path
 
     def _convert_cog_driver(self, gdal, src_ds, output_path,
                              compression, tile_size, resampling,
