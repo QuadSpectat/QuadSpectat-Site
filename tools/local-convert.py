@@ -79,13 +79,16 @@ def upload_put(presigned_url: str, file_path: str) -> None:
 
 
 def run_gdalwarp(input_file: str, output_file: str) -> None:
+    # NOTE: do NOT pass OVERVIEW_LEVEL=AUTO — the COG driver builds overviews
+    # automatically and recent GDAL versions reject that flag with a warning
+    # that can cause gdalwarp to skip the reprojection while exiting 0.
     cmd = [
         "gdalwarp",
+        "-overwrite",
         "-t_srs", "EPSG:3857",
         "-r", "bilinear",
         "-of", "COG",
         "-co", "COMPRESS=LZW",
-        "-co", "OVERVIEW_LEVEL=AUTO",
         "-co", "BIGTIFF=IF_SAFER",
         input_file,
         output_file,
@@ -98,6 +101,27 @@ def run_gdalwarp(input_file: str, output_file: str) -> None:
             "  Make sure you are running from the OSGeo4W Shell that came with QGIS,\n"
             "  or that gdalwarp is in your PATH." % result.returncode
         )
+
+
+def verify_output_is_web_mercator(output_file: str) -> None:
+    """gdalwarp can silently produce an unreprojected output. Verify before upload."""
+    try:
+        info = subprocess.run(
+            ["gdalinfo", "-json", output_file],
+            capture_output=True, text=True, check=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        die(f"gdalinfo on the converted file failed: {e}")
+    data = json.loads(info.stdout)
+    wkt = (data.get("coordinateSystem") or {}).get("wkt", "")
+    # A correctly reprojected COG must reference EPSG:3857 / Web Mercator
+    if "3857" not in wkt and "WGS 84 / Pseudo-Mercator" not in wkt and "Mercator_1SP" not in wkt:
+        die(
+            "Converted file is NOT in EPSG:3857 — gdalwarp likely skipped the\n"
+            "  reprojection. First lines of its coordinate system:\n  "
+            + (wkt.splitlines()[0] if wkt else "(no WKT)")
+        )
+    print("    OK  coordinate system: EPSG:3857 (Web Mercator)")
 
 
 def main() -> None:
@@ -128,6 +152,7 @@ def main() -> None:
     print(f"    Input:  {input_file}")
     print(f"    Output: {output_file}")
     run_gdalwarp(input_file, output_file)
+    verify_output_is_web_mercator(output_file)
     size_mb = os.path.getsize(output_file) / 1024 / 1024
     print(f"    Done  ({size_mb:.1f} MB)")
 
