@@ -295,6 +295,10 @@ export function CesiumViewer({
 
     viewerRef.current = v
     setViewer(v)
+    // Expose for diagnostics — type via window.__viewer in DevTools to inspect
+    // imageryLayers, camera state, etc. Removed in production builds via tree-shaking
+    // when not referenced, but cheap enough to leave on for now.
+    ;(window as unknown as { __viewer: Cesium.Viewer }).__viewer = v
 
     if (flyToOrthoRef) {
       flyToOrthoRef.current = (photo: ResolvedOrthophoto) => {
