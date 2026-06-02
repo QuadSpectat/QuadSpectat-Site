@@ -78,13 +78,14 @@ def upload_put(presigned_url: str, file_path: str) -> None:
             die(f"Upload failed: HTTP {e.code} — {e.read().decode(errors='replace')}")
 
 
-def run_gdalwarp(input_file: str, output_file: str) -> None:
+def _warp_cmd(input_file: str, output_file: str, source_srs: str | None) -> list[str]:
     # NOTE: do NOT pass OVERVIEW_LEVEL=AUTO — the COG driver builds overviews
     # automatically and recent GDAL versions reject that flag with a warning
     # that can cause gdalwarp to skip the reprojection while exiting 0.
-    cmd = [
-        "gdalwarp",
-        "-overwrite",
+    cmd = ["gdalwarp", "-overwrite"]
+    if source_srs:
+        cmd += ["-s_srs", source_srs]
+    cmd += [
         "-t_srs", "EPSG:3857",
         "-r", "bilinear",
         "-of", "COG",
@@ -93,18 +94,16 @@ def run_gdalwarp(input_file: str, output_file: str) -> None:
         input_file,
         output_file,
     ]
+    return cmd
+
+
+def _run(cmd: list[str]) -> int:
     print("    $", " ".join(f'"{a}"' if " " in a else a for a in cmd))
-    result = subprocess.run(cmd)
-    if result.returncode != 0:
-        die(
-            "gdalwarp failed (exit code %d).\n"
-            "  Make sure you are running from the OSGeo4W Shell that came with QGIS,\n"
-            "  or that gdalwarp is in your PATH." % result.returncode
-        )
+    return subprocess.run(cmd).returncode
 
 
-def verify_output_is_web_mercator(output_file: str) -> None:
-    """gdalwarp can silently produce an unreprojected output. Verify before upload."""
+def _output_is_web_mercator(output_file: str) -> tuple[bool, str]:
+    """Returns (is_3857, first WKT line) for diagnostics."""
     try:
         info = subprocess.run(
             ["gdalinfo", "-json", output_file],
@@ -114,12 +113,47 @@ def verify_output_is_web_mercator(output_file: str) -> None:
         die(f"gdalinfo on the converted file failed: {e}")
     data = json.loads(info.stdout)
     wkt = (data.get("coordinateSystem") or {}).get("wkt", "")
-    # A correctly reprojected COG must reference EPSG:3857 / Web Mercator
-    if "3857" not in wkt and "WGS 84 / Pseudo-Mercator" not in wkt and "Mercator_1SP" not in wkt:
+    is_3857 = (
+        "3857" in wkt
+        or "WGS 84 / Pseudo-Mercator" in wkt
+        or "Pseudo-Mercator" in wkt
+    )
+    return is_3857, (wkt.splitlines()[0] if wkt else "(no WKT)")
+
+
+def warp_to_web_mercator(input_file: str, output_file: str) -> None:
+    """
+    Reproject to EPSG:3857 + repackage as COG. Some Israeli source rasters
+    declare their CRS as 'user-defined' (PCS code 32767) with raw ITM
+    parameters instead of citing EPSG:2039 — GDAL then can't pick a datum
+    transformation and silently passes the pixels through unchanged. We catch
+    that with a post-warp verification and retry forcing the source SRS.
+    """
+    # First pass: let GDAL auto-detect the source SRS
+    if _run(_warp_cmd(input_file, output_file, None)) != 0:
         die(
-            "Converted file is NOT in EPSG:3857 — gdalwarp likely skipped the\n"
-            "  reprojection. First lines of its coordinate system:\n  "
-            + (wkt.splitlines()[0] if wkt else "(no WKT)")
+            "gdalwarp failed.\n"
+            "  Make sure you are running from the OSGeo4W Shell that came with QGIS,\n"
+            "  or that gdalwarp is in your PATH."
+        )
+    is_3857, first_wkt = _output_is_web_mercator(output_file)
+    if is_3857:
+        print("    OK  coordinate system: EPSG:3857 (Web Mercator)")
+        return
+
+    # gdalwarp silently skipped the reprojection. Most common cause for our
+    # users: source is Israeli ITM but declared as user-defined PCS. Retry
+    # with -s_srs EPSG:2039.
+    print(f"    ! output is not EPSG:3857 ({first_wkt})")
+    print("    retrying with -s_srs EPSG:2039 (Israeli ITM)…")
+    if _run(_warp_cmd(input_file, output_file, "EPSG:2039")) != 0:
+        die("Retry with -s_srs EPSG:2039 also failed.")
+    is_3857, first_wkt = _output_is_web_mercator(output_file)
+    if not is_3857:
+        die(
+            "Even after forcing -s_srs EPSG:2039 the output is not in\n"
+            "  EPSG:3857. Source file's coordinate system may be unusual.\n"
+            "  First line of output WKT:\n  " + first_wkt
         )
     print("    OK  coordinate system: EPSG:3857 (Web Mercator)")
 
@@ -151,8 +185,7 @@ def main() -> None:
     print(f"\n[1/3] Converting to Cloud-Optimized GeoTIFF…")
     print(f"    Input:  {input_file}")
     print(f"    Output: {output_file}")
-    run_gdalwarp(input_file, output_file)
-    verify_output_is_web_mercator(output_file)
+    warp_to_web_mercator(input_file, output_file)
     size_mb = os.path.getsize(output_file) / 1024 / 1024
     print(f"    Done  ({size_mb:.1f} MB)")
 
