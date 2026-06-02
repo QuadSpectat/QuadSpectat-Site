@@ -35,6 +35,8 @@ interface CogMeta {
   imageW:     number
   imageH:     number
   expiry:     number
+  /** TIFF PhotometricInterpretation tag (2 = RGB, 6 = YCbCr). */
+  photometric: number
   /** All IFDs sorted finest→coarsest (overviews[0] = full resolution). */
   overviews:  OverviewLevel[]
 }
@@ -71,6 +73,7 @@ async function getCogMeta(cogKey: string): Promise<CogMeta> {
     ovs.sort((a, b) => Math.abs(a.resolution[0]) - Math.abs(b.resolution[0]))
 
     const full = ovs[0]
+    const fd   = full.image.fileDirectory as { PhotometricInterpretation?: number }
     const meta: CogMeta = {
       image:      full.image,
       origin:     full.origin,
@@ -80,9 +83,10 @@ async function getCogMeta(cogKey: string): Promise<CogMeta> {
       imageW:     full.width,
       imageH:     full.height,
       expiry:     Date.now() + 50 * 60 * 1000,
+      photometric: fd.PhotometricInterpretation ?? 2,
       overviews:  ovs,
     }
-    console.log(`[cog] ${cogKey.split('/').pop()} IFDs:${imageCount} fullRes:${meta.imageW}x${meta.imageH} res:${meta.resolution[0].toFixed(3)},${meta.resolution[1].toFixed(3)}`)
+    console.log(`[cog] ${cogKey.split('/').pop()} IFDs:${imageCount} fullRes:${meta.imageW}x${meta.imageH} res:${meta.resolution[0].toFixed(3)},${meta.resolution[1].toFixed(3)} photo:${meta.photometric}`)
     cogMetaCache.set(cogKey, meta)
     return meta
   })()
@@ -373,7 +377,7 @@ router.get('/:id([0-9a-f-]{36})/tiles/:z/:x/:y', async (req: Request, res: Respo
     let png: Buffer
     try {
       const cogMeta = await getCogMeta(photo.cog_key)
-      const { bands, nodata, overviews } = cogMeta
+      const { bands, nodata, overviews, photometric } = cogMeta
 
       // Select the finest overview whose pixel resolution is ≤ 2× the tile's
       // target metres-per-pixel. This avoids loading the full-res raster for
@@ -424,7 +428,7 @@ router.get('/:id([0-9a-f-]{36})/tiles/:z/:x/:y', async (req: Request, res: Respo
         fillValue: 0,
       })
 
-      const raw     = toRGBA(rasters as unknown as ArrayLike<number> & { BYTES_PER_ELEMENT: number }, bands, nodata)
+      const raw     = toRGBA(rasters as unknown as ArrayLike<number> & { BYTES_PER_ELEMENT: number }, bands, nodata, photometric)
       const partial = await sharp(raw, { raw: { width: outW, height: outH, channels: 4 } }).png({ compressionLevel: 1 }).toBuffer()
 
       if (outW === 256 && outH === 256) {
@@ -487,12 +491,20 @@ function toRGBA(
   data: ArrayLike<number> & { BYTES_PER_ELEMENT: number },
   bands: number,
   nodata: number | null,
+  photometric: number = 2,
 ): Buffer {
   const pixels = 256 * 256
   const scale  = data.BYTES_PER_ELEMENT === 2 ? 256 : 1  // 16-bit → 8-bit
   const rgba   = Buffer.alloc(pixels * 4)
   // gdalwarp fills OOB pixels with 0 even without explicit -dstnodata
   const nd = nodata ?? 0
+
+  // YCbCr (PhotometricInterpretation = 6) is common for JPEG-compressed COGs.
+  // geotiff.js returns raw Y/Cb/Cr samples, so we convert to RGB ourselves.
+  // ITU-R BT.601 conversion (0..255 range, full-range JPEG).
+  const isYCbCr = bands === 3 && photometric === 6
+
+  const clamp = (v: number) => v < 0 ? 0 : v > 255 ? 255 : v
 
   for (let i = 0; i < pixels; i++) {
     const b = i * bands
@@ -505,9 +517,18 @@ function toRGBA(
       rgba[i*4] = rgba[i*4+1] = rgba[i*4+2] = v
       rgba[i*4+3] = data[b+1] / scale
     } else if (bands === 3) {
-      rgba[i*4]   = data[b]   / scale
-      rgba[i*4+1] = data[b+1] / scale
-      rgba[i*4+2] = data[b+2] / scale
+      if (isYCbCr) {
+        const y  = data[b]   / scale
+        const cb = data[b+1] / scale
+        const cr = data[b+2] / scale
+        rgba[i*4]   = clamp(y + 1.402   * (cr - 128))
+        rgba[i*4+1] = clamp(y - 0.34414 * (cb - 128) - 0.71414 * (cr - 128))
+        rgba[i*4+2] = clamp(y + 1.772   * (cb - 128))
+      } else {
+        rgba[i*4]   = data[b]   / scale
+        rgba[i*4+1] = data[b+1] / scale
+        rgba[i*4+2] = data[b+2] / scale
+      }
       // All-zero pixels at tile edges are gdalwarp fill (OOB), not valid black pixels
       rgba[i*4+3] = (data[b] === nd && data[b+1] === nd && data[b+2] === nd) ? 0 : 255
     } else {
