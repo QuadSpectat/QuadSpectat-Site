@@ -259,6 +259,34 @@ router.post('/:id([0-9a-f-]{36})/adopt-cog', async (req: Request, res: Response,
   } catch (err) { next(err) }
 })
 
+// ── Inspect (read-only gdalinfo on cog_key) ───────────────────────────────────
+// GET /api/orthophotos/:id/inspect → gdalinfo -json output for the cog_key.
+// Lightweight (no gdalwarp), so it doesn't OOM on Fly. Used to diagnose
+// whether a row's COG is actually EPSG:3857 with sensible bounds.
+router.get('/:id([0-9a-f-]{36})/inspect', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { rows } = await db.query<OrthoRow>(`SELECT cog_key, file_key FROM orthophotos WHERE id = $1`, [req.params.id])
+    const photo = rows[0]
+    if (!photo) return res.status(404).json({ error: 'Not found' })
+    const key = photo.cog_key || photo.file_key
+    if (!key) return res.status(400).json({ error: 'No cog_key or file_key on record' })
+
+    const url = await presignDownload(key)
+    const out = await runProcess('gdalinfo', ['-json', `/vsicurl/${url}`], {
+      GDAL_CACHEMAX: '64', GDAL_HTTP_TIMEOUT: '60',
+    })
+    const info = JSON.parse(out) as Record<string, unknown>
+    res.json({
+      key,
+      coordinateSystem: (info as { coordinateSystem?: { wkt?: string } }).coordinateSystem?.wkt?.split('\n')[0],
+      size:        info.size,
+      geoTransform: info.geoTransform,
+      bands:       Array.isArray(info.bands) ? info.bands.length : null,
+      wgs84Extent: info.wgs84Extent,
+    })
+  } catch (err) { next(err) }
+})
+
 // ── Reprocess (server-side gdalwarp + COG) ────────────────────────────────────
 // Use when a row's cog_key points at a file that isn't actually an EPSG:3857 COG
 // (e.g. uploaded with cog_ready=true but produced bad output). Re-runs the full
