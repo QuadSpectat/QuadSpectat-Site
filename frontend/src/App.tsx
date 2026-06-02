@@ -37,6 +37,8 @@ function toOrthoState(o: Orthophoto): ResolvedOrthophoto {
     bounds_north: o.bounds_north,
     zoom_min:     o.zoom_min ?? 0,
     zoom_max:     o.zoom_max ?? 22,
+    show_watermark: typeof o.show_watermark === 'number' ? o.show_watermark : 1,
+    watermark_text: o.watermark_text ?? '',
   }
 }
 
@@ -268,24 +270,38 @@ export default function App() {
               onOrthoCompareChange={setOrthoCompare}
             />
           </div>
-          {/* Stamp — hidden when show_watermark=0 or watermark_text is empty */}
-          {(selectedModel?.show_watermark ?? 1) !== 0 && selectedModel?.watermark_text && (
-            <div
-              className="absolute bottom-2 left-4 z-30 pointer-events-none select-none"
-              style={{ direction: 'rtl' }}
-            >
-              <span
-                className="text-[10px] font-medium tracking-wide px-2 py-0.5 rounded"
-                style={{
-                  background: 'rgba(0,0,0,0.35)',
-                  color: 'rgba(255,255,255,0.55)',
-                  backdropFilter: 'blur(4px)',
-                }}
+          {/* Stamp — model watermark wins when a model is selected; otherwise
+              show the first visible+ready orthophoto's watermark. Empty text
+              or show_watermark=0 hides it. */}
+          {(() => {
+            let txt = ''
+            if (selectedModel) {
+              if ((selectedModel.show_watermark ?? 1) !== 0) txt = selectedModel.watermark_text ?? ''
+            } else {
+              const o = orthoPhotos.find((p) =>
+                p.status === 'ready' && p.visible && p.show_watermark !== 0 && p.watermark_text,
+              )
+              if (o) txt = o.watermark_text
+            }
+            if (!txt) return null
+            return (
+              <div
+                className="absolute bottom-2 left-4 z-30 pointer-events-none select-none"
+                style={{ direction: 'rtl' }}
               >
-                {selectedModel.watermark_text}
-              </span>
-            </div>
-          )}
+                <span
+                  className="text-[10px] font-medium tracking-wide px-2 py-0.5 rounded"
+                  style={{
+                    background: 'rgba(0,0,0,0.35)',
+                    color: 'rgba(255,255,255,0.55)',
+                    backdropFilter: 'blur(4px)',
+                  }}
+                >
+                  {txt}
+                </span>
+              </div>
+            )
+          })()}
         </div>
       </div>
 

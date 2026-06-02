@@ -253,6 +253,8 @@ export interface Orthophoto {
   opacity: number   // 0.0 – 1.0
   status: string    // 'pending' | 'processing' | 'ready' | 'error'
   error_message: string | null
+  show_watermark: number   // 1 = show, 0 = hide
+  watermark_text: string   // empty = no watermark
   created_at: string
   updated_at: string
 }
@@ -282,6 +284,8 @@ export interface CreateOrthophotoPayload {
   raw_key: string
   original_format: string
   cog_ready?: boolean
+  show_watermark?: boolean
+  watermark_text?: string
 }
 
 export const createOrthophoto = (payload: CreateOrthophotoPayload) =>

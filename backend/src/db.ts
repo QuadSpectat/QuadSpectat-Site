@@ -85,6 +85,8 @@ sqlite.exec(`
     opacity         REAL NOT NULL DEFAULT 1.0,
     status          TEXT NOT NULL DEFAULT 'pending',
     error_message   TEXT,
+    show_watermark  INTEGER NOT NULL DEFAULT 1,
+    watermark_text  TEXT NOT NULL DEFAULT '',
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
   );
@@ -99,6 +101,8 @@ sqlite.exec(`
   `ALTER TABLE models ADD COLUMN show_watermark INTEGER NOT NULL DEFAULT 1`,
   `ALTER TABLE models ADD COLUMN watermark_text TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE orthophotos ADD COLUMN asset_name TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE orthophotos ADD COLUMN show_watermark INTEGER NOT NULL DEFAULT 1`,
+  `ALTER TABLE orthophotos ADD COLUMN watermark_text TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE share_links ADD COLUMN can_edit INTEGER NOT NULL DEFAULT 0`,
 ].forEach((sql) => {
   try { sqlite.exec(sql) } catch { /* column already exists */ }

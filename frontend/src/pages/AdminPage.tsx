@@ -395,6 +395,7 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
       } else {
         // Orthophoto
         if (!orthoFile) throw new Error('Select a file first')
+        const wt = resolvedWatermarkText()
         const ext = orthoFile.name.split('.').pop()?.toLowerCase() ?? 'tif'
         const original_format = ORTHO_FORMATS[ext] ?? ext.toUpperCase()
         const { key, url } = await presignOrthophotoUpload(orthoFile.name, 'application/octet-stream')
@@ -408,6 +409,8 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
           raw_key: key,
           original_format,
           cog_ready: cogReady || undefined,
+          show_watermark: showWatermark,
+          watermark_text: wt,
         } satisfies CreateOrthophotoPayload)
       }
 
@@ -556,37 +559,37 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
           </div>
         )}
 
-        {/* ── Watermark (model only) ─────────────────────────────────────── */}
-        {assetType === 'model' && (
-          <div className="flex flex-col gap-2">
-            <span className="text-xs font-semibold text-white/60 uppercase tracking-wider">4. Watermark</span>
-            <label className="flex items-center gap-2.5 cursor-pointer select-none">
-              <input type="checkbox" checked={showWatermark} onChange={(e) => setShowWatermark(e.target.checked)}
-                className="h-4 w-4 rounded border-white/20 bg-white/5 accent-indigo-500" />
-              <span className="text-xs text-white/60">Show watermark on this model</span>
-            </label>
-            {showWatermark && (
-              <>
-                <select
-                  value={watermarkSelection}
-                  onChange={(e) => setWatermarkSelection(e.target.value)}
-                  className="h-8 rounded-md border border-white/10 bg-[#0d1220] px-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
-                >
-                  <option value="">— No watermark text —</option>
-                  {existingWatermarks.map((w) => (
-                    <option key={w} value={w}>{w}</option>
-                  ))}
-                  <option value="__custom__">✏️ Custom watermark text…</option>
-                </select>
-                {watermarkSelection === '__custom__' && (
-                  <input type="text" value={customWatermark} onChange={(e) => setCustomWatermark(e.target.value)}
-                    placeholder="e.g. אא מערכות מידע בע״מ"
-                    className="h-8 rounded-md border border-white/10 bg-white/5 px-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-indigo-500 transition-colors" />
-                )}
-              </>
-            )}
-          </div>
-        )}
+        {/* ── Watermark (model + orthophoto) ─────────────────────────────── */}
+        <div className="flex flex-col gap-2">
+          <span className="text-xs font-semibold text-white/60 uppercase tracking-wider">4. Watermark</span>
+          <label className="flex items-center gap-2.5 cursor-pointer select-none">
+            <input type="checkbox" checked={showWatermark} onChange={(e) => setShowWatermark(e.target.checked)}
+              className="h-4 w-4 rounded border-white/20 bg-white/5 accent-indigo-500" />
+            <span className="text-xs text-white/60">
+              Show watermark on this {assetType === 'model' ? 'model' : 'orthophoto'}
+            </span>
+          </label>
+          {showWatermark && (
+            <>
+              <select
+                value={watermarkSelection}
+                onChange={(e) => setWatermarkSelection(e.target.value)}
+                className="h-8 rounded-md border border-white/10 bg-[#0d1220] px-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+              >
+                <option value="">— No watermark text —</option>
+                {existingWatermarks.map((w) => (
+                  <option key={w} value={w}>{w}</option>
+                ))}
+                <option value="__custom__">✏️ Custom watermark text…</option>
+              </select>
+              {watermarkSelection === '__custom__' && (
+                <input type="text" value={customWatermark} onChange={(e) => setCustomWatermark(e.target.value)}
+                  placeholder="e.g. אא מערכות מידע בע״מ"
+                  className="h-8 rounded-md border border-white/10 bg-white/5 px-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-indigo-500 transition-colors" />
+              )}
+            </>
+          )}
+        </div>
 
         {/* ── Errors + progress ─────────────────────────────────────────── */}
         {error && (
@@ -1508,9 +1511,10 @@ export function AdminPage() {
           ...models.map((m) => m.asset_name).filter(Boolean),
           ...orthophotos.map((o) => o.asset_name).filter(Boolean),
         ])]
-        const existingWatermarks = [...new Set(
-          models.map((m) => m.watermark_text).filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
-        )]
+        const existingWatermarks = [...new Set([
+          ...models.map((m) => m.watermark_text),
+          ...orthophotos.map((o) => o.watermark_text),
+        ].filter((t): t is string => typeof t === 'string' && t.trim().length > 0))]
         return (
           <UploadAssetModal
             onClose={() => setShowUpload(false)}

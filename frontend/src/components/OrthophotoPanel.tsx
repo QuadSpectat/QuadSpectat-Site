@@ -19,6 +19,8 @@ export interface ResolvedOrthophoto {
   bounds_north: number | null
   zoom_min: number
   zoom_max: number
+  show_watermark: number   // 1 = show, 0 = hide
+  watermark_text: string
 }
 
 interface OrthoState extends ResolvedOrthophoto {}
@@ -32,6 +34,7 @@ const ACCEPTED = '.tif,.tiff,.ecw,.jp2,.j2k,.sid'
 function toState(o: Orthophoto): OrthoState {
   return {
     id:           o.id,
+    asset_name:   o.asset_name?.trim() || o.name,
     name:         o.name,
     status:       o.status,
     error_message: o.error_message,
@@ -43,6 +46,8 @@ function toState(o: Orthophoto): OrthoState {
     bounds_north: o.bounds_north,
     zoom_min:     o.zoom_min ?? 0,
     zoom_max:     o.zoom_max ?? 22,
+    show_watermark: typeof o.show_watermark === 'number' ? o.show_watermark : 1,
+    watermark_text: o.watermark_text ?? '',
   }
 }
 
