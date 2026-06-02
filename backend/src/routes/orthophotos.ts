@@ -188,6 +188,34 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => 
   } catch (err) { next(err) }
 })
 
+// ── Reprocess (server-side gdalwarp + COG) ────────────────────────────────────
+// Use when a row's cog_key points at a file that isn't actually an EPSG:3857 COG
+// (e.g. uploaded with cog_ready=true but produced bad output). Re-runs the full
+// processing pipeline on file_key — overwrites cog_key and bounds.
+router.post('/:id([0-9a-f-]{36})/reprocess', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { rows } = await db.query<OrthoRow>(`SELECT * FROM orthophotos WHERE id = $1`, [req.params.id])
+    const photo = rows[0]
+    if (!photo) return res.status(404).json({ error: 'Not found' })
+    if (!photo.file_key) return res.status(400).json({ error: 'No file_key on record' })
+
+    // Drop any cached metadata for the stale cog_key so the next tile read picks up the new file
+    if (photo.cog_key) cogMetaCache.delete(photo.cog_key)
+
+    // Respond immediately — processing runs async (like initial upload)
+    res.status(202).json({ status: 'reprocessing', id: photo.id })
+
+    processOrthophoto(photo.id, photo.file_key, false).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('[orthophoto] reprocess error:', msg)
+      db.query(
+        `UPDATE orthophotos SET status = 'error', error_message = $1, updated_at = datetime('now') WHERE id = $2`,
+        [msg.slice(0, 1000), photo.id],
+      ).catch(console.error)
+    })
+  } catch (err) { next(err) }
+})
+
 // ── Delete ────────────────────────────────────────────────────────────────────
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
