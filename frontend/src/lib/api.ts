@@ -177,15 +177,27 @@ export const createShareLink = (model_id: string, label?: string, can_edit?: boo
     body: JSON.stringify({ model_id, label, can_edit }),
   })
 
+export const createOrthophotoShareLink = (orthophoto_id: string, label?: string) =>
+  apiFetch<{ token: string; path: string }>('/share', {
+    method: 'POST',
+    body: JSON.stringify({ orthophoto_id, label }),
+  })
+
 export const listShareLinks = (model_id: string) =>
   apiFetch<ShareLink[]>(`/share?model_id=${encodeURIComponent(model_id)}`)
+
+export const listOrthophotoShareLinks = (orthophoto_id: string) =>
+  apiFetch<ShareLink[]>(`/share?orthophoto_id=${encodeURIComponent(orthophoto_id)}`)
 
 export const deleteShareLink = (token: string) =>
   apiFetch<void>(`/share/${token}`, { method: 'DELETE' })
 
-// Resolve a share token → { model, can_edit } (used on the public viewer page)
+// Resolve a share token → discriminated union of model or orthophoto
+export type ResolvedShare =
+  | { kind: 'model';      model: Model;        can_edit: boolean }
+  | { kind: 'orthophoto'; orthophoto: Orthophoto; can_edit: boolean }
 export const resolveShareToken = (token: string) =>
-  apiFetch<{ model: Model; can_edit: boolean }>(`/share/${token}`)
+  apiFetch<ResolvedShare>(`/share/${token}`)
 
 export const updateModelViaToken = (
   token: string,

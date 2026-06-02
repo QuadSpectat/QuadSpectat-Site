@@ -20,6 +20,7 @@ interface Props {
   onOrthoToggleVisible: (id: string) => void
   onOrthoSetOpacity: (id: string, v: number) => void
   onOrthoFlyTo: (id: string) => void
+  onOrthoShare: (photo: ResolvedOrthophoto) => void
 }
 
 function formatBytes(bytes: number | null): string {
@@ -35,7 +36,7 @@ function formatBytes(bytes: number | null): string {
 export function ModelSidebar({
   models, loading, error, selectedId, onSelect, onDelete, onShare,
   orthophotos, onOrthoDelete,
-  onOrthoToggleVisible, onOrthoSetOpacity, onOrthoFlyTo,
+  onOrthoToggleVisible, onOrthoSetOpacity, onOrthoFlyTo, onOrthoShare,
 }: Props) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null)
@@ -154,6 +155,7 @@ export function ModelSidebar({
                 onDelete={() => onOrthoDelete(photo.id)}
                 onSetOpacity={(v) => onOrthoSetOpacity(photo.id, v)}
                 onFlyTo={() => onOrthoFlyTo(photo.id)}
+                onShare={() => onOrthoShare(photo)}
               />
             ))
           )
@@ -268,13 +270,14 @@ function ModelRow({
 }
 
 function OrthoRow({
-  photo, onToggleVisible, onDelete, onSetOpacity, onFlyTo,
+  photo, onToggleVisible, onDelete, onSetOpacity, onFlyTo, onShare,
 }: {
   photo: ResolvedOrthophoto
   onToggleVisible: () => void
   onDelete: () => void
   onSetOpacity: (v: number) => void
   onFlyTo: () => void
+  onShare: () => void
 }) {
   const canFlyTo = photo.status === 'ready' && photo.bounds_west != null
 
@@ -330,15 +333,29 @@ function OrthoRow({
           </span>
         </div>
 
-        {/* Delete */}
-        <button
-          onClick={onDelete}
-          className="shrink-0 w-6 h-6 flex items-center justify-center rounded-md
-                     text-muted-foreground hover:text-destructive hover:bg-destructive/10
-                     transition-all opacity-0 group-hover:opacity-100"
-        >
-          <X size={12} />
-        </button>
+        {/* Actions */}
+        <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+          {photo.status === 'ready' && (
+            <button
+              onClick={onShare}
+              title="Share"
+              className="w-6 h-6 flex items-center justify-center rounded-md
+                         text-muted-foreground hover:text-primary hover:bg-primary/10
+                         transition-all text-xs"
+            >
+              ↗
+            </button>
+          )}
+          <button
+            onClick={onDelete}
+            title="Delete"
+            className="w-6 h-6 flex items-center justify-center rounded-md
+                       text-muted-foreground hover:text-destructive hover:bg-destructive/10
+                       transition-all"
+          >
+            <X size={12} />
+          </button>
+        </div>
       </div>
 
       {/* Opacity slider (only when ready) */}

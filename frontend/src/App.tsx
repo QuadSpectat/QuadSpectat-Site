@@ -47,6 +47,7 @@ export default function App() {
   const [selectedModel, setSelectedModel] = useState<Model | null>(null)
   const [modelUrl, setModelUrl]           = useState<string | null>(null)
   const [shareModel, setShareModel]       = useState<Model | null>(null)
+  const [shareOrtho, setShareOrtho]       = useState<ResolvedOrthophoto | null>(null)
 
   const [measureMode, setMeasureMode]           = useState<MeasureMode>('none')
   const [measureKey, setMeasureKey]             = useState(0)
@@ -201,6 +202,7 @@ export default function App() {
             const photo = orthoPhotos.find((p) => p.id === id)
             if (photo) flyToOrthoRef.current?.(photo)
           }}
+          onOrthoShare={setShareOrtho}
         />
 
         {/* Viewer + floating toolbar share this relative container */}
@@ -289,9 +291,14 @@ export default function App() {
 
       {shareModel && (
         <ShareDialog
-          modelId={shareModel.id}
-          modelName={shareModel.name}
+          target={{ kind: 'model', id: shareModel.id, name: shareModel.name }}
           onClose={() => setShareModel(null)}
+        />
+      )}
+      {shareOrtho && (
+        <ShareDialog
+          target={{ kind: 'orthophoto', id: shareOrtho.id, name: shareOrtho.name }}
+          onClose={() => setShareOrtho(null)}
         />
       )}
     </div>

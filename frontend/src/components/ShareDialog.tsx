@@ -1,35 +1,53 @@
 import { useState, useEffect } from 'react'
-import { createShareLink, listShareLinks, deleteShareLink } from '@/lib/api'
+import {
+  createShareLink, createOrthophotoShareLink,
+  listShareLinks, listOrthophotoShareLinks,
+  deleteShareLink,
+} from '@/lib/api'
 import type { ShareLink } from '@/lib/api'
 
+type Target =
+  | { kind: 'model';      id: string; name: string }
+  | { kind: 'orthophoto'; id: string; name: string }
+
 interface Props {
-  modelId: string
-  modelName: string
+  target: Target
   onClose: () => void
 }
 
-export function ShareDialog({ modelId, modelName, onClose }: Props) {
-  const [links, setLinks] = useState<ShareLink[]>([])
+export function ShareDialog({ target, onClose }: Props) {
+  const [links, setLinks]   = useState<ShareLink[]>([])
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
-  const [label, setLabel] = useState('')
+  const [label, setLabel]   = useState('')
   const [canEdit, setCanEdit] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
 
   const origin = window.location.origin
+  const heading = target.kind === 'model' ? 'Share Model' : 'Share Orthophoto'
 
   useEffect(() => {
-    listShareLinks(modelId)
+    const promise = target.kind === 'model'
+      ? listShareLinks(target.id)
+      : listOrthophotoShareLinks(target.id)
+    promise
       .then(setLinks)
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [modelId])
+  }, [target.id, target.kind])
 
   async function handleCreate() {
     setCreating(true)
     try {
-      const { token } = await createShareLink(modelId, label.trim() || undefined, canEdit)
-      const newLink: ShareLink = { token, label: label.trim() || null, can_edit: canEdit, created_at: new Date().toISOString() }
+      const { token } = target.kind === 'model'
+        ? await createShareLink(target.id, label.trim() || undefined, canEdit)
+        : await createOrthophotoShareLink(target.id, label.trim() || undefined)
+      const newLink: ShareLink = {
+        token,
+        label: label.trim() || null,
+        can_edit: target.kind === 'model' ? canEdit : false,
+        created_at: new Date().toISOString(),
+      }
       setLinks((prev) => [newLink, ...prev])
       setLabel('')
       setCanEdit(false)
@@ -59,8 +77,8 @@ export function ShareDialog({ modelId, modelName, onClose }: Props) {
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
           <div>
-            <h2 className="text-sm font-semibold">Share Model</h2>
-            <p className="text-[11px] text-muted-foreground mt-0.5 truncate max-w-xs">{modelName}</p>
+            <h2 className="text-sm font-semibold">{heading}</h2>
+            <p className="text-[11px] text-muted-foreground mt-0.5 truncate max-w-xs">{target.name}</p>
           </div>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground">✕</button>
         </div>
@@ -86,19 +104,23 @@ export function ShareDialog({ modelId, modelName, onClose }: Props) {
               {creating ? '…' : '+ New link'}
             </button>
           </div>
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={canEdit}
-              onChange={(e) => setCanEdit(e.target.checked)}
-              className="h-3.5 w-3.5 rounded accent-primary"
-            />
-            <span className="text-xs text-muted-foreground">Allow editing</span>
-          </label>
-          {canEdit && (
-            <p className="text-[11px] text-muted-foreground leading-tight ml-5">
-              Recipient can adjust position &amp; orientation but cannot delete the model.
-            </p>
+          {target.kind === 'model' && (
+            <>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={canEdit}
+                  onChange={(e) => setCanEdit(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded accent-primary"
+                />
+                <span className="text-xs text-muted-foreground">Allow editing</span>
+              </label>
+              {canEdit && (
+                <p className="text-[11px] text-muted-foreground leading-tight ml-5">
+                  Recipient can adjust position &amp; orientation but cannot delete the model.
+                </p>
+              )}
+            </>
           )}
         </div>
 

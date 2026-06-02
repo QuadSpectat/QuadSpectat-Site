@@ -8,31 +8,34 @@ const EDITABLE_FIELDS = ['longitude', 'latitude', 'altitude', 'heading', 'pitch'
 type EditableField = typeof EDITABLE_FIELDS[number]
 
 // POST /api/share
-// Body: { model_id: string, label?: string, can_edit?: boolean }
-// Returns: { token, path }
+// Body: { model_id?: string, orthophoto_id?: string, label?: string, can_edit?: boolean }
+// Exactly one of model_id / orthophoto_id must be supplied.
+// can_edit is honoured only for models.
 router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { model_id, label, can_edit } = req.body as Record<string, unknown>
-    if (typeof model_id !== 'string' || !model_id) {
-      res.status(400).json({ error: 'model_id is required' })
+    const { model_id, orthophoto_id, label, can_edit } = req.body as Record<string, unknown>
+    const mId = typeof model_id      === 'string' && model_id      ? model_id      : null
+    const oId = typeof orthophoto_id === 'string' && orthophoto_id ? orthophoto_id : null
+    if ((mId === null) === (oId === null)) {
+      res.status(400).json({ error: 'Exactly one of model_id or orthophoto_id is required' })
       return
     }
 
-    const { rows: modelRows } = await db.query(
-      'SELECT id FROM models WHERE id = $1',
-      [model_id],
-    )
-    if (!modelRows[0]) {
-      res.status(404).json({ error: 'Model not found' })
-      return
+    if (mId !== null) {
+      const { rows } = await db.query('SELECT id FROM models WHERE id = $1', [mId])
+      if (!rows[0]) { res.status(404).json({ error: 'Model not found' }); return }
+    } else {
+      const { rows } = await db.query('SELECT id FROM orthophotos WHERE id = $1', [oId])
+      if (!rows[0]) { res.status(404).json({ error: 'Orthophoto not found' }); return }
     }
 
     const token      = randomBytes(24).toString('hex')
-    const canEditInt = can_edit ? 1 : 0
+    // can_edit only meaningful for model shares — recipients can't "edit" an orthophoto
+    const canEditInt = (mId !== null && can_edit) ? 1 : 0
 
     await db.query(
-      'INSERT INTO share_links (token, model_id, label, can_edit) VALUES ($1, $2, $3, $4)',
-      [token, model_id, label ?? null, canEditInt],
+      'INSERT INTO share_links (token, model_id, orthophoto_id, label, can_edit) VALUES ($1, $2, $3, $4, $5)',
+      [token, mId, oId, label ?? null, canEditInt],
     )
 
     res.status(201).json({ token, path: `/v/${token}` })
@@ -42,53 +45,80 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 })
 
 // GET /api/share/:token
-// Public — returns { model, can_edit } for a given share token
+// Public — returns either { kind: 'model', model, can_edit } or
+// { kind: 'orthophoto', orthophoto, can_edit }
 router.get('/:token', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { rows } = await db.query<Record<string, unknown>>(
-      `SELECT m.*, s.can_edit FROM models m
-       JOIN share_links s ON s.model_id = m.id
-       WHERE s.token = $1`,
+    const { rows: linkRows } = await db.query<{
+      model_id: string | null
+      orthophoto_id: string | null
+      can_edit: number
+    }>(
+      'SELECT model_id, orthophoto_id, can_edit FROM share_links WHERE token = $1',
       [req.params.token],
     )
-    if (!rows[0]) {
-      res.status(404).json({ error: 'Share link not found or expired' })
+    const link = linkRows[0]
+    if (!link) { res.status(404).json({ error: 'Share link not found or expired' }); return }
+
+    if (link.model_id) {
+      const { rows } = await db.query<Record<string, unknown>>(
+        'SELECT * FROM models WHERE id = $1',
+        [link.model_id],
+      )
+      if (!rows[0]) { res.status(404).json({ error: 'Model no longer exists' }); return }
+      res.json({ kind: 'model', model: rows[0], can_edit: Boolean(link.can_edit) })
       return
     }
-    const { can_edit, ...model } = rows[0]
-    res.json({ model, can_edit: Boolean(can_edit) })
+
+    const { rows } = await db.query<Record<string, unknown>>(
+      'SELECT * FROM orthophotos WHERE id = $1',
+      [link.orthophoto_id],
+    )
+    if (!rows[0]) { res.status(404).json({ error: 'Orthophoto no longer exists' }); return }
+    res.json({ kind: 'orthophoto', orthophoto: rows[0], can_edit: false })
   } catch (err) {
     next(err)
   }
 })
 
-// GET /api/share?model_id=...
-// List all share links for a model
+// GET /api/share?model_id=...   or   ?orthophoto_id=...
+// Lists share links bound to that resource
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { model_id } = req.query as Record<string, string>
-    if (!model_id) { res.status(400).json({ error: 'model_id query param required' }); return }
-    const { rows } = await db.query<Record<string, unknown>>(
-      'SELECT token, label, can_edit, created_at FROM share_links WHERE model_id = $1 ORDER BY created_at DESC',
-      [model_id],
-    )
-    res.json(rows.map((r) => ({ ...r, can_edit: Boolean(r.can_edit) })))
+    const { model_id, orthophoto_id } = req.query as Record<string, string>
+    if (model_id) {
+      const { rows } = await db.query<Record<string, unknown>>(
+        'SELECT token, label, can_edit, created_at FROM share_links WHERE model_id = $1 ORDER BY created_at DESC',
+        [model_id],
+      )
+      res.json(rows.map((r) => ({ ...r, can_edit: Boolean(r.can_edit) })))
+      return
+    }
+    if (orthophoto_id) {
+      const { rows } = await db.query<Record<string, unknown>>(
+        'SELECT token, label, can_edit, created_at FROM share_links WHERE orthophoto_id = $1 ORDER BY created_at DESC',
+        [orthophoto_id],
+      )
+      res.json(rows.map((r) => ({ ...r, can_edit: Boolean(r.can_edit) })))
+      return
+    }
+    res.status(400).json({ error: 'model_id or orthophoto_id query param required' })
   } catch (err) {
     next(err)
   }
 })
 
-// PATCH /api/share/:token/model
-// Public endpoint authenticated via token ownership — update model position if can_edit
+// PATCH /api/share/:token/model — only valid for model share tokens
 router.patch('/:token/model', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { rows: linkRows } = await db.query<{ model_id: string; can_edit: number }>(
+    const { rows: linkRows } = await db.query<{ model_id: string | null; can_edit: number }>(
       'SELECT model_id, can_edit FROM share_links WHERE token = $1',
       [req.params.token],
     )
     const link = linkRows[0]
-    if (!link) { res.status(404).json({ error: 'Share link not found' }); return }
-    if (!link.can_edit) { res.status(403).json({ error: 'This link does not allow editing' }); return }
+    if (!link)              { res.status(404).json({ error: 'Share link not found' }); return }
+    if (!link.model_id)     { res.status(400).json({ error: 'This token is not a model share' }); return }
+    if (!link.can_edit)     { res.status(403).json({ error: 'This link does not allow editing' }); return }
 
     const body = req.body as Partial<Record<EditableField, unknown>>
     const fields = EDITABLE_FIELDS.filter((f) => body[f] !== undefined && typeof body[f] === 'number')

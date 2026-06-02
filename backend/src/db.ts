@@ -48,10 +48,13 @@ sqlite.exec(`
   );
 
   CREATE TABLE IF NOT EXISTS share_links (
-    token      TEXT PRIMARY KEY,
-    model_id   TEXT NOT NULL REFERENCES models(id) ON DELETE CASCADE,
-    label      TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    token         TEXT PRIMARY KEY,
+    model_id      TEXT REFERENCES models(id) ON DELETE CASCADE,
+    orthophoto_id TEXT REFERENCES orthophotos(id) ON DELETE CASCADE,
+    label         TEXT,
+    can_edit      INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    CHECK ((model_id IS NOT NULL) <> (orthophoto_id IS NOT NULL))
   );
 
   CREATE TABLE IF NOT EXISTS layers (
@@ -100,6 +103,32 @@ sqlite.exec(`
 ].forEach((sql) => {
   try { sqlite.exec(sql) } catch { /* column already exists */ }
 })
+
+// share_links needs `model_id` to be nullable and an `orthophoto_id` column so
+// orthophotos can be shared too. SQLite can't ALTER a NOT NULL constraint, so
+// rebuild the table when the new column is missing. Idempotent via PRAGMA check.
+{
+  const cols = sqlite.prepare(`PRAGMA table_info(share_links)`).all() as Array<{ name: string }>
+  if (!cols.some((c) => c.name === 'orthophoto_id')) {
+    sqlite.transaction(() => {
+      sqlite.exec(`
+        CREATE TABLE share_links_new (
+          token         TEXT PRIMARY KEY,
+          model_id      TEXT REFERENCES models(id) ON DELETE CASCADE,
+          orthophoto_id TEXT REFERENCES orthophotos(id) ON DELETE CASCADE,
+          label         TEXT,
+          can_edit      INTEGER NOT NULL DEFAULT 0,
+          created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+          CHECK ((model_id IS NOT NULL) <> (orthophoto_id IS NOT NULL))
+        );
+        INSERT INTO share_links_new (token, model_id, orthophoto_id, label, can_edit, created_at)
+          SELECT token, model_id, NULL, label, can_edit, created_at FROM share_links;
+        DROP TABLE share_links;
+        ALTER TABLE share_links_new RENAME TO share_links;
+      `)
+    })()
+  }
+}
 
 // ── Query helper ─────────────────────────────────────────────────────────────
 function pgToSqlite(sql: string): string {
