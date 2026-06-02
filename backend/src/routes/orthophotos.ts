@@ -18,6 +18,14 @@ const EARTH_HALF = 20037508.342789244
 // Avoids re-fetching the TIFF header on every tile request.
 // Each entry lives for 50 min — well within the 1-hour presigned URL expiry.
 
+interface OverviewLevel {
+  image:      GeoTIFFImage
+  origin:     [number, number]
+  resolution: [number, number]  // [xRes, yRes]; yRes < 0
+  width:      number
+  height:     number
+}
+
 interface CogMeta {
   image:      GeoTIFFImage
   origin:     number[]
@@ -27,6 +35,8 @@ interface CogMeta {
   imageW:     number
   imageH:     number
   expiry:     number
+  /** All IFDs sorted finest→coarsest (overviews[0] = full resolution). */
+  overviews:  OverviewLevel[]
 }
 
 const cogMetaCache = new Map<string, CogMeta | Promise<CogMeta>>()
@@ -41,24 +51,36 @@ async function getCogMeta(cogKey: string): Promise<CogMeta> {
     const tiff       = await fromUrl(url)
     const imageCount = await tiff.getImageCount()
 
-    // COG IFDs are not always ordered full-res first — find the largest image.
-    let image = await tiff.getImage(0)
-    let maxPx = image.getWidth() * image.getHeight()
-    for (let i = 1; i < imageCount; i++) {
-      const img = await tiff.getImage(i)
-      const px  = img.getWidth() * img.getHeight()
-      if (px > maxPx) { maxPx = px; image = img }
-    }
+    // IFD 0 always carries the geotransform; overview IFDs typically do not.
+    // Derive overview resolutions by scaling the full-resolution pixel size.
+    const fullImg    = await tiff.getImage(0)
+    const fullOrigin = fullImg.getOrigin()     as [number, number]
+    const fullRes    = fullImg.getResolution() as [number, number]
+    const fullW      = fullImg.getWidth()
+    const fullH      = fullImg.getHeight()
 
+    const ovs: OverviewLevel[] = []
+    for (let i = 0; i < imageCount; i++) {
+      const img = i === 0 ? fullImg : await tiff.getImage(i)
+      const w   = img.getWidth()
+      const h   = img.getHeight()
+      const xRes = fullRes[0] * (fullW / w)
+      const yRes = fullRes[1] * (fullH / h)
+      ovs.push({ image: img, origin: fullOrigin, resolution: [xRes, yRes], width: w, height: h })
+    }
+    ovs.sort((a, b) => Math.abs(a.resolution[0]) - Math.abs(b.resolution[0]))
+
+    const full = ovs[0]
     const meta: CogMeta = {
-      image,
-      origin:     image.getOrigin(),
-      resolution: image.getResolution(),
-      bands:      image.getSamplesPerPixel(),
-      nodata:     image.getGDALNoData(),
-      imageW:     image.getWidth(),
-      imageH:     image.getHeight(),
+      image:      full.image,
+      origin:     full.origin,
+      resolution: full.resolution,
+      bands:      full.image.getSamplesPerPixel(),
+      nodata:     full.image.getGDALNoData(),
+      imageW:     full.width,
+      imageH:     full.height,
       expiry:     Date.now() + 50 * 60 * 1000,
+      overviews:  ovs,
     }
     console.log(`[cog] ${cogKey.split('/').pop()} IFDs:${imageCount} fullRes:${meta.imageW}x${meta.imageH} res:${meta.resolution[0].toFixed(3)},${meta.resolution[1].toFixed(3)}`)
     cogMetaCache.set(cogKey, meta)
@@ -292,8 +314,14 @@ router.get('/:id([0-9a-f-]{36})/tiles/:z/:x/:y', async (req: Request, res: Respo
     if (!photo) return res.status(404).end()
     if (photo.status !== 'ready' || !photo.cog_key) return res.status(202).end()
 
+    // ETag keyed on cog_key + updated_at so adopt-cog / reprocess automatically
+    // invalidates cached tiles in the browser. We still want a short max-age so
+    // navigation feels snappy, but no_cache=true forces revalidation.
+    const etag = `"${photo.cog_key}-${photo.updated_at}"`
+    if (req.headers['if-none-match'] === etag) return res.status(304).end()
     res.setHeader('Content-Type', 'image/png')
-    res.setHeader('Cache-Control', 'public, max-age=3600')
+    res.setHeader('Cache-Control', 'public, max-age=60, must-revalidate')
+    res.setHeader('ETag', etag)
 
     // XYZ tile → EPSG:3857 bounding box (y=0 at north)
     const tileSize = (EARTH_HALF * 2) / Math.pow(2, tz)
@@ -316,32 +344,70 @@ router.get('/:id([0-9a-f-]{36})/tiles/:z/:x/:y', async (req: Request, res: Respo
     // Read tile from cached COG metadata (avoids re-fetching TIFF header per tile)
     let png: Buffer
     try {
-      const { image, origin: [origX, origY], resolution: [xRes, yRes], bands, nodata, imageW, imageH } =
-        await getCogMeta(photo.cog_key)
+      const cogMeta = await getCogMeta(photo.cog_key)
+      const { bands, nodata, overviews } = cogMeta
 
-      // Convert tile bbox (EPSG:3857 m) → pixel window via the image's GeoTransform.
-      // Uses IFD 0 directly — bypasses geotiff.js overview auto-selection which
-      // miscomputes pixel offsets inside overview IFDs, causing seams/wrong content.
+      // Select the finest overview whose pixel resolution is ≤ 2× the tile's
+      // target metres-per-pixel. This avoids loading the full-res raster for
+      // zoomed-out tiles (which would exhaust memory for high-res imagery).
+      const targetMpp = tileSize / 256
+      let ov = overviews[overviews.length - 1]  // coarsest fallback
+      for (let i = overviews.length - 1; i >= 0; i--) {
+        if (Math.abs(overviews[i].resolution[0]) <= targetMpp * 2) {
+          ov = overviews[i]
+          break
+        }
+      }
+
+      const [origX, origY] = ov.origin
+      const [xRes,  yRes]  = ov.resolution  // yRes < 0 flips y direction
+
+      // Convert tile bbox (EPSG:3857 m) → pixel window in the selected overview.
       const pixLeft   = Math.round((xMin - origX) / xRes)
       const pixRight  = Math.round((xMax - origX) / xRes)
-      const pixTop    = Math.round((yMax - origY) / yRes)  // yRes < 0 flips direction
+      const pixTop    = Math.round((yMax - origY) / yRes)
       const pixBottom = Math.round((yMin - origY) / yRes)
 
-      // Skip tiles entirely outside the image extent
-      if (pixRight <= 0 || pixLeft >= imageW || pixBottom <= 0 || pixTop >= imageH) {
+      // Clamp to the overview's actual pixel extent.  Without this, tiles that
+      // contain the entire image produce window sizes in the billions, causing
+      // geotiff.js to attempt impossibly large buffer allocations.
+      const cLeft   = Math.max(0, pixLeft)
+      const cRight  = Math.min(ov.width,  pixRight)
+      const cTop    = Math.max(0, pixTop)
+      const cBottom = Math.min(ov.height, pixBottom)
+
+      if (cRight <= cLeft || cBottom <= cTop) {
         return res.end(await emptyTile())
       }
 
-      const rasters = await image.readRasters({
-        window: [pixLeft, pixTop, pixRight, pixBottom],
-        width: 256,
-        height: 256,
+      // Compute the clamped region's position and size inside the 256×256 output tile.
+      const tW   = pixRight - pixLeft
+      const tH   = pixBottom - pixTop
+      const outW = Math.max(1, Math.round(256 * (cRight  - cLeft) / tW))
+      const outH = Math.max(1, Math.round(256 * (cBottom - cTop)  / tH))
+      const outX = Math.round(256 * (cLeft - pixLeft) / tW)
+      const outY = Math.round(256 * (cTop  - pixTop)  / tH)
+
+      const rasters = await ov.image.readRasters({
+        window: [cLeft, cTop, cRight, cBottom],
+        width:  outW,
+        height: outH,
         interleave: true,
         fillValue: 0,
       })
 
-      const raw = toRGBA(rasters as unknown as ArrayLike<number> & { BYTES_PER_ELEMENT: number }, bands, nodata)
-      png = await sharp(raw, { raw: { width: 256, height: 256, channels: 4 } }).png({ compressionLevel: 1 }).toBuffer()
+      const raw     = toRGBA(rasters as unknown as ArrayLike<number> & { BYTES_PER_ELEMENT: number }, bands, nodata)
+      const partial = await sharp(raw, { raw: { width: outW, height: outH, channels: 4 } }).png({ compressionLevel: 1 }).toBuffer()
+
+      if (outW === 256 && outH === 256) {
+        // Common case: the tile maps 1-to-1 onto a full 256×256 output
+        png = partial
+      } else {
+        // Partial coverage: composite the sub-image onto a transparent 256×256 canvas
+        png = await sharp({
+          create: { width: 256, height: 256, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
+        }).composite([{ input: partial, left: outX, top: outY }]).png({ compressionLevel: 1 }).toBuffer()
+      }
     } catch (err) {
       console.error(`[tile ${id}/${tz}/${tx}/${ty}] raster read failed:`, err instanceof Error ? err.message : err)
       // Invalidate cache on error so next request retries a fresh URL
@@ -368,6 +434,7 @@ interface OrthoRow extends Record<string, unknown> {
   zoom_min: number
   zoom_max: number
   error_message: string | null
+  updated_at: string
 }
 
 let _emptyTile: Buffer | null = null
