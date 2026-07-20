@@ -80,7 +80,7 @@ function getAuthHeader(): { Authorization: string } | Record<string, never> {
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeader(), ...init?.headers },
     ...init,
   })
   if (!res.ok) {

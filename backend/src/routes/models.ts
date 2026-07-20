@@ -2,17 +2,28 @@ import { Router, Request, Response, NextFunction } from 'express'
 import { randomUUID } from 'node:crypto'
 import { db } from '../db'
 import { deleteObject } from '../s3'
+import { env } from '../env'
+import { optionalAuth } from '../middleware/optionalAuth'
 
 const router = Router()
 
 // GET /api/models?limit=50&offset=0
-router.get('/', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/', optionalAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const limit = Math.min(Number(req.query.limit ?? 50), 100)
     const offset = Number(req.query.offset ?? 0)
+    if (req.isAdmin) {
+      const { rows } = await db.query(
+        'SELECT * FROM models ORDER BY created_at DESC LIMIT $1 OFFSET $2',
+        [limit, offset],
+      )
+      res.json(rows)
+      return
+    }
     const { rows } = await db.query(
-      'SELECT * FROM models ORDER BY created_at DESC LIMIT $1 OFFSET $2',
-      [limit, offset],
+      `SELECT * FROM models WHERE LOWER(asset_name) LIKE LOWER($1)
+       ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+      [`%${env.PUBLIC_ASSET_NAME}%`, limit, offset],
     )
     res.json(rows)
   } catch (err) {
@@ -21,10 +32,13 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
 })
 
 // GET /api/models/:id
-router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:id', optionalAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { rows } = await db.query('SELECT * FROM models WHERE id = $1', [req.params.id])
     if (!rows[0]) { res.status(404).json({ error: 'Not found' }); return }
+    if (!req.isAdmin && !String(rows[0].asset_name ?? '').toLowerCase().includes(env.PUBLIC_ASSET_NAME.toLowerCase())) {
+      res.status(404).json({ error: 'Not found' }); return
+    }
     res.json(rows[0])
   } catch (err) {
     next(err)

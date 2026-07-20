@@ -2,6 +2,12 @@ import { Router, Request, Response, NextFunction } from 'express'
 import express from 'express'
 import { db, randomUUID } from '../db'
 import { uploadObject, uploadFile, presignUpload, presignDownload } from '../s3'
+import { env } from '../env'
+import { optionalAuth } from '../middleware/optionalAuth'
+
+function isPublic(assetName: unknown): boolean {
+  return String(assetName ?? '').toLowerCase().includes(env.PUBLIC_ASSET_NAME.toLowerCase())
+}
 import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -96,21 +102,34 @@ async function getCogMeta(cogKey: string): Promise<CogMeta> {
 }
 
 // ── List ──────────────────────────────────────────────────────────────────────
-router.get('/', async (_req, res, next) => {
+router.get('/', optionalAuth, async (req, res, next) => {
   try {
-    const { rows } = await db.query<OrthoRow>(`SELECT * FROM orthophotos ORDER BY created_at DESC`)
+    if (req.isAdmin) {
+      const { rows } = await db.query<OrthoRow>(`SELECT * FROM orthophotos ORDER BY created_at DESC`)
+      res.json(rows)
+      return
+    }
+    const { rows } = await db.query<OrthoRow>(
+      `SELECT * FROM orthophotos WHERE LOWER(asset_name) LIKE LOWER($1) ORDER BY created_at DESC`,
+      [`%${env.PUBLIC_ASSET_NAME}%`],
+    )
     res.json(rows)
   } catch (err) { next(err) }
 })
 
 // ── Get single ────────────────────────────────────────────────────────────────
-router.get('/:id([0-9a-f-]{36})', async (req, res, next) => {
+router.get('/:id([0-9a-f-]{36})', optionalAuth, async (req, res, next) => {
   try {
     const { rows } = await db.query<OrthoRow>(`SELECT * FROM orthophotos WHERE id = $1`, [req.params.id])
     if (!rows[0]) return res.status(404).json({ error: 'Not found' })
+    if (!req.isAdmin && !isPublic(rows[0].asset_name)) return res.status(404).json({ error: 'Not found' })
     res.json(rows[0])
   } catch (err) { next(err) }
 })
+
+// Formats GDAL on this server cannot open at all (proprietary SDKs not installed).
+// Reject these immediately instead of letting gdalwarp fail obscurely later.
+const UNSUPPORTED_FORMATS = new Set(['ecw', 'sid', 'jp2000'])
 
 // ── Presign ───────────────────────────────────────────────────────────────────
 router.post('/presign', async (req: Request, res: Response, next: NextFunction) => {
@@ -120,6 +139,12 @@ router.post('/presign', async (req: Request, res: Response, next: NextFunction) 
       return res.status(400).json({ error: 'filename and contentType are required strings' })
     }
     const ext = filename.split('.').pop()?.toLowerCase() ?? 'tif'
+    if (UNSUPPORTED_FORMATS.has(ext)) {
+      return res.status(400).json({
+        error: `${ext.toUpperCase()} format isn't supported by this server's GDAL build (no proprietary SDK installed). ` +
+               `Convert to GeoTIFF first (e.g. with QGIS or the COG Converter desktop app), then upload the .tif.`,
+      })
+    }
     const key = `orthophotos/raw/${randomUUID()}.${ext}`
     const url = await presignUpload(key, contentType)
     res.json({ key, url, expiresIn: Number(process.env.PRESIGN_EXPIRY_SECONDS ?? 3600) })
@@ -139,6 +164,12 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 
     const id        = randomUUID()
     const fmt       = typeof original_format === 'string' ? original_format : 'unknown'
+    if (UNSUPPORTED_FORMATS.has(fmt.toLowerCase())) {
+      return res.status(400).json({
+        error: `${fmt.toUpperCase()} format isn't supported by this server's GDAL build. ` +
+               `Convert to GeoTIFF first, then upload the .tif.`,
+      })
+    }
     const desc      = typeof description === 'string' ? description : null
     const cogReady  = cog_ready === true
     const showWm    = (show_watermark === false || show_watermark === 0) ? 0 : 1
@@ -172,6 +203,12 @@ router.post('/upload',
       if (!filename) return res.status(400).json({ error: 'filename required' })
 
       const ext = filename.split('.').pop()?.toLowerCase() ?? 'tif'
+      if (UNSUPPORTED_FORMATS.has(ext)) {
+        return res.status(400).json({
+          error: `${ext.toUpperCase()} format isn't supported by this server's GDAL build. ` +
+                 `Convert to GeoTIFF first, then upload the .tif.`,
+        })
+      }
       const id = randomUUID()
       const fileKey = `orthophotos/${id}/original.${ext}`
       const body = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0)
@@ -339,7 +376,7 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
 
 // ── Tile serving ──────────────────────────────────────────────────────────────
 // GET /api/orthophotos/:id/tiles/:z/:x/:y(.png)
-router.get('/:id([0-9a-f-]{36})/tiles/:z/:x/:y', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:id([0-9a-f-]{36})/tiles/:z/:x/:y', optionalAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id, z, x } = req.params
     const tz = parseInt(z)
@@ -350,6 +387,7 @@ router.get('/:id([0-9a-f-]{36})/tiles/:z/:x/:y', async (req: Request, res: Respo
     const { rows } = await db.query<OrthoRow>(`SELECT * FROM orthophotos WHERE id = $1`, [id])
     const photo = rows[0]
     if (!photo) return res.status(404).end()
+    if (!req.isAdmin && !isPublic(photo.asset_name)) return res.status(404).end()
     if (photo.status !== 'ready' || !photo.cog_key) return res.status(202).end()
 
     // ETag keyed on cog_key + updated_at so adopt-cog / reprocess automatically
@@ -556,9 +594,19 @@ function runProcess(cmd: string, args: string[], env?: NodeJS.ProcessEnv): Promi
     let stdout = '', stderr = ''
     proc.stdout.on('data', (d: Buffer) => { stdout += d.toString() })
     proc.stderr.on('data', (d: Buffer) => { stderr += d.toString() })
-    proc.on('close', (code) => {
-      if (code === 0) resolve(stdout)
-      else reject(new Error(`${cmd} failed (exit ${code}): ${stderr.slice(0, 600)}`))
+    proc.on('close', (code, signal) => {
+      if (code === 0) { resolve(stdout); return }
+      const detail = stderr.trim().slice(0, 600)
+      if (code === null && signal) {
+        // Killed by a signal (no exit code) — almost always OOM-kill on this 512MB machine,
+        // or occasionally a driver crash. stderr is often empty in this case.
+        reject(new Error(
+          `${cmd} was killed by signal ${signal} (likely out of memory)` +
+          (detail ? `: ${detail}` : ' — no output captured before it was killed'),
+        ))
+        return
+      }
+      reject(new Error(`${cmd} failed (exit ${code}): ${detail}`))
     })
     proc.on('error', (e: NodeJS.ErrnoException) => {
       reject(new Error(`${cmd} not found — install gdal-bin on the server (${e.message})`))

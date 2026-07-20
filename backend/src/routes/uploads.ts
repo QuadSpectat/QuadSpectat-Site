@@ -2,6 +2,8 @@ import { Router, Request, Response, NextFunction } from 'express'
 import { randomUUID } from 'node:crypto'
 import { presignUpload, presignDownload } from '../s3'
 import { db } from '../db'
+import { env } from '../env'
+import { optionalAuth } from '../middleware/optionalAuth'
 
 const router = Router()
 
@@ -32,13 +34,16 @@ router.post('/presign', async (req: Request, res: Response, next: NextFunction) 
 // GET /api/uploads/:id/download
 // For CDN-hosted models (3D Tiles etc.) returns external_url directly.
 // For Spaces-hosted files returns a short-lived presigned GET URL.
-router.get('/:id/download', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:id/download', optionalAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { rows } = await db.query(
-      'SELECT file_key, external_url FROM models WHERE id = $1',
+      'SELECT file_key, external_url, asset_name FROM models WHERE id = $1',
       [req.params.id],
     )
     if (!rows[0]) { res.status(404).json({ error: 'Not found' }); return }
+    if (!req.isAdmin && !String(rows[0].asset_name ?? '').toLowerCase().includes(env.PUBLIC_ASSET_NAME.toLowerCase())) {
+      res.status(404).json({ error: 'Not found' }); return
+    }
 
     if (rows[0].external_url) {
       res.json({ url: rows[0].external_url as string })

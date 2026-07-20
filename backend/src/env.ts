@@ -19,4 +19,5 @@ export const env = {
   SPACES_REGION: optional('SPACES_REGION', 'fra1'),
   SPACES_ENDPOINT: optional('SPACES_ENDPOINT', 'https://fra1.digitaloceanspaces.com'),
   PRESIGN_EXPIRY_SECONDS: Number(optional('PRESIGN_EXPIRY_SECONDS', '3600')),
+  PUBLIC_ASSET_NAME: optional('PUBLIC_ASSET_NAME', 'DEMO'),
 } as const

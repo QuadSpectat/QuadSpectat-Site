@@ -616,7 +616,8 @@ export function CesiumViewer({
         }
       } else {
         // Create new imagery layer
-        const tileUrl = `${API_BASE}/orthophotos/${photo.id}/tiles/{z}/{x}/{y}.png`
+        const adminToken = localStorage.getItem('admin_token')
+        const tileUrl = `${API_BASE}/orthophotos/${photo.id}/tiles/{z}/{x}/{y}.png${adminToken ? `?token=${encodeURIComponent(adminToken)}` : ''}`
         const providerOpts: Cesium.UrlTemplateImageryProvider.ConstructorOptions = {
           url: tileUrl,
           minimumLevel: photo.zoom_min ?? 0,

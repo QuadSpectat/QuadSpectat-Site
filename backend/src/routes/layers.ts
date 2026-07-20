@@ -3,8 +3,16 @@ import express from 'express'
 import { randomUUID } from 'node:crypto'
 import { db } from '../db'
 import { presignUpload, presignDownload, deleteObject, uploadObject } from '../s3'
+import { env } from '../env'
+import { optionalAuth } from '../middleware/optionalAuth'
 
 const router = Router()
+
+async function parentModelIsPublic(modelId: string): Promise<boolean> {
+  const { rows } = await db.query('SELECT asset_name FROM models WHERE id = $1', [modelId])
+  if (!rows[0]) return false
+  return String(rows[0].asset_name ?? '').toLowerCase().includes(env.PUBLIC_ASSET_NAME.toLowerCase())
+}
 
 // POST /api/layers/upload?filename=X&model_id=Y  (raw binary body, proxied to Spaces)
 // express.raw() buffers the body as a Buffer on req.body — works even after express.json()
@@ -73,10 +81,11 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 })
 
 // GET /api/layers?model_id=...
-router.get('/', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/', optionalAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { model_id } = req.query as Record<string, string>
     if (!model_id) { res.status(400).json({ error: 'model_id required' }); return }
+    if (!req.isAdmin && !(await parentModelIsPublic(model_id))) { res.json([]); return }
     const { rows } = await db.query(
       'SELECT * FROM layers WHERE model_id = $1 ORDER BY created_at ASC',
       [model_id],
@@ -88,11 +97,18 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
 })
 
 // GET /api/layers/:id/download  — presigned URL for the layer file
-router.get('/:id/download', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:id/download', optionalAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { rows } = await db.query('SELECT file_key FROM layers WHERE id = $1', [req.params.id])
+    const { rows } = await db.query(
+      'SELECT file_key, model_id FROM layers WHERE id = $1',
+      [req.params.id],
+    )
     if (!rows[0]) { res.status(404).json({ error: 'Not found' }); return }
-    const url = await presignDownload((rows[0] as { file_key: string }).file_key)
+    const row = rows[0] as { file_key: string; model_id: string }
+    if (!req.isAdmin && !(await parentModelIsPublic(row.model_id))) {
+      res.status(404).json({ error: 'Not found' }); return
+    }
+    const url = await presignDownload(row.file_key)
     res.json({ url })
   } catch (err) {
     next(err)
