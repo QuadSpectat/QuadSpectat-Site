@@ -97,7 +97,7 @@ export function ClientPagesTab({ models, orthophotos, toast }: { models: Model[]
           ))}
         </div>
         <div className="mt-3 flex items-center gap-3">
-          <button className="inline-flex items-center gap-2 h-9 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold text-white transition-colors disabled:opacity-40" onClick={() => void create()} disabled={busy === 'create'}>
+          <button className="inline-flex items-center gap-2 h-9 px-4 rounded-lg bg-primary hover:bg-primary/90 text-sm font-semibold text-primary-foreground transition-colors disabled:opacity-40" onClick={() => void create()} disabled={busy === 'create'}>
             {busy === 'create' ? <Loader2 size={14} className="animate-spin" /> : <Users size={14} />} Create client page
           </button>
           <span className="text-xs text-white/40">{picked.size} selected</span>
