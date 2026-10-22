@@ -6,6 +6,7 @@ import App from './App'
 import { SharedViewer } from './pages/SharedViewer'
 import { LandingPage } from './pages/LandingPage'
 import { AdminPage } from './pages/AdminPage'
+import { ClientPage } from './pages/ClientPage'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -15,6 +16,7 @@ createRoot(document.getElementById('root')!).render(
         <Route path="/app" element={<App />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/v/:token" element={<SharedViewer />} />
+        <Route path="/c/:token" element={<ClientPage />} />
       </Routes>
     </BrowserRouter>
   </StrictMode>,

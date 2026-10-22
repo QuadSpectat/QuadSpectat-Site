@@ -138,8 +138,8 @@ export const presignUpload = (filename: string, contentType: string) =>
     body: JSON.stringify({ filename, contentType }),
   })
 
-export const getDownloadUrl = (id: string) =>
-  apiFetch<{ url: string }>(`/uploads/${id}/download`).then((d) => d.url)
+export const getDownloadUrl = (id: string, shareToken?: string) =>
+  apiFetch<{ url: string }>(`/uploads/${id}/download${shareToken ? `?share=${encodeURIComponent(shareToken)}` : ''}`).then((d) => d.url)
 
 /** PUT a file directly to a presigned S3/Spaces URL with upload progress. */
 export function uploadToSpaces(
@@ -194,8 +194,8 @@ export const deleteShareLink = (token: string) =>
 
 // Resolve a share token → discriminated union of model or orthophoto
 export type ResolvedShare =
-  | { kind: 'model';      model: Model;        can_edit: boolean }
-  | { kind: 'orthophoto'; orthophoto: Orthophoto; can_edit: boolean }
+  | { kind: 'model';      model: Model;        can_edit: boolean; expires_at?: string }
+  | { kind: 'orthophoto'; orthophoto: Orthophoto; can_edit: boolean; expires_at?: string }
 export const resolveShareToken = (token: string) =>
   apiFetch<ResolvedShare>(`/share/${token}`)
 
@@ -290,3 +290,36 @@ export interface CreateOrthophotoPayload {
 
 export const createOrthophoto = (payload: CreateOrthophotoPayload) =>
   apiFetch<Orthophoto>('/orthophotos', { method: 'POST', body: JSON.stringify(payload) })
+
+// ── Client pages (one private link per client, valid for one year, no logins) ──
+export interface ClientAsset {
+  kind: 'model' | 'orthophoto'
+  id: string
+  name: string
+  description: string | null
+  type: string
+  share_token: string
+}
+/** What a client's private link loads (public). Rejects with a message starting "410" once the page has expired. */
+export interface ClientPageData { name: string; note: string | null; expires_at: string; assets: ClientAsset[] }
+export const getClientPage = (token: string) => apiFetch<ClientPageData>(`/client/${token}`)
+
+export interface ClientPageAdmin {
+  token: string
+  name: string
+  note: string | null
+  created_at: string
+  expires_at: string
+  expired: boolean
+  path: string
+  assets: ClientAsset[]
+}
+export const listClientPages = () => apiFetch<ClientPageAdmin[]>('/clients')
+export const createClientPage = (payload: { name: string; note?: string; assets?: { kind: 'model' | 'orthophoto'; id: string }[] }) =>
+  apiFetch<ClientPageAdmin>('/clients', { method: 'POST', body: JSON.stringify(payload) })
+export const renewClientPage = (token: string) => apiFetch<ClientPageAdmin>(`/clients/${token}/renew`, { method: 'POST', body: '{}' })
+export const deleteClientPage = (token: string) => apiFetch<void>(`/clients/${token}`, { method: 'DELETE' })
+export const addClientAsset = (token: string, kind: 'model' | 'orthophoto', id: string) =>
+  apiFetch<ClientPageAdmin>(`/clients/${token}/assets`, { method: 'POST', body: JSON.stringify({ kind, id }) })
+export const removeClientAsset = (token: string, shareToken: string) =>
+  apiFetch<ClientPageAdmin>(`/clients/${token}/assets/${shareToken}`, { method: 'DELETE' })

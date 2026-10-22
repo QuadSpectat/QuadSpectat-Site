@@ -6,7 +6,7 @@ import { useState, useEffect, useRef, useCallback, type ChangeEvent, type DragEv
 import {
   LayoutDashboard, Box, Map, Upload, Trash2, ExternalLink,
   RefreshCw, AlertCircle, CheckCircle2, Loader2, X, ChevronRight,
-  FileImage, Globe, Eye, Info, LogOut, Bell, Copy, Zap,
+  FileImage, Globe, Eye, Info, LogOut, Bell, Copy, Zap, Users,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -15,10 +15,11 @@ import {
   login, getMe, getAgeInfo,
 } from '@/lib/api'
 import type { Model, Orthophoto, CreateOrthophotoPayload } from '@/lib/api'
+import { ClientPagesTab } from '@/components/ClientPagesTab'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type AdminTab = 'dashboard' | 'models' | 'orthophotos' | 'cog-convert' | 'reminders'
+type AdminTab = 'dashboard' | 'models' | 'orthophotos' | 'clients' | 'cog-convert' | 'reminders'
 
 interface Toast {
   id: number
@@ -1366,6 +1367,7 @@ export function AdminPage() {
     { tab: 'dashboard',   icon: <LayoutDashboard size={15} />, label: 'Dashboard' },
     { tab: 'models',      icon: <Box size={15} />,             label: 'Models' },
     { tab: 'orthophotos', icon: <Map size={15} />,             label: 'Orthophotos' },
+    { tab: 'clients',     icon: <Users size={15} />,           label: 'Client pages' },
     { tab: 'cog-convert', icon: <Zap size={15} />,             label: 'COG Convert' },
     { tab: 'reminders',   icon: <Bell size={15} />,            label: 'Reminders', dot: hasReminders },
   ]
@@ -1482,6 +1484,12 @@ export function AdminPage() {
                 onUpload={() => setShowUpload(true)}
                 toast={addToast}
               />
+            </>
+          )}
+          {activeTab === 'clients' && (
+            <>
+              <h1 className="text-lg font-semibold text-white mb-5">Client pages</h1>
+              <ClientPagesTab models={models} orthophotos={orthophotos} toast={addToast} />
             </>
           )}
           {activeTab === 'cog-convert' && (
