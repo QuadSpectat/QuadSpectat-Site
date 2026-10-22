@@ -3,7 +3,7 @@ import { Ruler, Hexagon, Box, Trash2, Home, MapPin, X, FileText, Download, Penci
 import { cn } from '@/lib/utils'
 import type { MeasureMode } from '@/lib/measure'
 import type { GeoPoint, ExportCrs } from '@/lib/geopoints'
-import { exportCsv, exportKml } from '@/lib/geopoints'
+import { exportCsv, exportKml, wgs84ToItm } from '@/lib/geopoints'
 
 interface Props {
   mode: MeasureMode
@@ -224,11 +224,11 @@ export function MeasureToolbar({
       {showPanels && geopoints.length > 0 && !geopointActive && (
         <div className={cn(PANEL, part === 'panels' ? 'w-full' : 'w-72', 'flex flex-col overflow-hidden pointer-events-auto')}>
           {/* Header */}
-          <div className="flex items-center justify-between px-3 py-2 border-b border-white/[0.10]">
+          <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-2 px-3 py-2 border-b border-white/[0.10]">
             <span className="text-[10px] font-semibold tracking-widest uppercase text-white/50">
               Points · {geopoints.length}
             </span>
-            <div className="flex items-center gap-1">
+            <div className="flex flex-wrap items-center gap-1">
               {/* CRS toggle */}
               <div className="flex rounded overflow-hidden border border-white/[0.12]">
                 {(['wgs84', 'itm'] as ExportCrs[]).map((c) => (
@@ -273,9 +273,18 @@ export function MeasureToolbar({
                 </span>
                 <div className="flex-1 min-w-0">
                   <p className="text-[11px] font-semibold text-white/80">{pt.label}</p>
-                  <p className="text-[10px] font-mono text-white/40">
-                    {fmt(pt.lat, 5)}°&nbsp;{fmt(pt.lon, 5)}°
-                  </p>
+                  {exportCrs === 'itm' ? (() => {
+                    const { easting, northing } = wgs84ToItm(pt.lat, pt.lon)
+                    return (
+                      <p className="text-[10px] font-mono text-white/40" title="Israel Transverse Mercator (EPSG:2039)">
+                        E&nbsp;{fmt(easting, 2)}&nbsp;&nbsp;N&nbsp;{fmt(northing, 2)}
+                      </p>
+                    )
+                  })() : (
+                    <p className="text-[10px] font-mono text-white/40" title="WGS84">
+                      {fmt(pt.lat, 5)}°&nbsp;{fmt(pt.lon, 5)}°
+                    </p>
+                  )}
                   <p className="text-[10px] font-mono text-white/30 mb-1">Alt {fmt(pt.alt, 1)} m</p>
 
                   {editingId === pt.id ? (
