@@ -78,7 +78,7 @@ function Field({
         type={type} step={step} value={value} placeholder={placeholder} required={required}
         onChange={(e: ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
         className="h-8 rounded-md border border-white/10 bg-white/5 px-2.5 text-sm text-white
-                   placeholder:text-white/20 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 transition-colors"
+                   placeholder:text-white/20 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/40 transition-colors"
       />
       {hint && <span className="text-[11px] text-white/30 leading-tight">{hint}</span>}
     </label>
@@ -97,8 +97,8 @@ function Select({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-8 rounded-md border border-white/10 bg-[#0d1220] px-2.5 text-sm text-white
-                   focus:outline-none focus:border-indigo-500 transition-colors"
+        className="h-8 rounded-md border border-white/10 bg-card px-2.5 text-sm text-white
+                   focus:outline-none focus:border-primary transition-colors"
       >
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
@@ -111,7 +111,7 @@ function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; cls: string; icon: React.ReactNode }> = {
     ready:      { label: 'Ready',      cls: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20', icon: <CheckCircle2 size={11} /> },
     processing: { label: 'Processing', cls: 'bg-amber-500/15 text-amber-400 border-amber-500/20',      icon: <Loader2 size={11} className="animate-spin" /> },
-    pending:    { label: 'Pending',    cls: 'bg-blue-500/15 text-blue-400 border-blue-500/20',         icon: <Loader2 size={11} className="animate-spin" /> },
+    pending:    { label: 'Pending',    cls: 'bg-primary/15 text-primary border-primary/20',         icon: <Loader2 size={11} className="animate-spin" /> },
     error:      { label: 'Error',      cls: 'bg-red-500/15 text-red-400 border-red-500/20',            icon: <AlertCircle size={11} /> },
   }
   const s = map[status] ?? map.pending
@@ -143,7 +143,7 @@ function ProgressBar({ pct }: { pct: number }) {
   return (
     <div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
       <div
-        className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all duration-200"
+        className="h-full rounded-full bg-primary transition-all duration-200"
         style={{ width: `${pct}%` }}
       />
     </div>
@@ -176,10 +176,10 @@ function DropZone({
       onClick={() => ref.current?.click()}
       className={cn(
         'relative flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed cursor-pointer transition-all duration-200 py-8 px-4 text-center select-none',
-        dragging ? 'border-indigo-400 bg-indigo-500/10' : 'border-white/10 hover:border-white/25 hover:bg-white/[0.03]',
+        dragging ? 'border-primary/50 bg-primary/10' : 'border-white/10 hover:border-white/25 hover:bg-white/[0.03]',
       )}
     >
-      <Upload size={24} className={cn('transition-colors', dragging ? 'text-indigo-400' : 'text-white/30')} />
+      <Upload size={24} className={cn('transition-colors', dragging ? 'text-primary' : 'text-white/30')} />
       <span className="text-sm font-medium text-white/70">{label}</span>
       {sublabel && <span className="text-[11px] text-white/30">{sublabel}</span>}
       <input ref={ref} type="file" accept={accept} className="sr-only" onChange={(e) => { const f = e.target.files?.[0]; if (f) { handle(f); e.target.value = '' } }} />
@@ -198,7 +198,7 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-      <div className="relative w-full max-w-xl rounded-2xl border border-white/10 bg-[#0d1220] shadow-2xl shadow-black/80 flex flex-col max-h-[90vh]">
+      <div className="relative w-full max-w-xl rounded-2xl border border-white/10 bg-card shadow-2xl shadow-black/80 flex flex-col max-h-[90vh]">
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 shrink-0">
           <span className="text-sm font-semibold text-white">{title}</span>
           <button onClick={onClose} className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-white/10 text-white/50 hover:text-white transition-colors">
@@ -222,7 +222,7 @@ function ToastStack({ toasts, onRemove }: { toasts: Toast[]; onRemove: (id: numb
             'flex items-center gap-2.5 pl-3 pr-2 py-2.5 rounded-xl border shadow-2xl pointer-events-auto',
             t.type === 'success' && 'bg-emerald-950/90 border-emerald-500/30 text-emerald-300',
             t.type === 'error'   && 'bg-red-950/90 border-red-500/30 text-red-300',
-            t.type === 'info'    && 'bg-indigo-950/90 border-indigo-500/30 text-indigo-300',
+            t.type === 'info'    && 'bg-card border-primary/50 text-primary',
           )}
         >
           {t.type === 'success' && <CheckCircle2 size={14} />}
@@ -439,7 +439,7 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
               {(['select', 'new'] as const).map((m) => (
                 <button key={m} type="button" onClick={() => setAssetMode(m)}
                   className={cn('flex-1 py-1.5 text-xs font-medium transition-colors',
-                    assetMode === m ? 'bg-indigo-600 text-white' : 'text-white/50 hover:text-white hover:bg-white/5')}>
+                    assetMode === m ? 'bg-primary text-primary-foreground' : 'text-primary-foreground/50 hover:text-primary/80-foreground hover:bg-white/5')}>
                   {m === 'select' ? 'Existing asset' : '➕ New asset'}
                 </button>
               ))}
@@ -447,13 +447,13 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
           )}
           {assetMode === 'select' ? (
             <select value={selectedAsset} onChange={(e) => setSelectedAsset(e.target.value)}
-              className="h-8 rounded-md border border-white/10 bg-[#0d1220] px-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors">
+              className="h-8 rounded-md border border-white/10 bg-card px-2.5 text-sm text-white focus:outline-none focus:border-primary transition-colors">
               {existingAssets.map((a) => <option key={a} value={a}>{a}</option>)}
             </select>
           ) : (
             <input type="text" value={newAssetName} onChange={(e) => setNewAssetName(e.target.value)}
               placeholder="New asset name…" required
-              className="h-8 rounded-md border border-white/10 bg-white/5 px-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-indigo-500 transition-colors" />
+              className="h-8 rounded-md border border-white/10 bg-white/5 px-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-primary transition-colors" />
           )}
         </div>
 
@@ -464,7 +464,7 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
             {([['model', '📦 3D Model'], ['orthophoto', '🗺 Orthophoto']] as const).map(([t, label]) => (
               <button key={t} type="button" onClick={() => setAssetType(t)}
                 className={cn('flex-1 py-2 text-xs font-medium transition-colors',
-                  assetType === t ? 'bg-indigo-600 text-white' : 'text-white/50 hover:text-white hover:bg-white/5')}>
+                  assetType === t ? 'bg-primary text-primary-foreground' : 'text-primary-foreground/50 hover:text-primary/80-foreground hover:bg-white/5')}>
                 {label}
               </button>
             ))}
@@ -493,8 +493,8 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
             </div>
             {modelMode === 'file' ? (
               modelFile ? (
-                <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10">
-                  <Box size={18} className="text-indigo-400 shrink-0" />
+                <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-primary/50 bg-primary/10">
+                  <Box size={18} className="text-primary shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium text-white truncate">{modelFile.name}</p>
                     <p className="text-[11px] text-white/40">{formatBytes(modelFile.size)}</p>
@@ -565,7 +565,7 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
           <span className="text-xs font-semibold text-white/60 uppercase tracking-wider">4. Watermark</span>
           <label className="flex items-center gap-2.5 cursor-pointer select-none">
             <input type="checkbox" checked={showWatermark} onChange={(e) => setShowWatermark(e.target.checked)}
-              className="h-4 w-4 rounded border-white/20 bg-white/5 accent-indigo-500" />
+              className="h-4 w-4 rounded border-white/20 bg-white/5 accent-primary" />
             <span className="text-xs text-white/60">
               Show watermark on this {assetType === 'model' ? 'model' : 'orthophoto'}
             </span>
@@ -575,7 +575,7 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
               <select
                 value={watermarkSelection}
                 onChange={(e) => setWatermarkSelection(e.target.value)}
-                className="h-8 rounded-md border border-white/10 bg-[#0d1220] px-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                className="h-8 rounded-md border border-white/10 bg-card px-2.5 text-sm text-white focus:outline-none focus:border-primary transition-colors"
               >
                 <option value="">— No watermark text —</option>
                 {existingWatermarks.map((w) => (
@@ -586,7 +586,7 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
               {watermarkSelection === '__custom__' && (
                 <input type="text" value={customWatermark} onChange={(e) => setCustomWatermark(e.target.value)}
                   placeholder="e.g. אא מערכות מידע בע״מ"
-                  className="h-8 rounded-md border border-white/10 bg-white/5 px-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-indigo-500 transition-colors" />
+                  className="h-8 rounded-md border border-white/10 bg-white/5 px-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-primary transition-colors" />
               )}
             </>
           )}
@@ -606,7 +606,7 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
             Cancel
           </button>
           <button type="submit" disabled={uploading || !assetName}
-            className="flex-1 h-9 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white transition-colors disabled:opacity-40 flex items-center justify-center gap-1.5">
+            className="flex-1 h-9 rounded-lg bg-primary hover:bg-primary/90 text-xs font-semibold text-primary-foreground transition-colors disabled:opacity-40 flex items-center justify-center gap-1.5">
             {uploading ? <><Loader2 size={13} className="animate-spin" />Uploading…</> : <><Upload size={13} />Upload</>}
           </button>
         </div>
@@ -667,7 +667,7 @@ function DashboardTab({ models, orthophotos }: { models: Model[]; orthophotos: O
             <div className="divide-y divide-white/5">
               {recentModels.map((m) => (
                 <div key={m.id} className="flex items-center gap-3 px-4 py-2.5">
-                  <Box size={14} className="text-indigo-400 shrink-0" />
+                  <Box size={14} className="text-primary shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium text-white truncate">{m.name}</p>
                     <p className="text-[11px] text-white/30">{m.model_type.toUpperCase()} · {fmtDate(m.created_at)}</p>
@@ -744,7 +744,7 @@ function ModelsTab({
             <RefreshCw size={12} className={cn(loading && 'animate-spin')} /> Refresh
           </button>
           <button onClick={onUpload}
-            className="h-8 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white transition-colors flex items-center gap-1.5">
+            className="h-8 px-3 rounded-lg bg-primary hover:bg-primary/90 text-xs font-semibold text-primary-foreground transition-colors flex items-center gap-1.5">
             <Upload size={12} /> Upload Model
           </button>
         </div>
@@ -758,7 +758,7 @@ function ModelsTab({
         <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
           <Box size={32} className="text-white/10" />
           <p className="text-sm text-white/40">No models uploaded yet.</p>
-          <button onClick={onUpload} className="text-xs text-indigo-400 hover:text-indigo-300 underline underline-offset-2 transition-colors">
+          <button onClick={onUpload} className="text-xs text-primary hover:text-primary/80 underline underline-offset-2 transition-colors">
             Upload your first model →
           </button>
         </div>
@@ -782,14 +782,14 @@ function ModelsTab({
                 <tr key={m.id} className="hover:bg-white/[0.02] transition-colors">
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-2">
-                      {m.model_type === '3d-tiles' ? <Globe size={13} className="text-violet-400 shrink-0" /> : <Box size={13} className="text-indigo-400 shrink-0" />}
+                      {m.model_type === '3d-tiles' ? <Globe size={13} className="text-primary shrink-0" /> : <Box size={13} className="text-primary shrink-0" />}
                       <span className="font-medium text-white max-w-[180px] truncate">{m.name}</span>
                     </div>
                     {m.description && <p className="text-[11px] text-white/30 ml-5 truncate max-w-[180px]">{m.description}</p>}
                   </td>
                   <td className="px-4 py-2.5 hidden sm:table-cell">
                     <span className={cn('px-1.5 py-0.5 rounded text-[11px] font-medium',
-                      m.model_type === '3d-tiles' ? 'bg-violet-500/15 text-violet-400' : 'bg-indigo-500/15 text-indigo-400')}>
+                      m.model_type === '3d-tiles' ? 'bg-primary/15 text-primary' : 'bg-primary/10 text-primary')}>
                       {m.model_type === 'gltf' ? 'GLB/GLTF' : m.model_type === '3d-tiles' ? '3D Tiles' : m.model_type}
                     </span>
                   </td>
@@ -1080,7 +1080,7 @@ function CogConverterTab({
       {/* Primary: auto-convert on server */}
       <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 flex flex-col gap-4">
         <div className="flex items-center gap-2.5">
-          <Zap size={16} className="text-indigo-400 shrink-0" />
+          <Zap size={16} className="text-primary shrink-0" />
           <h2 className="text-sm font-semibold text-white">Convert &amp; Add to Viewer</h2>
         </div>
         <p className="text-xs text-white/40">
@@ -1091,8 +1091,8 @@ function CogConverterTab({
 
         <form onSubmit={(e) => { void handleSubmit(e) }} className="flex flex-col gap-4">
           {file ? (
-            <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10">
-              <FileImage size={18} className="text-indigo-400 shrink-0" />
+            <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-primary/50 bg-primary/10">
+              <FileImage size={18} className="text-primary shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium text-white truncate">{file.name}</p>
                 <p className="text-[11px] text-white/40">{formatBytes(file.size)}</p>
@@ -1129,7 +1129,7 @@ function CogConverterTab({
           )}
 
           <button type="submit" disabled={busy || !file || !name.trim()}
-            className="h-9 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white transition-colors disabled:opacity-40 flex items-center justify-center gap-1.5">
+            className="h-9 rounded-lg bg-primary hover:bg-primary/90 text-xs font-semibold text-primary-foreground transition-colors disabled:opacity-40 flex items-center justify-center gap-1.5">
             {busy
               ? <><Loader2 size={13} className="animate-spin" />{phase === 'uploading' ? 'Uploading…' : 'Converting…'}</>
               : <><Zap size={13} />Convert &amp; Add to Viewer</>}
@@ -1263,7 +1263,7 @@ function RemindersTab({ models, orthophotos }: { models: Model[]; orthophotos: O
               status === 'overdue' ? 'border-red-500/25 bg-red-500/5' : 'border-amber-500/25 bg-amber-500/5',
             )}>
               <div className="flex items-center gap-2">
-                <Box size={13} className="text-indigo-400 shrink-0" />
+                <Box size={13} className="text-primary shrink-0" />
                 <span className="text-xs font-medium text-white truncate">{m.name}</span>
               </div>
               <p className="text-[11px] text-white/40">3D Model · {m.model_type.toUpperCase()}</p>
@@ -1375,7 +1375,7 @@ export function AdminPage() {
   // ── Spinner while auth check in flight ─────────────────────────────────────
   if (!authChecked) {
     return (
-      <div className="flex items-center justify-center h-svh bg-[#070a12]">
+      <div className="flex items-center justify-center h-svh bg-background">
         <Loader2 size={22} className="animate-spin text-white/30" />
       </div>
     )
@@ -1384,11 +1384,11 @@ export function AdminPage() {
   // ── Login card ─────────────────────────────────────────────────────────────
   if (!authed) {
     return (
-      <div className="flex items-center justify-center h-svh bg-[#070a12] text-white">
-        <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#0d1220] shadow-2xl shadow-black/80 p-8 flex flex-col gap-5">
+      <div className="flex items-center justify-center h-svh bg-background text-white">
+        <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-card shadow-2xl shadow-black/80 p-8 flex flex-col gap-5">
           <div className="flex items-center gap-2.5 mb-2">
-            <div className="h-8 w-8 rounded-xl bg-indigo-600 flex items-center justify-center">
-              <Globe size={16} className="text-white" />
+            <div className="h-8 w-8 rounded-xl bg-primary flex items-center justify-center">
+              <Globe size={16} className="text-primary-foreground" />
             </div>
             <div>
               <p className="text-sm font-bold text-white tracking-tight">3D Viewer Admin</p>
@@ -1404,7 +1404,7 @@ export function AdminPage() {
               </div>
             )}
             <button type="submit" disabled={loginBusy}
-              className="mt-1 h-9 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold text-white transition-colors disabled:opacity-40 flex items-center justify-center gap-2">
+              className="mt-1 h-9 rounded-lg bg-primary hover:bg-primary/90 text-sm font-semibold text-primary-foreground transition-colors disabled:opacity-40 flex items-center justify-center gap-2">
               {loginBusy ? <Loader2 size={14} className="animate-spin" /> : null}
               Sign in
             </button>
@@ -1415,16 +1415,16 @@ export function AdminPage() {
   }
 
   return (
-    <div className="min-h-svh bg-[#070a12] text-white flex flex-col">
+    <div className="min-h-svh bg-background text-white flex flex-col">
       {/* Top bar */}
-      <header className="shrink-0 flex items-center gap-4 px-6 py-3 border-b border-white/10 bg-[#0b100d]/80 backdrop-blur-xl">
+      <header className="shrink-0 flex items-center gap-4 px-6 border-b border-border bg-card" style={{ height: "56px" }}>
         <div className="flex items-center gap-2.5">
-          <div className="h-7 w-7 rounded-lg bg-indigo-600 flex items-center justify-center">
-            <Globe size={14} className="text-white" />
+          <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center">
+            <Globe size={14} className="text-primary-foreground" />
           </div>
-          <span className="text-sm font-bold text-white tracking-tight">3D Viewer</span>
+          <span className="font-bold tracking-tight">QuadSpectat</span>
           <span className="text-white/20 mx-1">/</span>
-          <span className="text-sm text-white/50 font-medium">Admin</span>
+          <span className="text-[11px] font-semibold tracking-[0.14em] uppercase text-muted-foreground">3D Viewer Admin</span>
         </div>
 
         {/* Tab nav */}
@@ -1433,7 +1433,7 @@ export function AdminPage() {
             <button key={tab} onClick={() => setActiveTab(tab)}
               className={cn(
                 'relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
-                activeTab === tab ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white hover:bg-white/5',
+                activeTab === tab ? 'bg-primary/15 text-primary' : 'text-white/40 hover:text-white hover:bg-white/5',
               )}>
               {icon}{label}
               {dot && <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-red-500" />}
