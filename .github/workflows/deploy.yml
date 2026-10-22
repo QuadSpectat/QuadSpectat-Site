@@ -7,58 +7,14 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
+# The frontend (viewer, client pages, drone landing) is built and hosted by the shared DigitalOcean app
+# (see QuadSpectat-Web/.do/app.yaml). This workflow only deploys the API to Fly.io.
 concurrency:
-  group: "pages"
+  group: "backend"
   cancel-in-progress: true
 
 jobs:
-
-  # ── 1. Build + deploy frontend to GitHub Pages ──────────────────────────────
-  deploy-frontend:
-    name: Frontend → GitHub Pages
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build frontend
-        working-directory: frontend
-        env:
-          VITE_API_URL: https://quadspectat-api.fly.dev/api
-        run: pnpm build
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: frontend/dist
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
 
   # ── 2. Deploy backend to Fly.io ─────────────────────────────────────────────
   deploy-backend:
