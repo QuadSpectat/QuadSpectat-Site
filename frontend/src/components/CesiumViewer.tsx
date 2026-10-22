@@ -838,7 +838,7 @@ export function CesiumViewer({
       <div ref={containerRef} className="w-full h-full" />
       {/* Hidden credit container — keeps Cesium logo off the canvas */}
       <div ref={creditRef} className="hidden" />
-      <OrientationAids viewer={viewer} onHome={() => homeRef.current?.()} />
+      <OrientationAids viewer={viewer} onHome={selectedModel ? () => homeRef.current?.() : undefined} />
       {notice && (
         <div role="status"
              className="absolute top-16 left-1/2 -translate-x-1/2 rounded-2xl border border-white/[0.15]
