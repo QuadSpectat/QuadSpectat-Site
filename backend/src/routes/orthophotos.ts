@@ -15,6 +15,7 @@ import { unlink } from 'node:fs/promises'
 import { fromUrl, GeoTIFFImage } from 'geotiff'
 import sharp from 'sharp'
 import { requireAuth } from '../middleware/auth'
+import { shareGrantsOrtho } from '../shareAccess'
 
 const router = Router()
 
@@ -388,7 +389,7 @@ router.get('/:id([0-9a-f-]{36})/tiles/:z/:x/:y', optionalAuth, async (req: Reque
     const { rows } = await db.query<OrthoRow>(`SELECT * FROM orthophotos WHERE id = $1`, [id])
     const photo = rows[0]
     if (!photo) return res.status(404).end()
-    if (!req.isAdmin && !isPublic(photo.asset_name)) return res.status(404).end()
+    if (!req.isAdmin && !isPublic(photo.asset_name) && !(await shareGrantsOrtho(req.query.share, id))) return res.status(404).end()
     if (photo.status !== 'ready' || !photo.cog_key) return res.status(202).end()
 
     // ETag keyed on cog_key + updated_at so adopt-cog / reprocess automatically

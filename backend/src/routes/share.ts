@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express'
 import { randomBytes } from 'node:crypto'
 import { db } from '../db'
 import { requireAuth } from '../middleware/auth'
+import { findShare, oneYearFromNow, effectiveExpiry } from '../shareAccess'
 
 const router = Router()
 
@@ -34,12 +35,13 @@ router.post('/', requireAuth, async (req: Request, res: Response, next: NextFunc
     // can_edit only meaningful for model shares — recipients can't "edit" an orthophoto
     const canEditInt = (mId !== null && can_edit) ? 1 : 0
 
+    const expiresAt = oneYearFromNow()
     await db.query(
-      'INSERT INTO share_links (token, model_id, orthophoto_id, label, can_edit) VALUES ($1, $2, $3, $4, $5)',
-      [token, mId, oId, label ?? null, canEditInt],
+      'INSERT INTO share_links (token, model_id, orthophoto_id, label, can_edit, expires_at) VALUES ($1, $2, $3, $4, $5, $6)',
+      [token, mId, oId, label ?? null, canEditInt, expiresAt],
     )
 
-    res.status(201).json({ token, path: `/v/${token}` })
+    res.status(201).json({ token, path: `/v/${token}`, expires_at: expiresAt })
   } catch (err) {
     next(err)
   }
@@ -50,16 +52,11 @@ router.post('/', requireAuth, async (req: Request, res: Response, next: NextFunc
 // { kind: 'orthophoto', orthophoto, can_edit }
 router.get('/:token', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { rows: linkRows } = await db.query<{
-      model_id: string | null
-      orthophoto_id: string | null
-      can_edit: number
-    }>(
-      'SELECT model_id, orthophoto_id, can_edit FROM share_links WHERE token = $1',
-      [req.params.token],
-    )
-    const link = linkRows[0]
-    if (!link) { res.status(404).json({ error: 'Share link not found or expired' }); return }
+    const found = await findShare(req.params.token)
+    if (found.state === 'missing') { res.status(404).json({ error: 'Share link not found' }); return }
+    if (found.state === 'expired') { res.status(410).json({ error: 'This link has expired' }); return }
+    const link = found.row
+    const expires_at = effectiveExpiry(link).toISOString()
 
     if (link.model_id) {
       const { rows } = await db.query<Record<string, unknown>>(
@@ -67,7 +64,7 @@ router.get('/:token', async (req: Request, res: Response, next: NextFunction) =>
         [link.model_id],
       )
       if (!rows[0]) { res.status(404).json({ error: 'Model no longer exists' }); return }
-      res.json({ kind: 'model', model: rows[0], can_edit: Boolean(link.can_edit) })
+      res.json({ kind: 'model', model: rows[0], can_edit: Boolean(link.can_edit), expires_at })
       return
     }
 
@@ -76,7 +73,7 @@ router.get('/:token', async (req: Request, res: Response, next: NextFunction) =>
       [link.orthophoto_id],
     )
     if (!rows[0]) { res.status(404).json({ error: 'Orthophoto no longer exists' }); return }
-    res.json({ kind: 'orthophoto', orthophoto: rows[0], can_edit: false })
+    res.json({ kind: 'orthophoto', orthophoto: rows[0], can_edit: false, expires_at })
   } catch (err) {
     next(err)
   }
@@ -89,18 +86,18 @@ router.get('/', requireAuth, async (req: Request, res: Response, next: NextFunct
     const { model_id, orthophoto_id } = req.query as Record<string, string>
     if (model_id) {
       const { rows } = await db.query<Record<string, unknown>>(
-        'SELECT token, label, can_edit, created_at FROM share_links WHERE model_id = $1 ORDER BY created_at DESC',
+        'SELECT token, label, can_edit, created_at, expires_at FROM share_links WHERE model_id = $1 ORDER BY created_at DESC',
         [model_id],
       )
-      res.json(rows.map((r) => ({ ...r, can_edit: Boolean(r.can_edit) })))
+      res.json(rows.map((r) => ({ ...r, can_edit: Boolean(r.can_edit), expires_at: effectiveExpiry(r as { created_at: string; expires_at: string | null }).toISOString() })))
       return
     }
     if (orthophoto_id) {
       const { rows } = await db.query<Record<string, unknown>>(
-        'SELECT token, label, can_edit, created_at FROM share_links WHERE orthophoto_id = $1 ORDER BY created_at DESC',
+        'SELECT token, label, can_edit, created_at, expires_at FROM share_links WHERE orthophoto_id = $1 ORDER BY created_at DESC',
         [orthophoto_id],
       )
-      res.json(rows.map((r) => ({ ...r, can_edit: Boolean(r.can_edit) })))
+      res.json(rows.map((r) => ({ ...r, can_edit: Boolean(r.can_edit), expires_at: effectiveExpiry(r as { created_at: string; expires_at: string | null }).toISOString() })))
       return
     }
     res.status(400).json({ error: 'model_id or orthophoto_id query param required' })
@@ -112,12 +109,10 @@ router.get('/', requireAuth, async (req: Request, res: Response, next: NextFunct
 // PATCH /api/share/:token/model — only valid for model share tokens
 router.patch('/:token/model', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { rows: linkRows } = await db.query<{ model_id: string | null; can_edit: number }>(
-      'SELECT model_id, can_edit FROM share_links WHERE token = $1',
-      [req.params.token],
-    )
-    const link = linkRows[0]
-    if (!link)              { res.status(404).json({ error: 'Share link not found' }); return }
+    const found = await findShare(req.params.token)
+    if (found.state === 'missing') { res.status(404).json({ error: 'Share link not found' }); return }
+    if (found.state === 'expired') { res.status(410).json({ error: 'This link has expired' }); return }
+    const link = found.row
     if (!link.model_id)     { res.status(400).json({ error: 'This token is not a model share' }); return }
     if (!link.can_edit)     { res.status(403).json({ error: 'This link does not allow editing' }); return }
 
@@ -137,6 +132,18 @@ router.patch('/:token/model', async (req: Request, res: Response, next: NextFunc
       values,
     )
     res.json(updated[0] ?? null)
+  } catch (err) {
+    next(err)
+  }
+})
+
+// POST /api/share/:token/renew — a fresh year (admin only)
+router.post('/:token/renew', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const expires_at = oneYearFromNow()
+    const { rowCount } = await db.query('UPDATE share_links SET expires_at = $1 WHERE token = $2', [expires_at, req.params.token])
+    if (!rowCount) { res.status(404).json({ error: 'Share link not found' }); return }
+    res.json({ token: req.params.token, expires_at })
   } catch (err) {
     next(err)
   }

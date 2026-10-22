@@ -104,6 +104,7 @@ sqlite.exec(`
   `ALTER TABLE orthophotos ADD COLUMN show_watermark INTEGER NOT NULL DEFAULT 1`,
   `ALTER TABLE orthophotos ADD COLUMN watermark_text TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE share_links ADD COLUMN can_edit INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE share_links ADD COLUMN expires_at TEXT`,
 ].forEach((sql) => {
   try { sqlite.exec(sql) } catch { /* column already exists */ }
 })
@@ -133,6 +134,26 @@ sqlite.exec(`
     })()
   }
 }
+
+// ── Client pages + link expiry (additive; safe to run on every start) ───────────
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS client_pages (
+    token      TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    note       TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT
+  );
+  CREATE TABLE IF NOT EXISTS client_page_assets (
+    client_token TEXT NOT NULL REFERENCES client_pages(token) ON DELETE CASCADE,
+    share_token  TEXT NOT NULL REFERENCES share_links(token) ON DELETE CASCADE,
+    position     INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (client_token, share_token)
+  );
+`)
+// Links created before expiry existed become valid until one year after they were created.
+sqlite.exec(`UPDATE share_links SET expires_at = strftime('%Y-%m-%dT%H:%M:%SZ', created_at, '+365 days') WHERE expires_at IS NULL`)
+sqlite.exec(`UPDATE client_pages SET expires_at = strftime('%Y-%m-%dT%H:%M:%SZ', created_at, '+365 days') WHERE expires_at IS NULL`)
 
 // ── Query helper ─────────────────────────────────────────────────────────────
 function pgToSqlite(sql: string): string {
