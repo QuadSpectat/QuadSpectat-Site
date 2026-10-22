@@ -78,9 +78,9 @@ function Field({
         type={type} step={step} value={value} placeholder={placeholder} required={required}
         onChange={(e: ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
         className="h-8 rounded-md border border-white/10 bg-white/5 px-2.5 text-sm text-white
-                   placeholder:text-white/20 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/40 transition-colors"
+                   placeholder:text-white/55 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/40 transition-colors"
       />
-      {hint && <span className="text-[11px] text-white/30 leading-tight">{hint}</span>}
+      {hint && <span className="text-[11px] text-white/50 leading-tight">{hint}</span>}
     </label>
   )
 }
@@ -102,7 +102,7 @@ function Select({
       >
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
-      {hint && <span className="text-[11px] text-white/30 leading-tight">{hint}</span>}
+      {hint && <span className="text-[11px] text-white/50 leading-tight">{hint}</span>}
     </label>
   )
 }
@@ -179,9 +179,9 @@ function DropZone({
         dragging ? 'border-primary/50 bg-primary/10' : 'border-white/10 hover:border-white/25 hover:bg-white/[0.03]',
       )}
     >
-      <Upload size={24} className={cn('transition-colors', dragging ? 'text-primary' : 'text-white/30')} />
+      <Upload size={24} className={cn('transition-colors', dragging ? 'text-primary' : 'text-white/50')} />
       <span className="text-sm font-medium text-white/70">{label}</span>
-      {sublabel && <span className="text-[11px] text-white/30">{sublabel}</span>}
+      {sublabel && <span className="text-[11px] text-white/50">{sublabel}</span>}
       <input ref={ref} type="file" accept={accept} className="sr-only" onChange={(e) => { const f = e.target.files?.[0]; if (f) { handle(f); e.target.value = '' } }} />
     </div>
   )
@@ -439,7 +439,7 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
               {(['select', 'new'] as const).map((m) => (
                 <button key={m} type="button" onClick={() => setAssetMode(m)}
                   className={cn('flex-1 py-1.5 text-xs font-medium transition-colors',
-                    assetMode === m ? 'bg-primary text-primary-foreground' : 'text-primary-foreground/50 hover:text-primary/80-foreground hover:bg-white/5')}>
+                    assetMode === m ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-white/5')}>
                   {m === 'select' ? 'Existing asset' : '➕ New asset'}
                 </button>
               ))}
@@ -453,7 +453,7 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
           ) : (
             <input type="text" value={newAssetName} onChange={(e) => setNewAssetName(e.target.value)}
               placeholder="New asset name…" required
-              className="h-8 rounded-md border border-white/10 bg-white/5 px-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-primary transition-colors" />
+              className="h-8 rounded-md border border-white/10 bg-white/5 px-2.5 text-sm text-white placeholder:text-white/55 focus:outline-none focus:border-primary transition-colors" />
           )}
         </div>
 
@@ -464,7 +464,7 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
             {([['model', '📦 3D Model'], ['orthophoto', '🗺 Orthophoto']] as const).map(([t, label]) => (
               <button key={t} type="button" onClick={() => setAssetType(t)}
                 className={cn('flex-1 py-2 text-xs font-medium transition-colors',
-                  assetType === t ? 'bg-primary text-primary-foreground' : 'text-primary-foreground/50 hover:text-primary/80-foreground hover:bg-white/5')}>
+                  assetType === t ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-white/5')}>
                 {label}
               </button>
             ))}
@@ -486,7 +486,7 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
               {(['file', 'url'] as const).map((m) => (
                 <button key={m} type="button" onClick={() => { setModelMode(m); setError(null) }}
                   className={cn('flex-1 py-1.5 text-xs font-medium transition-colors',
-                    modelMode === m ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white hover:bg-white/5')}>
+                    modelMode === m ? 'bg-white/10 text-white' : 'text-white/55 hover:text-white hover:bg-white/5')}>
                   {m === 'file' ? '📁 GLB / GLTF file' : '🔗 3D Tiles URL'}
                 </button>
               ))}
@@ -497,9 +497,9 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
                   <Box size={18} className="text-primary shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium text-white truncate">{modelFile.name}</p>
-                    <p className="text-[11px] text-white/40">{formatBytes(modelFile.size)}</p>
+                    <p className="text-[11px] text-white/55">{formatBytes(modelFile.size)}</p>
                   </div>
-                  <button type="button" onClick={() => setModelFile(null)} className="text-white/30 hover:text-red-400 transition-colors"><X size={14} /></button>
+                  <button type="button" onClick={() => setModelFile(null)} className="text-white/50 hover:text-red-400 transition-colors"><X size={14} /></button>
                 </div>
               ) : (
                 <DropZone accept=".glb,.gltf" onFile={handleModelFileDrop} label="Drop GLB / GLTF here or click to browse" sublabel=".glb, .gltf — max 2 GB" />
@@ -517,7 +517,7 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
             )}
             <div>
               <button type="button" onClick={() => setShowTransform((s) => !s)}
-                className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white/70 transition-colors">
+                className="flex items-center gap-1.5 text-xs text-white/55 hover:text-white/70 transition-colors">
                 <ChevronRight size={13} className={cn('transition-transform', showTransform && 'rotate-90')} />
                 Position &amp; Orientation (optional)
               </button>
@@ -541,9 +541,9 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
                 <FileImage size={18} className="text-emerald-400 shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-medium text-white truncate">{orthoFile.name}</p>
-                  <p className="text-[11px] text-white/40">{formatBytes(orthoFile.size)} · {ORTHO_FORMATS[orthoFile.name.split('.').pop()?.toLowerCase() ?? ''] ?? 'Raster'}</p>
+                  <p className="text-[11px] text-white/55">{formatBytes(orthoFile.size)} · {ORTHO_FORMATS[orthoFile.name.split('.').pop()?.toLowerCase() ?? ''] ?? 'Raster'}</p>
                 </div>
-                <button type="button" onClick={() => setOrthoFile(null)} className="text-white/30 hover:text-red-400 transition-colors"><X size={14} /></button>
+                <button type="button" onClick={() => setOrthoFile(null)} className="text-white/50 hover:text-red-400 transition-colors"><X size={14} /></button>
               </div>
             ) : (
               <DropZone accept=".tif,.tiff,.ecw,.jp2,.j2k,.sid" onFile={handleOrthoFileDrop}
@@ -554,7 +554,7 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
               <input type="checkbox" checked={cogReady} onChange={(e) => setCogReady(e.target.checked)}
                 className="h-4 w-4 rounded border-white/20 bg-white/5 accent-emerald-500" />
               <span className="text-xs text-white/60">File is already a Cloud-Optimized GeoTIFF in EPSG:3857
-                <span className="text-white/30"> (skip server-side conversion)</span>
+                <span className="text-white/50"> (skip server-side conversion)</span>
               </span>
             </label>
           </div>
@@ -586,7 +586,7 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
               {watermarkSelection === '__custom__' && (
                 <input type="text" value={customWatermark} onChange={(e) => setCustomWatermark(e.target.value)}
                   placeholder="e.g. אא מערכות מידע בע״מ"
-                  className="h-8 rounded-md border border-white/10 bg-white/5 px-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-primary transition-colors" />
+                  className="h-8 rounded-md border border-white/10 bg-white/5 px-2.5 text-sm text-white placeholder:text-white/55 focus:outline-none focus:border-primary transition-colors" />
               )}
             </>
           )}
@@ -620,13 +620,13 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
 function StatCard({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: string | number; sub?: string }) {
   return (
     <div className="flex items-center gap-4 rounded-xl border border-white/10 bg-white/[0.03] px-5 py-4">
-      <div className="h-10 w-10 rounded-xl bg-white/5 flex items-center justify-center text-white/40 shrink-0">
+      <div className="h-10 w-10 rounded-xl bg-white/5 flex items-center justify-center text-white/55 shrink-0">
         {icon}
       </div>
       <div>
         <p className="text-2xl font-bold text-white tabular-nums">{value}</p>
-        <p className="text-xs text-white/40">{label}</p>
-        {sub && <p className="text-[11px] text-white/25 mt-0.5">{sub}</p>}
+        <p className="text-xs text-white/55">{label}</p>
+        {sub && <p className="text-[11px] text-white/50 mt-0.5">{sub}</p>}
       </div>
     </div>
   )
@@ -658,11 +658,11 @@ function DashboardTab({ models, orthophotos }: { models: Model[]; orthophotos: O
         {/* Recent models */}
         <div className="rounded-xl border border-white/10 bg-white/[0.02] overflow-hidden">
           <div className="px-4 py-3 border-b border-white/10 flex items-center gap-2">
-            <Box size={14} className="text-white/40" />
+            <Box size={14} className="text-white/55" />
             <span className="text-xs font-semibold text-white/60 uppercase tracking-wider">Recent Models</span>
           </div>
           {recentModels.length === 0 ? (
-            <p className="px-4 py-6 text-xs text-white/30 text-center">No models uploaded yet</p>
+            <p className="px-4 py-6 text-xs text-white/50 text-center">No models uploaded yet</p>
           ) : (
             <div className="divide-y divide-white/5">
               {recentModels.map((m) => (
@@ -670,7 +670,7 @@ function DashboardTab({ models, orthophotos }: { models: Model[]; orthophotos: O
                   <Box size={14} className="text-primary shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium text-white truncate">{m.name}</p>
-                    <p className="text-[11px] text-white/30">{m.model_type.toUpperCase()} · {fmtDate(m.created_at)}</p>
+                    <p className="text-[11px] text-white/50">{m.model_type.toUpperCase()} · {fmtDate(m.created_at)}</p>
                   </div>
                 </div>
               ))}
@@ -681,11 +681,11 @@ function DashboardTab({ models, orthophotos }: { models: Model[]; orthophotos: O
         {/* Recent orthophotos */}
         <div className="rounded-xl border border-white/10 bg-white/[0.02] overflow-hidden">
           <div className="px-4 py-3 border-b border-white/10 flex items-center gap-2">
-            <Map size={14} className="text-white/40" />
+            <Map size={14} className="text-white/55" />
             <span className="text-xs font-semibold text-white/60 uppercase tracking-wider">Recent Orthophotos</span>
           </div>
           {recentOrthos.length === 0 ? (
-            <p className="px-4 py-6 text-xs text-white/30 text-center">No orthophotos uploaded yet</p>
+            <p className="px-4 py-6 text-xs text-white/50 text-center">No orthophotos uploaded yet</p>
           ) : (
             <div className="divide-y divide-white/5">
               {recentOrthos.map((o) => (
@@ -693,7 +693,7 @@ function DashboardTab({ models, orthophotos }: { models: Model[]; orthophotos: O
                   <FileImage size={14} className="text-emerald-400 shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium text-white truncate">{o.name}</p>
-                    <p className="text-[11px] text-white/30">{o.original_format ?? 'Raster'} · {fmtDate(o.created_at)}</p>
+                    <p className="text-[11px] text-white/50">{o.original_format ?? 'Raster'} · {fmtDate(o.created_at)}</p>
                   </div>
                   <StatusBadge status={o.status} />
                 </div>
@@ -737,7 +737,7 @@ function ModelsTab({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
-        <span className="text-xs text-white/40">{models.length} model{models.length !== 1 ? 's' : ''}</span>
+        <span className="text-xs text-white/55">{models.length} model{models.length !== 1 ? 's' : ''}</span>
         <div className="flex items-center gap-2">
           <button onClick={onRefresh} disabled={loading}
             className="h-8 px-3 rounded-lg border border-white/10 text-xs text-white/50 hover:text-white hover:border-white/25 transition-colors flex items-center gap-1.5 disabled:opacity-40">
@@ -751,13 +751,13 @@ function ModelsTab({
       </div>
 
       {loading && models.length === 0 ? (
-        <div className="flex items-center justify-center py-16 text-xs text-white/30 gap-2">
+        <div className="flex items-center justify-center py-16 text-xs text-white/50 gap-2">
           <Loader2 size={14} className="animate-spin" /> Loading…
         </div>
       ) : models.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
           <Box size={32} className="text-white/10" />
-          <p className="text-sm text-white/40">No models uploaded yet.</p>
+          <p className="text-sm text-white/55">No models uploaded yet.</p>
           <button onClick={onUpload} className="text-xs text-primary hover:text-primary/80 underline underline-offset-2 transition-colors">
             Upload your first model →
           </button>
@@ -767,14 +767,14 @@ function ModelsTab({
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-white/10 bg-white/[0.02]">
-                <th className="text-left px-4 py-2.5 text-white/40 font-medium">Name</th>
-                <th className="text-left px-4 py-2.5 text-white/40 font-medium hidden sm:table-cell">Type</th>
-                <th className="text-left px-4 py-2.5 text-white/40 font-medium hidden md:table-cell">Size</th>
-                <th className="text-left px-4 py-2.5 text-white/40 font-medium hidden lg:table-cell">Coordinates</th>
-                <th className="text-left px-4 py-2.5 text-white/40 font-medium hidden md:table-cell">CRS</th>
-                <th className="text-left px-4 py-2.5 text-white/40 font-medium hidden sm:table-cell">Added</th>
-                <th className="text-left px-4 py-2.5 text-white/40 font-medium hidden sm:table-cell">Age</th>
-                <th className="text-right px-4 py-2.5 text-white/40 font-medium">Actions</th>
+                <th className="text-left px-4 py-2.5 text-white/55 font-medium">Name</th>
+                <th className="text-left px-4 py-2.5 text-white/55 font-medium hidden sm:table-cell">Type</th>
+                <th className="text-left px-4 py-2.5 text-white/55 font-medium hidden md:table-cell">Size</th>
+                <th className="text-left px-4 py-2.5 text-white/55 font-medium hidden lg:table-cell">Coordinates</th>
+                <th className="text-left px-4 py-2.5 text-white/55 font-medium hidden md:table-cell">CRS</th>
+                <th className="text-left px-4 py-2.5 text-white/55 font-medium hidden sm:table-cell">Added</th>
+                <th className="text-left px-4 py-2.5 text-white/55 font-medium hidden sm:table-cell">Age</th>
+                <th className="text-right px-4 py-2.5 text-white/55 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
@@ -785,7 +785,7 @@ function ModelsTab({
                       {m.model_type === '3d-tiles' ? <Globe size={13} className="text-primary shrink-0" /> : <Box size={13} className="text-primary shrink-0" />}
                       <span className="font-medium text-white max-w-[180px] truncate">{m.name}</span>
                     </div>
-                    {m.description && <p className="text-[11px] text-white/30 ml-5 truncate max-w-[180px]">{m.description}</p>}
+                    {m.description && <p className="text-[11px] text-white/50 ml-5 truncate max-w-[180px]">{m.description}</p>}
                   </td>
                   <td className="px-4 py-2.5 hidden sm:table-cell">
                     <span className={cn('px-1.5 py-0.5 rounded text-[11px] font-medium',
@@ -793,14 +793,14 @@ function ModelsTab({
                       {m.model_type === 'gltf' ? 'GLB/GLTF' : m.model_type === '3d-tiles' ? '3D Tiles' : m.model_type}
                     </span>
                   </td>
-                  <td className="px-4 py-2.5 text-white/40 hidden md:table-cell">{formatBytes(m.file_size)}</td>
-                  <td className="px-4 py-2.5 text-white/40 hidden lg:table-cell font-mono text-[11px]">
+                  <td className="px-4 py-2.5 text-white/55 hidden md:table-cell">{formatBytes(m.file_size)}</td>
+                  <td className="px-4 py-2.5 text-white/55 hidden lg:table-cell font-mono text-[11px]">
                     {formatCoord(m.longitude, 4)}°, {formatCoord(m.latitude, 4)}°
                   </td>
                   <td className="px-4 py-2.5 hidden md:table-cell">
-                    <span className="text-[11px] text-white/30 uppercase">{m.coordinate_system}</span>
+                    <span className="text-[11px] text-white/50 uppercase">{m.coordinate_system}</span>
                   </td>
-                  <td className="px-4 py-2.5 text-white/30 hidden sm:table-cell">{fmtDate(m.created_at)}</td>
+                  <td className="px-4 py-2.5 text-white/50 hidden sm:table-cell">{fmtDate(m.created_at)}</td>
                   <td className="px-4 py-2.5 hidden sm:table-cell"><AgeBadge createdAt={m.created_at} /></td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-1 justify-end">
@@ -809,14 +809,14 @@ function ModelsTab({
                         target="_blank"
                         rel="noopener noreferrer"
                         title="Open in viewer"
-                        className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-white/10 text-white/30 hover:text-white transition-colors"
+                        className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-white/10 text-white/50 hover:text-white transition-colors"
                       >
                         <Eye size={13} />
                       </a>
                       <button
                         title="Delete model"
                         onClick={() => handleDelete(m)}
-                        className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-red-500/10 text-white/30 hover:text-red-400 transition-colors"
+                        className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-red-500/10 text-white/50 hover:text-red-400 transition-colors"
                       >
                         <Trash2 size={13} />
                       </button>
@@ -858,27 +858,27 @@ function OrthophotosTab({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
-        <span className="text-xs text-white/40">{orthophotos.length} orthophoto{orthophotos.length !== 1 ? 's' : ''}</span>
+        <span className="text-xs text-white/55">{orthophotos.length} orthophoto{orthophotos.length !== 1 ? 's' : ''}</span>
         <div className="flex items-center gap-2">
           <button onClick={onRefresh} disabled={loading}
             className="h-8 px-3 rounded-lg border border-white/10 text-xs text-white/50 hover:text-white hover:border-white/25 transition-colors flex items-center gap-1.5 disabled:opacity-40">
             <RefreshCw size={12} className={cn(loading && 'animate-spin')} /> Refresh
           </button>
           <button onClick={onUpload}
-            className="h-8 px-3 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-xs font-semibold text-white transition-colors flex items-center gap-1.5">
+            className="h-8 px-3 rounded-lg bg-primary hover:bg-primary/90 text-xs font-semibold text-primary-foreground transition-colors flex items-center gap-1.5">
             <Upload size={12} /> Upload Orthophoto
           </button>
         </div>
       </div>
 
       {loading && orthophotos.length === 0 ? (
-        <div className="flex items-center justify-center py-16 text-xs text-white/30 gap-2">
+        <div className="flex items-center justify-center py-16 text-xs text-white/50 gap-2">
           <Loader2 size={14} className="animate-spin" /> Loading…
         </div>
       ) : orthophotos.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
           <Map size={32} className="text-white/10" />
-          <p className="text-sm text-white/40">No orthophotos uploaded yet.</p>
+          <p className="text-sm text-white/55">No orthophotos uploaded yet.</p>
           <button onClick={onUpload} className="text-xs text-emerald-400 hover:text-emerald-300 underline underline-offset-2 transition-colors">
             Upload your first orthophoto →
           </button>
@@ -888,13 +888,13 @@ function OrthophotosTab({
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-white/10 bg-white/[0.02]">
-                <th className="text-left px-4 py-2.5 text-white/40 font-medium">Name</th>
-                <th className="text-left px-4 py-2.5 text-white/40 font-medium hidden sm:table-cell">Format</th>
-                <th className="text-left px-4 py-2.5 text-white/40 font-medium">Status</th>
-                <th className="text-left px-4 py-2.5 text-white/40 font-medium hidden lg:table-cell">Bounds (W/S/E/N)</th>
-                <th className="text-left px-4 py-2.5 text-white/40 font-medium hidden sm:table-cell">Added</th>
-                <th className="text-left px-4 py-2.5 text-white/40 font-medium hidden sm:table-cell">Age</th>
-                <th className="text-right px-4 py-2.5 text-white/40 font-medium">Actions</th>
+                <th className="text-left px-4 py-2.5 text-white/55 font-medium">Name</th>
+                <th className="text-left px-4 py-2.5 text-white/55 font-medium hidden sm:table-cell">Format</th>
+                <th className="text-left px-4 py-2.5 text-white/55 font-medium">Status</th>
+                <th className="text-left px-4 py-2.5 text-white/55 font-medium hidden lg:table-cell">Bounds (W/S/E/N)</th>
+                <th className="text-left px-4 py-2.5 text-white/55 font-medium hidden sm:table-cell">Added</th>
+                <th className="text-left px-4 py-2.5 text-white/55 font-medium hidden sm:table-cell">Age</th>
+                <th className="text-right px-4 py-2.5 text-white/55 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
@@ -913,19 +913,19 @@ function OrthophotosTab({
                     </span>
                   </td>
                   <td className="px-4 py-2.5"><StatusBadge status={o.status} /></td>
-                  <td className="px-4 py-2.5 hidden lg:table-cell font-mono text-[11px] text-white/40">
+                  <td className="px-4 py-2.5 hidden lg:table-cell font-mono text-[11px] text-white/55">
                     {o.bounds_west !== null
                       ? `${formatCoord(o.bounds_west, 4)} / ${formatCoord(o.bounds_south, 4)} / ${formatCoord(o.bounds_east, 4)} / ${formatCoord(o.bounds_north, 4)}`
                       : '—'}
                   </td>
-                  <td className="px-4 py-2.5 text-white/30 hidden sm:table-cell">{fmtDate(o.created_at)}</td>
+                  <td className="px-4 py-2.5 text-white/50 hidden sm:table-cell">{fmtDate(o.created_at)}</td>
                   <td className="px-4 py-2.5 hidden sm:table-cell"><AgeBadge createdAt={o.created_at} /></td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-1 justify-end">
                       <button
                         title="Delete orthophoto"
                         onClick={() => handleDelete(o)}
-                        className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-red-500/10 text-white/30 hover:text-red-400 transition-colors"
+                        className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-red-500/10 text-white/50 hover:text-red-400 transition-colors"
                       >
                         <Trash2 size={13} />
                       </button>
@@ -1059,7 +1059,7 @@ function CogConverterTab({
         <p className="text-sm font-semibold text-white">
           {wasServer ? 'Upload complete — converting on server…' : 'Orthophoto added to viewer!'}
         </p>
-        <p className="text-xs text-white/40 text-center max-w-xs">
+        <p className="text-xs text-white/55 text-center max-w-xs">
           {wasServer
             ? 'The server is reprojecting and building overviews. Check the Orthophotos tab — it will turn Ready in a few minutes.'
             : 'Your COG is ready in the Orthophotos tab.'}
@@ -1083,7 +1083,7 @@ function CogConverterTab({
           <Zap size={16} className="text-primary shrink-0" />
           <h2 className="text-sm font-semibold text-white">Convert &amp; Add to Viewer</h2>
         </div>
-        <p className="text-xs text-white/40">
+        <p className="text-xs text-white/55">
           Upload any GeoTIFF, ECW or JPEG2000 — the server runs{' '}
           <code className="font-mono text-white/50">gdalwarp</code> to reproject and build
           COG overviews automatically. No manual steps needed.
@@ -1095,10 +1095,10 @@ function CogConverterTab({
               <FileImage size={18} className="text-primary shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium text-white truncate">{file.name}</p>
-                <p className="text-[11px] text-white/40">{formatBytes(file.size)}</p>
+                <p className="text-[11px] text-white/55">{formatBytes(file.size)}</p>
               </div>
               <button type="button" disabled={busy} onClick={() => { setFile(null); setName('') }}
-                className="text-white/30 hover:text-red-400 transition-colors disabled:opacity-40">
+                className="text-white/50 hover:text-red-400 transition-colors disabled:opacity-40">
                 <X size={14} />
               </button>
             </div>
@@ -1118,7 +1118,7 @@ function CogConverterTab({
           {phase === 'uploading' && (
             <div className="flex flex-col gap-1.5">
               <ProgressBar pct={pct} />
-              <span className="text-[11px] text-white/40 text-right">Uploading… {pct}%</span>
+              <span className="text-[11px] text-white/55 text-right">Uploading… {pct}%</span>
             </div>
           )}
           {phase === 'processing' && (
@@ -1140,7 +1140,7 @@ function CogConverterTab({
       {/* Advanced: manual local GDAL + COG upload */}
       <div className="rounded-xl border border-white/10 bg-white/[0.02] overflow-hidden">
         <button type="button" onClick={() => setShowManual((v) => !v)}
-          className="w-full flex items-center gap-2 px-5 py-3 text-xs font-medium text-white/40 hover:text-white/70 transition-colors">
+          className="w-full flex items-center gap-2 px-5 py-3 text-xs font-medium text-white/55 hover:text-white/70 transition-colors">
           <ChevronRight size={13} className={cn('transition-transform shrink-0', showManual && 'rotate-90')} />
           Advanced: convert locally with GDAL, then upload
         </button>
@@ -1151,16 +1151,16 @@ function CogConverterTab({
             <div className="flex flex-col gap-3">
               <p className="text-xs text-white/50 font-medium">Step 1 — Run in OSGeo4W Shell (QGIS)</p>
               <div className="flex flex-col gap-1">
-                <span className="text-xs font-medium text-white/40">Input file</span>
+                <span className="text-xs font-medium text-white/55">Input file</span>
                 <div onClick={() => cmdPickRef.current?.click()}
                   className="flex items-center gap-2 h-9 rounded-md border border-white/10 bg-white/5 px-2.5 cursor-pointer hover:border-white/25 transition-colors">
-                  <FileImage size={13} className="text-white/30 shrink-0" />
-                  <span className={cn('text-sm flex-1 truncate', cmdInput ? 'text-white' : 'text-white/25')}>
+                  <FileImage size={13} className="text-white/50 shrink-0" />
+                  <span className={cn('text-sm flex-1 truncate', cmdInput ? 'text-white' : 'text-white/50')}>
                     {cmdInput || 'Click to browse…'}
                   </span>
                   {cmdInput && (
                     <button type="button" onClick={(e) => { e.stopPropagation(); setCmdInput(''); setCmdOutput('') }}
-                      className="text-white/30 hover:text-red-400 transition-colors shrink-0"><X size={13} /></button>
+                      className="text-white/50 hover:text-red-400 transition-colors shrink-0"><X size={13} /></button>
                   )}
                 </div>
                 <input ref={cmdPickRef} type="file" accept=".tif,.tiff,.ecw,.jp2,.j2k,.sid" className="sr-only" onChange={handleCmdPick} />
@@ -1170,7 +1170,7 @@ function CogConverterTab({
               <div className="relative">
                 <pre className={cn(
                   'text-[11px] font-mono bg-black/50 border border-white/10 rounded-lg px-4 py-3 pr-20 overflow-x-auto whitespace-pre-wrap break-all leading-relaxed select-all',
-                  cmdInput ? 'text-emerald-300' : 'text-white/30',
+                  cmdInput ? 'text-emerald-300' : 'text-white/50',
                 )}>
                   {gdalCmd}
                 </pre>
@@ -1192,10 +1192,10 @@ function CogConverterTab({
                     <FileImage size={18} className="text-emerald-400 shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-white truncate">{cogFile.name}</p>
-                      <p className="text-[11px] text-white/40">{formatBytes(cogFile.size)}</p>
+                      <p className="text-[11px] text-white/55">{formatBytes(cogFile.size)}</p>
                     </div>
                     <button type="button" disabled={cogBusy} onClick={() => { setCogFile(null); setCogName('') }}
-                      className="text-white/30 hover:text-red-400 transition-colors disabled:opacity-40"><X size={14} /></button>
+                      className="text-white/50 hover:text-red-400 transition-colors disabled:opacity-40"><X size={14} /></button>
                   </div>
                 ) : (
                   <DropZone accept=".tif,.tiff" onFile={handleCogFileDrop}
@@ -1210,7 +1210,7 @@ function CogConverterTab({
                 {cogPhase === 'uploading' && (
                   <div className="flex flex-col gap-1.5">
                     <ProgressBar pct={cogPct} />
-                    <span className="text-[11px] text-white/40 text-right">Uploading… {cogPct}%</span>
+                    <span className="text-[11px] text-white/55 text-right">Uploading… {cogPct}%</span>
                   </div>
                 )}
                 {cogPhase === 'processing' && (
@@ -1219,7 +1219,7 @@ function CogConverterTab({
                   </div>
                 )}
                 <button type="submit" disabled={cogBusy || !cogFile || !cogName.trim()}
-                  className="h-9 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-xs font-semibold text-white transition-colors disabled:opacity-40 flex items-center justify-center gap-1.5">
+                  className="h-9 rounded-lg bg-primary hover:bg-primary/90 text-xs font-semibold text-primary-foreground transition-colors disabled:opacity-40 flex items-center justify-center gap-1.5">
                   {cogBusy
                     ? <><Loader2 size={13} className="animate-spin" />{cogPhase === 'uploading' ? 'Uploading…' : 'Registering…'}</>
                     : <><Upload size={13} />Add to Viewer</>}
@@ -1251,7 +1251,7 @@ function RemindersTab({ models, orthophotos }: { models: Model[]; orthophotos: O
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-xs text-white/40">
+      <p className="text-xs text-white/55">
         {allFlagged} item{allFlagged !== 1 ? 's' : ''} approaching or past the 1-year mark
       </p>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -1266,9 +1266,9 @@ function RemindersTab({ models, orthophotos }: { models: Model[]; orthophotos: O
                 <Box size={13} className="text-primary shrink-0" />
                 <span className="text-xs font-medium text-white truncate">{m.name}</span>
               </div>
-              <p className="text-[11px] text-white/40">3D Model · {m.model_type.toUpperCase()}</p>
+              <p className="text-[11px] text-white/55">3D Model · {m.model_type.toUpperCase()}</p>
               <AgeBadge createdAt={m.created_at} />
-              <p className="text-[11px] text-white/30">{days} days old · added {fmtDate(m.created_at)}</p>
+              <p className="text-[11px] text-white/50">{days} days old · added {fmtDate(m.created_at)}</p>
             </div>
           )
         })}
@@ -1283,9 +1283,9 @@ function RemindersTab({ models, orthophotos }: { models: Model[]; orthophotos: O
                 <FileImage size={13} className="text-emerald-400 shrink-0" />
                 <span className="text-xs font-medium text-white truncate">{o.name}</span>
               </div>
-              <p className="text-[11px] text-white/40">Orthophoto · {o.original_format ?? 'Raster'}</p>
+              <p className="text-[11px] text-white/55">Orthophoto · {o.original_format ?? 'Raster'}</p>
               <AgeBadge createdAt={o.created_at} />
-              <p className="text-[11px] text-white/30">{days} days old · added {fmtDate(o.created_at)}</p>
+              <p className="text-[11px] text-white/50">{days} days old · added {fmtDate(o.created_at)}</p>
             </div>
           )
         })}
@@ -1376,7 +1376,7 @@ export function AdminPage() {
   if (!authChecked) {
     return (
       <div className="flex items-center justify-center h-svh bg-background">
-        <Loader2 size={22} className="animate-spin text-white/30" />
+        <Loader2 size={22} className="animate-spin text-white/50" />
       </div>
     )
   }
@@ -1392,7 +1392,7 @@ export function AdminPage() {
             </div>
             <div>
               <p className="text-sm font-bold text-white tracking-tight">3D Viewer Admin</p>
-              <p className="text-[11px] text-white/40">Sign in to continue</p>
+              <p className="text-[11px] text-white/55">Sign in to continue</p>
             </div>
           </div>
           <form onSubmit={(e) => { void handleLogin(e) }} className="flex flex-col gap-3">
@@ -1423,7 +1423,7 @@ export function AdminPage() {
             <Globe size={14} className="text-primary-foreground" />
           </div>
           <span className="font-bold tracking-tight">QuadSpectat</span>
-          <span className="text-white/20 mx-1">/</span>
+          <span className="text-white/50 mx-1">/</span>
           <span className="text-[11px] font-semibold tracking-[0.14em] uppercase text-muted-foreground">3D Viewer Admin</span>
         </div>
 
@@ -1433,7 +1433,7 @@ export function AdminPage() {
             <button key={tab} onClick={() => setActiveTab(tab)}
               className={cn(
                 'relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
-                activeTab === tab ? 'bg-primary/15 text-primary' : 'text-white/40 hover:text-white hover:bg-white/5',
+                activeTab === tab ? 'bg-primary/15 text-primary' : 'text-white/55 hover:text-white hover:bg-white/5',
               )}>
               {icon}{label}
               {dot && <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-red-500" />}
