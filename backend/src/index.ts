@@ -15,8 +15,6 @@ const ALLOWED_ORIGINS = [
   'http://localhost:5173',
   'https://quadspectat.com',
   'https://www.quadspectat.com',
-  'https://quadspectat.site',
-  'https://www.quadspectat.site',
   'https://quadspectat.github.io',
 ]
 app.use((req, res, next) => {
