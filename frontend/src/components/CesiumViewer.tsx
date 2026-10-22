@@ -7,6 +7,8 @@ import 'cesium/Build/Cesium/Widgets/widgets.css'
 Cesium.Ion.defaultAccessToken = ''
 import { useMeasure } from '@/hooks/useMeasure'
 import { useGeopoints } from '@/hooks/useGeopoints'
+import { ProfilePanel } from '@/components/ProfilePanel'
+import type { Profile } from '@/lib/profile'
 import type { Model } from '@/lib/api'
 import type { MeasureMode } from '@/lib/measure'
 import type { VisualSettings } from '@/lib/visualControls'
@@ -269,6 +271,7 @@ export function CesiumViewer({
   const [viewer, setViewer] = useState<Cesium.Viewer | null>(null)
   const [tileError, setTileError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [profile, setProfile] = useState<Profile | null>(null)
   const noticeTimer = useRef<number | undefined>(undefined)
   // Home button target — set wherever resetCameraRef is set
   const homeRef = useRef<(() => void) | null>(null)
@@ -869,7 +872,7 @@ export function CesiumViewer({
     if (googleShown && toolWanted) onNotice('Measuring is turned off while Google 3D is shown')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [googleShown, toolWanted])
-  useMeasure(viewer, googleShown ? 'none' : measureMode, baseElevation, measureKey, onMeasureResult, heightRef, { undoRef, finishRef, onNotice })
+  useMeasure(viewer, googleShown ? 'none' : measureMode, baseElevation, measureKey, onMeasureResult, heightRef, { undoRef, finishRef, onNotice, onProfile: setProfile })
   useGeopoints(viewer, geopointActive && !googleShown, geopoints, onGeopointAdd ?? (() => {}), heightRef, { onNotice })
 
   // Sync KML/overlay layers
@@ -945,6 +948,7 @@ export function CesiumViewer({
       {/* Credits stay hidden except while Google 3D is shown: Google requires attribution on screen */}
       <div ref={creditRef} className={googleShown ? 'absolute bottom-1 left-2 z-10 max-w-[60%] text-[10px] text-white/80 [&_a]:text-white/90' : 'hidden'} />
       <OrientationAids viewer={viewer} onHome={selectedModel ? () => homeRef.current?.() : undefined} />
+      {profile && measureMode === 'profile' && <ProfilePanel profile={profile} onClose={() => setProfile(null)} />}
       {notice && (
         <div role="status"
              className="absolute top-16 left-1/2 -translate-x-1/2 rounded-2xl border border-white/[0.15]

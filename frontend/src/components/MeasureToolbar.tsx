@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from 'react'
-import { Ruler, Hexagon, Box, Trash2, Home, MapPin, X, FileText, Download, Pencil, Undo2, Check } from 'lucide-react'
+import { Ruler, Hexagon, Box, Trash2, Home, MapPin, X, FileText, Download, Pencil, Undo2, Check, TrendingUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { MeasureMode } from '@/lib/measure'
 import type { GeoPoint, ExportCrs } from '@/lib/geopoints'
@@ -36,12 +36,14 @@ const TOOLS: { key: Exclude<MeasureMode, 'none'>; label: string; Icon: typeof Ru
   { key: 'distance', label: 'Distance', Icon: Ruler },
   { key: 'area',     label: 'Area',     Icon: Hexagon },
   { key: 'volume',   label: 'Volume',   Icon: Box },
+  { key: 'profile',  label: 'Profile',  Icon: TrendingUp },
 ]
 
 const INSTRUCTIONS: Record<Exclude<MeasureMode, 'none'>, string> = {
   distance: 'Click to add points · Double-click to finish · Right-click to undo',
   area:     'Click to add vertices · Double-click to close · Right-click to undo',
   volume:   'Set base elevation · Click vertices · Double-click to close',
+  profile:  'Click the start and end of the line · Right-click to undo · Indicative only',
 }
 
 /** Touch wording: a finger taps; there is no right-click or double-click. */

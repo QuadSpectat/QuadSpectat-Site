@@ -1,6 +1,6 @@
 import * as Cesium from 'cesium'
 
-export type MeasureMode = 'none' | 'distance' | 'area' | 'volume'
+export type MeasureMode = 'none' | 'distance' | 'area' | 'volume' | 'profile'
 
 // ── Geometry ─────────────────────────────────────────────────────────────────
 

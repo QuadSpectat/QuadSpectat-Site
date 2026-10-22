@@ -7,6 +7,10 @@ import {
   centroid, computeDistance, computeArea, computeVolume,
   formatDistance, formatArea, formatVolume,
 } from '@/lib/measure'
+import { toMsl } from '@/lib/heights'
+import {
+  type Profile, horizontalDistance, lineStations, profileStats, sampleCount,
+} from '@/lib/profile'
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 const LINE   = new Cesium.Color(1.00, 0.84, 0.00, 1.00)  // gold
@@ -48,6 +52,8 @@ export function useMeasure(
     /** Written with a function that completes the measurement (the touch "Finish" button). */
     finishRef?: React.MutableRefObject<(() => void) | null>
     onNotice?: (msg: string) => void
+    /** Profile mode: called with the sampled profile once ready, and with null when it is cleared. */
+    onProfile?: (p: Profile | null) => void
   },
 ): void {
   // Keep onResult stable so the effect deps stay tight
@@ -59,6 +65,7 @@ export function useMeasure(
   useEffect(() => {
     if (!viewer || mode === 'none') {
       onResultRef.current(null)
+      extrasRef.current?.onProfile?.(null)
       return
     }
 
@@ -224,8 +231,56 @@ export function useMeasure(
       }
     }
 
+    // Profile: sample the surface along the line with sampleHeightMostDetailed (works on 3D tiles and terrain).
+    // Positions with no surface come back undefined and are kept as gaps, never interpolated.
+    let cancelled = false
+    async function runProfile() {
+      const ref = heightRef?.current ?? DEFAULT_HEIGHT_REF
+      const ca = Cesium.Cartographic.fromCartesian(points[0])
+      const cb = Cesium.Cartographic.fromCartesian(points[1])
+      const a = { lat: Cesium.Math.toDegrees(ca.latitude), lon: Cesium.Math.toDegrees(ca.longitude) }
+      const b = { lat: Cesium.Math.toDegrees(cb.latitude), lon: Cesium.Math.toDegrees(cb.longitude) }
+      const length = horizontalDistance(a.lat, a.lon, b.lat, b.lon)
+      const stations = lineStations(a, b, sampleCount(length))
+      onResultRef.current(`Profile: ${formatDistance(length)} · sampling…`)
+      let heights: (number | null)[]
+      try {
+        const carts = stations.map((s) => Cesium.Cartographic.fromDegrees(s.lon, s.lat))
+        const res = await v.scene.sampleHeightMostDetailed(carts)
+        heights = res.map((c) => (c && Number.isFinite(c.height) ? c.height : null))
+      } catch {
+        if (cancelled) return
+        extrasRef.current?.onNotice?.('Could not sample the surface along this line. Try again.')
+        onResultRef.current(null)
+        return
+      }
+      if (cancelled) return
+      const samples = stations.map((s, i) => {
+        const h = heights[i]
+        return { ...s, hEll: h, hMsl: h === null ? null : toMsl(s.lat, s.lon, h, ref) }
+      })
+      const gaps = samples.filter((s) => s.hMsl === null).length
+      const profile: Profile = { samples, length, spacing: length / Math.max(1, samples.length - 1), gaps }
+      const st = profileStats(samples)
+      if (!st) {
+        extrasRef.current?.onNotice?.('No surface found along this line. Draw it over the model or the ground.')
+        onResultRef.current(null)
+        return
+      }
+      onResultRef.current(
+        `Profile: ${formatDistance(length)} · ${st.min.toFixed(1)} to ${st.max.toFixed(1)} m above sea level`,
+      )
+      extrasRef.current?.onProfile?.(profile)
+    }
+
     function finish() {
       if (finished) return
+      if (mode === 'profile') {
+        if (points.length < 2) return
+        finished = true
+        void runProfile()
+        return
+      }
       const minPts = mode === 'distance' ? 2 : 3
       if (points.length < minPts) return
 
@@ -259,9 +314,16 @@ export function useMeasure(
         extrasRef.current?.onNotice?.('Nothing to measure here. Click on the model or the ground.')
         return
       }
+      if (mode === 'profile' && points.length === 1 &&
+          Cesium.Cartesian3.distance(points[0], pos) < 0.1) {
+        extrasRef.current?.onNotice?.('That is the same spot. Click a second, different point.')
+        return
+      }
       points.push(pos)
       addDot(pos)
       refreshSegLabels()
+      // A profile is exactly one line: it finishes on the second point (also by touch, no double-click needed)
+      if (mode === 'profile' && points.length === 2) finish()
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK)
 
     handler.setInputAction((e: Cesium.ScreenSpaceEventHandler.MotionEvent) => {
@@ -307,8 +369,10 @@ export function useMeasure(
 
     // ── Cleanup ───────────────────────────────────────────────────────────
     return () => {
+      cancelled = true
       if (undoRef && undoRef.current === undoLast) undoRef.current = null
       if (finishRef && finishRef.current === finishFn) finishRef.current = null
+      extrasRef.current?.onProfile?.(null)
       handler.destroy()
       if (!v.isDestroyed()) {
         for (const e of allEntities) v.entities.remove(e)
