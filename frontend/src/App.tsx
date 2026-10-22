@@ -181,7 +181,7 @@ export default function App() {
           className="flex items-center gap-2 hover:opacity-80 transition-opacity shrink-0"
           title="Back to home"
         >
-          <img src="/logo.png" alt="Quadspectat" className="h-8 w-auto" />
+          <img src="/logo.svg" alt="Quadspectat" className="h-8 w-auto" />
         </button>
         <div className="w-px h-5 bg-border mx-1 shrink-0" />
         <span className="text-xs font-semibold tracking-tight text-muted-foreground">3D Viewer</span>

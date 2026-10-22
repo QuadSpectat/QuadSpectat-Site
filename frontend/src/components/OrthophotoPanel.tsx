@@ -51,7 +51,7 @@ function toState(o: Orthophoto): OrthoState {
   }
 }
 
-const PANEL = 'rounded-2xl border border-white/[0.15] bg-[#0a0e1a]/[0.97] backdrop-blur-xl shadow-2xl shadow-black/80'
+const PANEL = 'rounded-2xl border border-white/[0.15] bg-[#0b100d]/[0.97] backdrop-blur-xl shadow-2xl shadow-black/80'
 
 export function OrthophotoPanel({ onOrthophotosChange }: Props) {
   const [open, setOpen]           = useState(false)
@@ -149,16 +149,16 @@ export function OrthophotoPanel({ onOrthophotosChange }: Props) {
         onClick={() => setOpen((o) => !o)}
         className={cn(
           'flex items-center gap-2 h-8 px-3 rounded-xl text-xs font-medium select-none',
-          'bg-[#080c18]/80 backdrop-blur-md border shadow-lg transition-all duration-200',
+          'bg-[#090d0b]/80 backdrop-blur-md border shadow-lg transition-all duration-200',
           open
-            ? 'border-[#86B735]/50 text-[#a3d44a] shadow-[#86B735]/10'
+            ? 'border-[#9ACD3C]/50 text-[#b8e05c] shadow-[#9ACD3C]/10'
             : 'border-white/15 text-white/75 hover:text-white/95 hover:border-white/25',
         )}
       >
         <Map className="w-3.5 h-3.5" />
         <span>Ortho</span>
         {readyCount > 0 && (
-          <span className="bg-[#86B735]/20 text-[#a3d44a] border border-[#86B735]/25 rounded-full px-1.5 text-[10px] font-semibold">
+          <span className="bg-[#9ACD3C]/20 text-[#b8e05c] border border-[#9ACD3C]/25 rounded-full px-1.5 text-[10px] font-semibold">
             {readyCount}
           </span>
         )}
@@ -180,8 +180,8 @@ export function OrthophotoPanel({ onOrthophotosChange }: Props) {
               onClick={() => fileRef.current?.click()}
               disabled={uploading}
               className="flex items-center gap-1.5 h-6 px-2.5 rounded-lg text-[10px] font-medium
-                         bg-[#86B735]/20 text-[#a3d44a] border border-[#86B735]/40
-                         hover:bg-[#86B735]/30 hover:text-[#c5f06a] disabled:opacity-40 transition-all"
+                         bg-[#9ACD3C]/20 text-[#b8e05c] border border-[#9ACD3C]/40
+                         hover:bg-[#9ACD3C]/30 hover:text-[#d3f27f] disabled:opacity-40 transition-all"
             >
               <Upload className="w-2.5 h-2.5" />
               {uploading ? 'Uploading…' : 'Upload'}
@@ -222,7 +222,7 @@ export function OrthophotoPanel({ onOrthophotosChange }: Props) {
                       className={cn(
                         'shrink-0 w-6 h-6 flex items-center justify-center rounded-lg transition-all duration-150',
                         photo.visible
-                          ? 'text-[#86B735]/70 hover:text-[#a3d44a] hover:bg-[#86B735]/10'
+                          ? 'text-[#9ACD3C]/70 hover:text-[#b8e05c] hover:bg-[#9ACD3C]/10'
                           : 'text-white/18 hover:text-white/45 hover:bg-white/[0.05]',
                       )}
                     >
@@ -279,14 +279,14 @@ export function OrthophotoPanel({ onOrthophotosChange }: Props) {
                       <span className="text-[10px] font-semibold tracking-widest uppercase text-white/50">
                         Opacity
                       </span>
-                      <span className="text-[11px] font-mono text-[#a3d44a]">
+                      <span className="text-[11px] font-mono text-[#b8e05c]">
                         {Math.round(photo.opacity * 100)}%
                       </span>
                     </div>
                     <div className="relative h-4 flex items-center group/sl">
                       <div className="absolute inset-x-0 h-[3px] rounded-full bg-white/[0.18]" />
                       <div
-                        className="absolute left-0 h-[3px] rounded-full bg-[#86B735]/85"
+                        className="absolute left-0 h-[3px] rounded-full bg-[#9ACD3C]/85"
                         style={{ width: `${photo.opacity * 100}%` }}
                       />
                       <div

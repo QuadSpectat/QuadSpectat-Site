@@ -13,7 +13,8 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-  base: '/',
+  // '/' for GitHub Pages / dev; the combined deployment builds with VITE_BASE=/_viewer/ so its assets never collide with the main site
+  base: process.env.VITE_BASE ?? '/',
   server: {
     port: 5173,
     proxy: {

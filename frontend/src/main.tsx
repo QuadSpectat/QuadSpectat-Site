@@ -12,6 +12,7 @@ createRoot(document.getElementById('root')!).render(
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<LandingPage />} />
+        <Route path="/drone" element={<LandingPage />} />
         <Route path="/app" element={<App />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/v/:token" element={<SharedViewer />} />

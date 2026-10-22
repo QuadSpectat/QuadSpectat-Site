@@ -1415,7 +1415,7 @@ export function AdminPage() {
   return (
     <div className="min-h-svh bg-[#070a12] text-white flex flex-col">
       {/* Top bar */}
-      <header className="shrink-0 flex items-center gap-4 px-6 py-3 border-b border-white/10 bg-[#0a0e1a]/80 backdrop-blur-xl">
+      <header className="shrink-0 flex items-center gap-4 px-6 py-3 border-b border-white/10 bg-[#0b100d]/80 backdrop-blur-xl">
         <div className="flex items-center gap-2.5">
           <div className="h-7 w-7 rounded-lg bg-indigo-600 flex items-center justify-center">
             <Globe size={14} className="text-white" />

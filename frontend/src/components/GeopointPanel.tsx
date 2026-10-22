@@ -42,11 +42,11 @@ export function GeopointPanel({ geopoints, active, onToggleActive, onDelete, onU
         onClick={() => { setOpen((o) => !o); if (active && !open) onToggleActive() }}
         className={cn(
           'flex items-center gap-2 h-8 px-3 rounded-xl text-xs font-medium select-none',
-          'bg-[#080c18]/80 backdrop-blur-md border shadow-lg transition-all duration-200',
+          'bg-[#090d0b]/80 backdrop-blur-md border shadow-lg transition-all duration-200',
           active
             ? 'border-orange-400/60 text-orange-300 shadow-orange-400/10'
             : open
-            ? 'border-[#86B735]/50 text-[#a3d44a] shadow-[#86B735]/10'
+            ? 'border-[#9ACD3C]/50 text-[#b8e05c] shadow-[#9ACD3C]/10'
             : 'border-white/15 text-white/75 hover:text-white/95 hover:border-white/25',
         )}
       >
@@ -57,7 +57,7 @@ export function GeopointPanel({ geopoints, active, onToggleActive, onDelete, onU
             'rounded-full px-1.5 text-[10px] font-semibold border',
             active
               ? 'bg-orange-400/20 text-orange-300 border-orange-400/30'
-              : 'bg-[#86B735]/20 text-[#a3d44a] border-[#86B735]/25',
+              : 'bg-[#9ACD3C]/20 text-[#b8e05c] border-[#9ACD3C]/25',
           )}>
             {geopoints.length}
           </span>
@@ -68,7 +68,7 @@ export function GeopointPanel({ geopoints, active, onToggleActive, onDelete, onU
       {/* Panel */}
       {open && (
         <div className="absolute bottom-full mb-2 right-0 w-80 rounded-2xl border border-white/[0.15]
-                        bg-[#0a0e1a]/[0.97] backdrop-blur-xl shadow-2xl shadow-black/80 flex flex-col
+                        bg-[#0b100d]/[0.97] backdrop-blur-xl shadow-2xl shadow-black/80 flex flex-col
                         overflow-hidden max-h-[28rem]">
 
           {/* Header */}

@@ -163,7 +163,7 @@ function ModelSharedView({
   return (
     <div className="flex flex-col h-svh bg-background text-foreground">
       <header className="flex items-center px-4 border-b border-border shrink-0 gap-3" style={{ height: '52px' }}>
-        <img src="/logo.png" alt="Quadspectat" className="h-8 w-auto shrink-0" />
+        <img src="/logo.svg" alt="Quadspectat" className="h-8 w-auto shrink-0" />
         <div className="w-px h-5 bg-border mx-1 shrink-0" />
         <h1 className="text-sm font-semibold tracking-tight truncate">{model.name}</h1>
         <span className="text-[11px] text-muted-foreground ml-auto shrink-0">
@@ -206,14 +206,14 @@ function ModelSharedView({
             <button
               onClick={() => setEditOpen((o) => !o)}
               className="h-8 px-3 rounded-xl text-xs font-medium
-                         bg-[#080c18]/80 backdrop-blur-md border border-[#86B735]/50 text-[#a3d44a]
-                         shadow-lg hover:border-[#86B735]/80 transition-all"
+                         bg-[#090d0b]/80 backdrop-blur-md border border-[#9ACD3C]/50 text-[#b8e05c]
+                         shadow-lg hover:border-[#9ACD3C]/80 transition-all"
             >
               {editOpen ? '▲ Hide editor' : '▼ Edit position'}
             </button>
 
             {editOpen && (
-              <div className="rounded-2xl border border-white/[0.15] bg-[#0a0e1a]/97 backdrop-blur-xl
+              <div className="rounded-2xl border border-white/[0.15] bg-[#0b100d]/97 backdrop-blur-xl
                               shadow-2xl shadow-black/80 p-4 w-72 flex flex-col gap-3">
                 <p className="text-[10px] font-semibold tracking-widest uppercase text-white/50">
                   Position &amp; Orientation
@@ -285,7 +285,7 @@ function OrthoSharedView({ orthophoto }: { orthophoto: Orthophoto }) {
   return (
     <div className="flex flex-col h-svh bg-background text-foreground">
       <header className="flex items-center px-4 border-b border-border shrink-0 gap-3" style={{ height: '52px' }}>
-        <img src="/logo.png" alt="Quadspectat" className="h-8 w-auto shrink-0" />
+        <img src="/logo.svg" alt="Quadspectat" className="h-8 w-auto shrink-0" />
         <div className="w-px h-5 bg-border mx-1 shrink-0" />
         <h1 className="text-sm font-semibold tracking-tight truncate">{photo.name}</h1>
         <span className="text-[11px] text-muted-foreground ml-auto shrink-0">

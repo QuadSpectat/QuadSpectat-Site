@@ -33,7 +33,7 @@ const INSTRUCTIONS: Record<Exclude<MeasureMode, 'none'>, string> = {
   volume:   'Set base elevation · Click vertices · Double-click to close',
 }
 
-const PANEL = 'rounded-2xl border border-white/[0.15] bg-[#0a0e1a]/[0.97] backdrop-blur-xl shadow-2xl shadow-black/80'
+const PANEL = 'rounded-2xl border border-white/[0.15] bg-[#0b100d]/[0.97] backdrop-blur-xl shadow-2xl shadow-black/80'
 
 function fmt(n: number, d: number) { return n.toFixed(d) }
 
@@ -83,7 +83,7 @@ export function MeasureToolbar({
             className={cn(
               'flex items-center gap-1.5 h-8 px-2.5 rounded-xl text-xs font-medium transition-all duration-150 select-none',
               mode === key
-                ? 'bg-[#86B735]/25 text-[#a3d44a] border border-[#86B735]/70 shadow-[0_0_10px_rgba(134,183,53,0.35)]'
+                ? 'bg-[#9ACD3C]/25 text-[#b8e05c] border border-[#9ACD3C]/70 shadow-[0_0_10px_rgba(154,205,60,0.35)]'
                 : 'text-white/75 hover:text-white/95 hover:bg-white/[0.08] border border-transparent',
             )}
           >
@@ -134,7 +134,7 @@ export function MeasureToolbar({
               title="Reset view to model"
               onClick={onResetCamera}
               className="flex items-center justify-center h-8 w-8 rounded-xl text-white/60
-                         hover:text-[#a3d44a] hover:bg-[#86B735]/10 border border-transparent
+                         hover:text-[#b8e05c] hover:bg-[#9ACD3C]/10 border border-transparent
                          transition-all duration-150 pointer-events-auto"
             >
               <Home size={13} strokeWidth={1.8} />
@@ -152,8 +152,8 @@ export function MeasureToolbar({
             onChange={(e) => onBaseElevationChange(parseFloat(e.target.value) || 0)}
             ref={elevInputRef}
             className="w-20 h-6 rounded-lg border border-white/[0.20] bg-white/[0.08] px-2
-                       text-xs text-white/90 text-right focus:outline-none focus:border-[#86B735]/60
-                       focus:bg-[#86B735]/[0.08] transition-colors"
+                       text-xs text-white/90 text-right focus:outline-none focus:border-[#9ACD3C]/60
+                       focus:bg-[#9ACD3C]/[0.08] transition-colors"
           />
           <span className="text-[11px] text-white/60">m</span>
         </div>

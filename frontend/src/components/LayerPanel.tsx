@@ -112,16 +112,16 @@ export function LayerPanel({ modelId, onLayersChange }: Props) {
         onClick={() => setOpen((o) => !o)}
         className={cn(
           'flex items-center gap-2 h-8 px-3 rounded-xl text-xs font-medium select-none',
-          'bg-[#080c18]/80 backdrop-blur-md border shadow-lg transition-all duration-200',
+          'bg-[#090d0b]/80 backdrop-blur-md border shadow-lg transition-all duration-200',
           open
-            ? 'border-[#86B735]/50 text-[#a3d44a] shadow-[#86B735]/10'
+            ? 'border-[#9ACD3C]/50 text-[#b8e05c] shadow-[#9ACD3C]/10'
             : 'border-white/15 text-white/75 hover:text-white/95 hover:border-white/25',
         )}
       >
         <Layers className="w-3.5 h-3.5" />
         <span>Layers</span>
         {layers.length > 0 && (
-          <span className="bg-[#86B735]/20 text-[#a3d44a] border border-[#86B735]/25 rounded-full px-1.5 text-[10px] font-semibold">
+          <span className="bg-[#9ACD3C]/20 text-[#b8e05c] border border-[#9ACD3C]/25 rounded-full px-1.5 text-[10px] font-semibold">
             {layers.length}
           </span>
         )}
@@ -131,7 +131,7 @@ export function LayerPanel({ modelId, onLayersChange }: Props) {
       {/* Panel */}
       {open && (
         <div className="absolute bottom-full mb-2 right-0 w-72 rounded-2xl border border-white/[0.15]
-                        bg-[#0a0e1a]/[0.97] backdrop-blur-xl shadow-2xl shadow-black/80 flex flex-col
+                        bg-[#0b100d]/[0.97] backdrop-blur-xl shadow-2xl shadow-black/80 flex flex-col
                         overflow-hidden max-h-96">
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.15] shrink-0">
@@ -142,8 +142,8 @@ export function LayerPanel({ modelId, onLayersChange }: Props) {
               onClick={() => fileRef.current?.click()}
               disabled={uploading}
               className="flex items-center gap-1.5 h-6 px-2.5 rounded-lg text-[10px] font-medium
-                         bg-[#86B735]/20 text-[#a3d44a] border border-[#86B735]/40
-                         hover:bg-[#86B735]/30 hover:text-[#c5f06a] disabled:opacity-40 transition-all"
+                         bg-[#9ACD3C]/20 text-[#b8e05c] border border-[#9ACD3C]/40
+                         hover:bg-[#9ACD3C]/30 hover:text-[#d3f27f] disabled:opacity-40 transition-all"
             >
               <Upload className="w-2.5 h-2.5" />
               {uploading ? 'Uploading…' : 'Upload'}
@@ -187,7 +187,7 @@ export function LayerPanel({ modelId, onLayersChange }: Props) {
                       className={cn(
                         'shrink-0 w-6 h-6 flex items-center justify-center rounded-lg transition-all duration-150',
                         visible
-                          ? 'text-[#86B735]/70 hover:text-[#a3d44a] hover:bg-[#86B735]/10'
+                          ? 'text-[#9ACD3C]/70 hover:text-[#b8e05c] hover:bg-[#9ACD3C]/10'
                           : 'text-white/18 hover:text-white/45 hover:bg-white/[0.05]',
                       )}
                     >
@@ -204,7 +204,7 @@ export function LayerPanel({ modelId, onLayersChange }: Props) {
 
                     {/* Height offset badge (when non-zero) */}
                     {heightOffset !== 0 && (
-                      <span className="shrink-0 text-[10px] font-mono text-[#86B735]/70">
+                      <span className="shrink-0 text-[10px] font-mono text-[#9ACD3C]/70">
                         {heightOffset > 0 ? '+' : ''}{heightOffset}m
                       </span>
                     )}
@@ -216,7 +216,7 @@ export function LayerPanel({ modelId, onLayersChange }: Props) {
                       className={cn(
                         'shrink-0 w-6 h-6 flex items-center justify-center rounded-lg transition-all duration-150',
                         isExpanded
-                          ? 'text-[#86B735]/70 bg-[#86B735]/10'
+                          ? 'text-[#9ACD3C]/70 bg-[#9ACD3C]/10'
                           : 'text-white/25 hover:text-white/55 hover:bg-white/[0.05] opacity-0 group-hover/row:opacity-100',
                       )}
                     >
@@ -241,7 +241,7 @@ export function LayerPanel({ modelId, onLayersChange }: Props) {
                         <span className="text-[10px] font-semibold tracking-widest uppercase text-white/60">
                           Height Offset
                         </span>
-                        <span className="text-[11px] font-mono text-[#a3d44a]">
+                        <span className="text-[11px] font-mono text-[#b8e05c]">
                           {heightOffset >= 0 ? '+' : ''}{heightOffset} m
                         </span>
                       </div>
@@ -249,7 +249,7 @@ export function LayerPanel({ modelId, onLayersChange }: Props) {
                         <div className="absolute inset-x-0 h-[3px] rounded-full bg-white/[0.18]" />
                         {/* fill bar: centre-out for bipolar range */}
                         <div
-                          className="absolute h-[3px] rounded-full bg-[#86B735]/85"
+                          className="absolute h-[3px] rounded-full bg-[#9ACD3C]/85"
                           style={{
                             left:  heightOffset >= 0 ? '50%' : `${((heightOffset + 200) / 400) * 100}%`,
                             width: `${(Math.abs(heightOffset) / 400) * 50}%`,

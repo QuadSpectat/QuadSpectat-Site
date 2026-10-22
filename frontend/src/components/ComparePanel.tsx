@@ -23,14 +23,14 @@ interface Props {
   onOrthoCompareChange: (compare: OrthoCompare | null) => void
 }
 
-const PANEL = 'rounded-2xl border border-white/[0.15] bg-[#0a0e1a]/[0.97] backdrop-blur-xl shadow-2xl shadow-black/80'
+const PANEL = 'rounded-2xl border border-white/[0.15] bg-[#0b100d]/[0.97] backdrop-blur-xl shadow-2xl shadow-black/80'
 
 function BlendSlider({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   return (
     <div className="relative h-4 flex items-center group/sl">
       <div className="absolute inset-x-0 h-[3px] rounded-full bg-white/[0.18]" />
       <div
-        className="absolute left-0 h-[3px] rounded-full bg-[#86B735]/85"
+        className="absolute left-0 h-[3px] rounded-full bg-[#9ACD3C]/85"
         style={{ width: `${value * 100}%` }}
       />
       <div
@@ -64,7 +64,7 @@ function SelectRow({
         onChange={(e) => onChange(e.target.value)}
         className="flex-1 h-7 rounded-lg bg-white/[0.08] px-2 text-[11px] text-white/85
                    border border-white/[0.1] cursor-pointer focus:outline-none
-                   focus:border-[#86B735]/50"
+                   focus:border-[#9ACD3C]/50"
       >
         <option value="">— none —</option>
         {options.map((o) => (
@@ -92,11 +92,11 @@ export function ComparePanel({
         onClick={() => setOpen((o) => !o)}
         className={cn(
           'flex items-center gap-2 h-8 px-3 rounded-xl text-xs font-medium select-none',
-          'bg-[#080c18]/80 backdrop-blur-md border shadow-lg transition-all duration-200',
+          'bg-[#090d0b]/80 backdrop-blur-md border shadow-lg transition-all duration-200',
           isActive
             ? 'border-sky-400/50 text-sky-300 shadow-sky-400/10'
             : open
-            ? 'border-[#86B735]/50 text-[#a3d44a] shadow-[#86B735]/10'
+            ? 'border-[#9ACD3C]/50 text-[#b8e05c] shadow-[#9ACD3C]/10'
             : 'border-white/15 text-white/75 hover:text-white/95 hover:border-white/25',
         )}
       >
@@ -138,7 +138,7 @@ export function ComparePanel({
               <div className="mt-3 flex flex-col gap-1.5">
                 <div className="flex justify-between items-center">
                   <span className="text-[10px] text-white/35">Base</span>
-                  <span className="text-[10px] font-mono text-[#a3d44a]">
+                  <span className="text-[10px] font-mono text-[#b8e05c]">
                     {Math.round(compareBlend * 100)}% overlay
                   </span>
                   <span className="text-[10px] text-white/35">Overlay</span>
@@ -188,7 +188,7 @@ export function ComparePanel({
                 <div className="mt-3 flex flex-col gap-1.5">
                   <div className="flex justify-between items-center">
                     <span className="text-[10px] text-white/35">Before</span>
-                    <span className="text-[10px] font-mono text-[#a3d44a]">
+                    <span className="text-[10px] font-mono text-[#b8e05c]">
                       {Math.round(orthoCompare.blend * 100)}% after
                     </span>
                     <span className="text-[10px] text-white/35">After</span>
