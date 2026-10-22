@@ -216,7 +216,7 @@ export function LandingPage() {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             {/* WhatsApp */}
             <a
-              href="https://web.whatsapp.com/"
+              href="https://wa.me/972544642180"
               target="_blank"
               rel="noopener noreferrer"
               aria-label="WhatsApp"
@@ -225,22 +225,22 @@ export function LandingPage() {
               <svg viewBox="0 0 32 32" className="w-5 h-5 fill-[#25D366]" xmlns="http://www.w3.org/2000/svg">
                 <path d="M16.003 2.667C8.639 2.667 2.667 8.64 2.667 16c0 2.347.638 4.639 1.847 6.64L2.667 29.333l6.88-1.813A13.277 13.277 0 0 0 16.003 29.333C23.36 29.333 29.333 23.36 29.333 16S23.36 2.667 16.003 2.667zm0 24.267a11.01 11.01 0 0 1-5.627-1.547l-.4-.24-4.08 1.08 1.093-4-.267-.413A10.96 10.96 0 0 1 5.003 16c0-6.067 4.933-11 11-11s11 4.933 11 11-4.933 11-11 11zm6.04-8.253c-.333-.167-1.96-.96-2.267-1.067-.306-.107-.52-.16-.747.16-.226.32-.866 1.067-1.066 1.28-.2.213-.4.24-.733.08-.333-.16-1.413-.52-2.693-1.653-.993-.893-1.667-1.987-1.867-2.32-.2-.333-.02-.507.147-.667.147-.147.333-.373.507-.56.173-.187.226-.32.333-.533.107-.213.053-.4-.027-.56-.08-.16-.747-1.787-1.027-2.44-.267-.64-.547-.547-.747-.56-.2-.013-.413-.013-.627-.013s-.573.08-.88.387c-.306.307-1.146 1.12-1.146 2.72s1.173 3.16 1.333 3.373c.16.213 2.28 3.547 5.547 4.827.773.32 1.373.507 1.84.653.773.24 1.48.2 2.04.12.613-.093 1.96-.8 2.24-1.573.28-.773.28-1.44.2-1.573-.08-.147-.307-.227-.64-.387z"/>
               </svg>
-              <span className="text-foreground/80 group-hover:text-[#25D366] transition-colors">WhatsApp</span>
+              <span className="text-foreground/80 group-hover:text-[#25D366] transition-colors">+972 54-464-2180</span>
             </a>
 
             {/* Gmail */}
             <a
-              href="https://mail.google.com/"
+              href="mailto:seddiet@gmail.com"
               target="_blank"
               rel="noopener noreferrer"
-              aria-label="Gmail"
+              aria-label="Email"
               className="w-full sm:w-auto flex items-center justify-center gap-2.5 h-12 px-6 rounded text-sm font-medium border border-border hover:border-[#EA4335]/60 hover:bg-[#EA4335]/10 transition-colors group"
             >
               <svg viewBox="0 0 32 32" className="w-5 h-5" xmlns="http://www.w3.org/2000/svg">
                 <path d="M2.667 8.667v14.666C2.667 24.8 3.867 26 5.333 26H8V15.04L16 20.8l8-5.76V26h2.667c1.466 0 2.666-1.2 2.666-2.667V8.667L16 17.333 2.667 8.667z" fill="#EA4335"/>
                 <path d="M29.333 6H2.667L16 14.667 29.333 6z" fill="#FBBC05"/>
               </svg>
-              <span className="text-foreground/80 group-hover:text-[#EA4335] transition-colors">Gmail</span>
+              <span className="text-foreground/80 group-hover:text-[#EA4335] transition-colors">seddiet@gmail.com</span>
             </a>
           </div>
         </div>
