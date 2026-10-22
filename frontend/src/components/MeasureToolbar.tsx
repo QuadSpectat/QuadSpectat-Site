@@ -19,6 +19,12 @@ interface Props {
   onGeopointDelete: (id: string) => void
   onGeopointNote: (id: string, note: string) => void
   onGeopointClear: () => void
+  /** Where the tool row floats: top-right (default), top-center (console) or bottom-dock (client showcase). */
+  placement?: 'top-right' | 'top-center' | 'bottom-dock'
+  /** 'tools' = only the tool row, 'panels' = only results + points (for a side inspector), 'all' = everything (default). */
+  part?: 'all' | 'tools' | 'panels'
+  /** Earlier measurement results, newest first (shown in the inspector). */
+  history?: { id: string; text: string }[]
 }
 
 const TOOLS: { key: Exclude<MeasureMode, 'none'>; label: string; Icon: typeof Ruler }[] = [
@@ -40,7 +46,18 @@ function fmt(n: number, d: number) { return n.toFixed(d) }
 export function MeasureToolbar({
   mode, onModeChange, baseElevation, onBaseElevationChange, result, onResetCamera,
   geopointActive, onGeopointToggle, geopoints, onGeopointDelete, onGeopointNote, onGeopointClear,
+  placement = 'top-right', part = 'all', history,
 }: Props) {
+  const showTools  = part !== 'panels'
+  const showPanels = part !== 'tools'
+  const rootClass =
+    part === 'panels'
+      ? 'flex flex-col gap-3 w-full'
+      : placement === 'top-center'
+        ? 'absolute top-3 left-1/2 -translate-x-1/2 z-10 flex flex-col gap-2 items-center pointer-events-none'
+        : placement === 'bottom-dock'
+          ? 'absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex flex-col-reverse gap-2 items-center pointer-events-none max-w-[calc(100%-1.5rem)]'
+          : 'absolute top-3 right-3 z-10 flex flex-col gap-2 items-end pointer-events-none'
   const elevInputRef    = useRef<HTMLInputElement>(null)
   const elevRef         = useRef(baseElevation)
   elevRef.current       = baseElevation
@@ -72,8 +89,9 @@ export function MeasureToolbar({
   }
 
   return (
-    <div className="absolute top-3 right-3 z-10 flex flex-col gap-2 items-end pointer-events-none">
+    <div className={rootClass}>
       {/* Tool buttons */}
+      {showTools && (
       <div className={cn(PANEL, 'flex items-center gap-0.5 p-1 pointer-events-auto')}>
         {TOOLS.map(({ key, label, Icon }) => (
           <button
@@ -142,9 +160,10 @@ export function MeasureToolbar({
           </>
         )}
       </div>
+      )}
 
       {/* Volume base elevation */}
-      {mode === 'volume' && (
+      {showTools && mode === 'volume' && (
         <div className={cn(PANEL, 'flex items-center gap-2.5 px-3 py-2 pointer-events-auto')}>
           <label className="text-[11px] text-white/70 whitespace-nowrap tracking-wide">Base elevation</label>
           <input
@@ -160,22 +179,39 @@ export function MeasureToolbar({
       )}
 
       {/* Measure instruction */}
-      {mode !== 'none' && !result && (
+      {showTools && mode !== 'none' && !result && (
         <div className={cn(PANEL, 'px-3 py-2 max-w-xs')}>
           <p className="text-[11px] text-white/70 leading-snug">{INSTRUCTIONS[mode]}</p>
         </div>
       )}
 
       {/* Measure result */}
-      {result && (
-        <div className={cn(PANEL, 'px-4 py-2.5 pointer-events-auto')}>
-          <p className="text-sm font-semibold text-white/95 tabular-nums">{result}</p>
+      {showPanels && result && (
+        <div className={cn(PANEL, 'px-4 py-2.5 pointer-events-auto', part === 'panels' && 'border-[#9ACD3C]/60')}>
+          <p className={cn('font-semibold text-white/95 tabular-nums font-mono', part === 'panels' ? 'text-xl' : 'text-sm')}>{result}</p>
           <p className="text-[11px] text-white/60 mt-0.5">Click a tool to measure again</p>
+        </div>
+      )}
+      {showPanels && part === 'panels' && !result && !(history && history.length) && geopoints.length === 0 && (
+        <div className={cn(PANEL, 'px-4 py-3')}>
+          <p className="text-[11px] text-white/60 leading-snug">Measurements and points you take on the model are listed here.</p>
+        </div>
+      )}
+      {showPanels && history && history.length > 0 && (
+        <div className={cn(PANEL, 'w-full overflow-hidden')}>
+          <div className="px-3 py-2 border-b border-white/[0.10]">
+            <span className="text-[10px] font-semibold tracking-widest uppercase text-white/50">Earlier · {history.length}</span>
+          </div>
+          <ul className="max-h-48 overflow-y-auto">
+            {history.map((h) => (
+              <li key={h.id} className="px-3 py-2 text-xs font-mono tabular-nums text-white/80 border-b border-white/[0.04] last:border-0">{h.text}</li>
+            ))}
+          </ul>
         </div>
       )}
 
       {/* Geopoint collect instruction */}
-      {geopointActive && (
+      {showTools && geopointActive && (
         <div className={cn(PANEL, 'px-3 py-2 max-w-xs border-orange-500/30 pointer-events-auto')}>
           <p className="text-[11px] text-orange-300/90 leading-snug">
             Click anywhere on the globe or model to pin a point.
@@ -185,8 +221,8 @@ export function MeasureToolbar({
       )}
 
       {/* Geopoint list panel */}
-      {geopoints.length > 0 && !geopointActive && (
-        <div className={cn(PANEL, 'w-72 flex flex-col overflow-hidden pointer-events-auto')}>
+      {showPanels && geopoints.length > 0 && !geopointActive && (
+        <div className={cn(PANEL, part === 'panels' ? 'w-full' : 'w-72', 'flex flex-col overflow-hidden pointer-events-auto')}>
           {/* Header */}
           <div className="flex items-center justify-between px-3 py-2 border-b border-white/[0.10]">
             <span className="text-[10px] font-semibold tracking-widest uppercase text-white/50">

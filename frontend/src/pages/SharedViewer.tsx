@@ -7,6 +7,7 @@ import { CesiumViewer } from '@/components/CesiumViewer'
 import { MeasureToolbar } from '@/components/MeasureToolbar'
 import { VisualControls } from '@/components/VisualControls'
 import { MapSwitcher } from '@/components/MapSwitcher'
+import { LogoMark } from '@/components/LogoMark'
 import { DEFAULT_VISUAL } from '@/lib/visualControls'
 import type { MeasureMode } from '@/lib/measure'
 import type { VisualSettings } from '@/lib/visualControls'
@@ -40,6 +41,39 @@ function BackLink() {
   if (!from || !from.startsWith('/c/')) return null
   return (
     <a href={from} className="text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0 whitespace-nowrap">← Your projects</a>
+  )
+}
+
+function fmtDate(iso?: string) {
+  if (!iso) return null
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+/** Floating identity card + link validity (top corners), replacing the old full-width bar. */
+function ShowcaseChrome({ title, expires, extra }: { title: string; expires?: string; extra?: React.ReactNode }) {
+  const [params] = useSearchParams()
+  const client = params.get('client')
+  const until = fmtDate(expires)
+  return (
+    <>
+      <div className="absolute top-3 left-3 z-20 flex items-center gap-3 pl-2.5 pr-4 py-2 rounded-2xl showcase-card max-w-[calc(100%-1.5rem)] sm:max-w-md">
+        <LogoMark size={36} filled className="shrink-0" />
+        <div className="min-w-0 leading-tight">
+          <h1 className="text-[15px] font-bold truncate">{title}</h1>
+          <p className="text-xs text-muted-foreground truncate">{client ? `Prepared for ${client}` : 'QuadSpectat · shared view'}</p>
+        </div>
+        <BackLink />
+      </div>
+      <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+        {until && (
+          <div className="hidden sm:block px-4 py-2.5 rounded-xl showcase-card text-xs text-muted-foreground">
+            Link valid until <strong className="text-foreground font-semibold">{until}</strong>
+          </div>
+        )}
+        {extra}
+      </div>
+    </>
   )
 }
 
@@ -79,16 +113,16 @@ export function SharedViewer() {
   }
 
   if (share.kind === 'orthophoto') {
-    return <OrthoSharedView orthophoto={share.orthophoto} token={token} />
+    return <OrthoSharedView orthophoto={share.orthophoto} token={token} expires={share.expires_at} />
   }
-  return <ModelSharedView model={share.model} canEdit={share.can_edit} token={token} />
+  return <ModelSharedView model={share.model} canEdit={share.can_edit} token={token} expires={share.expires_at} />
 }
 
 // ─── Model-shared view ────────────────────────────────────────────────────────
 
 function ModelSharedView({
-  model: initialModel, canEdit, token,
-}: { model: Model; canEdit: boolean; token: string }) {
+  model: initialModel, canEdit, token, expires,
+}: { model: Model; canEdit: boolean; token: string; expires?: string }) {
   const safeModel = {
     ...initialModel,
     name: initialModel.name ?? '',
@@ -173,18 +207,9 @@ function ModelSharedView({
   }
 
   return (
-    <div className="flex flex-col h-svh bg-background text-foreground">
-      <header className="flex items-center px-4 border-b border-border shrink-0 gap-3" style={{ height: '52px' }}>
-        <img src="/logo.svg" alt="Quadspectat" className="h-8 w-auto shrink-0" />
-        <BackLink />
-        <div className="w-px h-5 bg-border mx-1 shrink-0" />
-        <h1 className="text-sm font-semibold tracking-tight truncate">{model.name}</h1>
-        <span className="text-[11px] text-muted-foreground ml-auto shrink-0">
-          {canEdit ? 'Editor view' : 'Read-only shared view'}
-        </span>
-      </header>
-
-      <div className="relative flex-1 overflow-hidden">
+    <div className="skin-light relative h-svh overflow-hidden bg-background text-foreground">
+      <ShowcaseChrome title={model.name} expires={expires} />
+      <div className="absolute inset-0">
         <CesiumViewer
           shareToken={token}
           selectedModel={editModel}
@@ -200,6 +225,7 @@ function ModelSharedView({
           onGeopointAdd={(pt) => setGeopoints((prev) => [...prev, pt])}
         />
         <MeasureToolbar
+          placement="bottom-dock"
           mode={measureMode}
           onModeChange={handleModeChange}
           baseElevation={baseElevation}
@@ -216,7 +242,7 @@ function ModelSharedView({
         <MapSwitcher value={baseMap} onChange={setBaseMap} />
 
         {canEdit && (
-          <div className="absolute top-3 left-4 z-20 flex flex-col items-start gap-1">
+          <div className="absolute top-20 left-4 z-20 flex flex-col items-start gap-1">
             <button
               onClick={() => setEditOpen((o) => !o)}
               className="h-8 px-3 rounded-xl text-xs font-medium
@@ -264,7 +290,7 @@ function ModelSharedView({
 
 // ─── Orthophoto-shared view ──────────────────────────────────────────────────
 
-function OrthoSharedView({ orthophoto, token }: { orthophoto: Orthophoto; token: string }) {
+function OrthoSharedView({ orthophoto, token, expires }: { orthophoto: Orthophoto; token: string; expires?: string }) {
   const photo = orthoToResolved(orthophoto)
 
   const [measureMode, setMeasureMode]   = useState<MeasureMode>('none')
@@ -297,18 +323,9 @@ function OrthoSharedView({ orthophoto, token }: { orthophoto: Orthophoto; token:
   }
 
   return (
-    <div className="flex flex-col h-svh bg-background text-foreground">
-      <header className="flex items-center px-4 border-b border-border shrink-0 gap-3" style={{ height: '52px' }}>
-        <img src="/logo.svg" alt="Quadspectat" className="h-8 w-auto shrink-0" />
-        <BackLink />
-        <div className="w-px h-5 bg-border mx-1 shrink-0" />
-        <h1 className="text-sm font-semibold tracking-tight truncate">{photo.name}</h1>
-        <span className="text-[11px] text-muted-foreground ml-auto shrink-0">
-          Shared orthophoto
-        </span>
-      </header>
-
-      <div className="relative flex-1 overflow-hidden">
+    <div className="skin-light relative h-svh overflow-hidden bg-background text-foreground">
+      <ShowcaseChrome title={photo.name} expires={expires} />
+      <div className="absolute inset-0">
         <CesiumViewer
           shareToken={token}
           selectedModel={null}
@@ -326,6 +343,7 @@ function OrthoSharedView({ orthophoto, token }: { orthophoto: Orthophoto; token:
           onGeopointAdd={(pt) => setGeopoints((prev) => [...prev, pt])}
         />
         <MeasureToolbar
+          placement="bottom-dock"
           mode={measureMode}
           onModeChange={handleModeChange}
           baseElevation={baseElevation}

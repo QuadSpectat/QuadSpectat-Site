@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Share2 } from 'lucide-react'
+import { LogoMark } from '@/components/LogoMark'
 import { CesiumViewer } from '@/components/CesiumViewer'
 import { ModelSidebar } from '@/components/ModelSidebar'
 import { MeasureToolbar } from '@/components/MeasureToolbar'
@@ -55,6 +57,7 @@ export default function App() {
   const [measureKey, setMeasureKey]             = useState(0)
   const [baseElevation, setBaseElevation]       = useState(0)
   const [measureResult, setMeasureResult]       = useState<string | null>(null)
+  const [measureHistory, setMeasureHistory]     = useState<{ id: string; text: string }[]>([])
   const [visualSettings, setVisualSettings]     = useState<VisualSettings>(DEFAULT_VISUAL)
   const [baseMap, setBaseMap]                   = useState<BaseMap>('none')
   const [layers, setLayers]                     = useState<ResolvedLayer[]>([])
@@ -95,6 +98,12 @@ export default function App() {
     }, 3000)
     return () => clearInterval(timer)
   }, [orthoPhotos.map((p) => p.status).join(',')])
+
+  // Keep a short list of measurements taken in this session (shown in the inspector)
+  useEffect(() => {
+    if (!measureResult) return
+    setMeasureHistory((h) => [{ id: `${Date.now()}-${h.length}`, text: measureResult }, ...h].slice(0, 20))
+  }, [measureResult])
 
   // Reset fine-tune slider to 0 when selecting a different model (CRS base offset handles it)
   useEffect(() => {
@@ -175,16 +184,36 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-svh bg-background text-foreground">
-      <header className="flex items-center px-4 h-13 border-b border-border shrink-0 gap-3" style={{ height: '52px' }}>
+      <header className="flex items-center px-4 border-b border-border shrink-0 gap-3 bg-card" style={{ height: '56px' }}>
         <button
           onClick={() => navigate('/')}
           className="flex items-center gap-2 hover:opacity-80 transition-opacity shrink-0"
           title="Back to home"
         >
-          <img src="/logo.svg" alt="Quadspectat" className="h-8 w-auto" />
+          <LogoMark size={28} />
+          <span className="font-bold tracking-tight hidden sm:inline">QuadSpectat</span>
         </button>
         <div className="w-px h-5 bg-border mx-1 shrink-0" />
-        <span className="text-xs font-semibold tracking-tight text-muted-foreground">3D Viewer</span>
+        <span className="text-[11px] font-semibold tracking-[0.14em] uppercase text-muted-foreground shrink-0">3D Viewer</span>
+        {selectedModel && (
+          <>
+            <div className="w-px h-5 bg-border mx-1 shrink-0 hidden sm:block" />
+            <span className="text-sm font-semibold truncate hidden sm:block">{selectedModel.name}</span>
+          </>
+        )}
+        <div className="flex-1" />
+        <MapSwitcher inline value={baseMap} onChange={setBaseMap} />
+        <button
+          type="button"
+          disabled={!selectedModel}
+          onClick={() => selectedModel && setShareModel(selectedModel)}
+          className="inline-flex items-center gap-2 h-10 px-4 rounded-xl text-[13px] font-bold bg-primary text-primary-foreground
+                     hover:brightness-110 transition disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+          title={selectedModel ? 'Create a share link for this model' : 'Select a model to share it'}
+        >
+          <Share2 size={15} strokeWidth={2} />
+          <span className="hidden sm:inline">Share link</span>
+        </button>
       </header>
 
       <div className="flex flex-1 overflow-hidden">
@@ -232,7 +261,9 @@ export default function App() {
             geopoints={geopoints}
             onGeopointAdd={(pt) => setGeopoints((prev) => [...prev, pt])}
           />
-          <MeasureToolbar
+          <div className="hidden lg:block">
+            <MeasureToolbar
+              part="tools" placement="top-center"
             mode={measureMode}
             onModeChange={handleModeChange}
             baseElevation={baseElevation}
@@ -245,14 +276,31 @@ export default function App() {
             onGeopointDelete={(id) => setGeopoints((prev) => prev.filter((p) => p.id !== id))}
             onGeopointNote={(id, note) => setGeopoints((prev) => prev.map((p) => p.id === id ? { ...p, note } : p))}
             onGeopointClear={() => { setGeopoints([]); setGeopointActive(false) }}
-          />
+            />
+          </div>
+          <div className="lg:hidden">
+            <MeasureToolbar
+              part="all" placement="top-right"
+            mode={measureMode}
+            onModeChange={handleModeChange}
+            baseElevation={baseElevation}
+            onBaseElevationChange={setBaseElevation}
+            result={measureResult}
+            onResetCamera={selectedModel ? () => resetCameraRef.current?.() : undefined}
+            geopointActive={geopointActive}
+            onGeopointToggle={() => setGeopointActive((v) => !v)}
+            geopoints={geopoints}
+            onGeopointDelete={(id) => setGeopoints((prev) => prev.filter((p) => p.id !== id))}
+            onGeopointNote={(id, note) => setGeopoints((prev) => prev.map((p) => p.id === id ? { ...p, note } : p))}
+            onGeopointClear={() => { setGeopoints([]); setGeopointActive(false) }}
+            />
+          </div>
           <VisualControls
             settings={visualSettings}
             onChange={setVisualSettings}
             onSnapToGround={selectedModel?.model_type === '3d-tiles' ? () => snapRef.current?.() : undefined}
             crsLabel={crsLabel()}
           />
-          <MapSwitcher value={baseMap} onChange={setBaseMap} />
           {/* Bottom-right overlay controls: LayerPanel + ComparePanel */}
           <div className="absolute bottom-14 right-4 z-20 flex flex-row-reverse items-end gap-2">
             {selectedModel && (
@@ -303,6 +351,26 @@ export default function App() {
             )
           })()}
         </div>
+
+        {/* Inspector: measurements and points (large screens; on small screens they float over the map) */}
+        <aside className="hidden lg:flex w-72 shrink-0 flex-col gap-3 p-3 border-l border-border bg-card overflow-y-auto">
+          <h2 className="text-[11px] font-semibold tracking-[0.14em] uppercase text-muted-foreground">Measurements</h2>
+          <MeasureToolbar
+            part="panels"
+            mode={measureMode}
+            onModeChange={handleModeChange}
+            baseElevation={baseElevation}
+            onBaseElevationChange={setBaseElevation}
+            result={measureResult}
+            history={measureHistory.slice(1)}
+            geopointActive={geopointActive}
+            onGeopointToggle={() => setGeopointActive((v) => !v)}
+            geopoints={geopoints}
+            onGeopointDelete={(id) => setGeopoints((prev) => prev.filter((p) => p.id !== id))}
+            onGeopointNote={(id, note) => setGeopoints((prev) => prev.map((p) => p.id === id ? { ...p, note } : p))}
+            onGeopointClear={() => { setGeopoints([]); setGeopointActive(false) }}
+          />
+        </aside>
       </div>
 
       {shareModel && (

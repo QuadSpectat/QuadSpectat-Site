@@ -39,3 +39,32 @@
   }
   h1, h2, h3 { font-family: 'Rubik', 'Assistant', system-ui, sans-serif; }
 }
+
+/* Daylight showcase skin: client pages and shared links. Tokens flip to light; the dark glass panels used by the
+   viewer components become frosted light glass (no per-component changes needed). */
+.skin-light {
+  --background: 100 24% 96%; --foreground: 140 24% 8%;
+  --card: 0 0% 100%; --card-foreground: 140 24% 8%;
+  --popover: 0 0% 100%; --popover-foreground: 140 24% 8%;
+  --muted: 100 16% 92%; --muted-foreground: 140 10% 30%;
+  --accent: 100 16% 92%; --accent-foreground: 140 24% 8%;
+  --secondary: 100 16% 92%; --secondary-foreground: 140 24% 8%;
+  --border: 100 14% 84%; --input: 100 14% 84%;
+  background: hsl(var(--background)); color: hsl(var(--foreground));
+}
+.skin-light .text-primary { color: #3f6a0b; }
+.skin-light [class*="bg-[#0b100d]"], .skin-light [class*="bg-[#090d0b]"] {
+  background-color: rgb(250 252 246 / .92) !important; border-color: rgb(23 32 26 / .12) !important;
+  box-shadow: 0 10px 34px rgb(0 0 0 / .2) !important;
+}
+.skin-light [class*="text-white"] { color: #17201a !important; }
+.skin-light [class*="text-[#b8e05c]"] { color: #3f6a0b !important; }
+.skin-light [class*="text-orange-"] { color: #b45309 !important; }
+.skin-light [class*="bg-white/"] { background-color: rgb(23 32 26 / .06) !important; }
+.skin-light [class*="border-white/"] { border-color: rgb(23 32 26 / .14) !important; }
+.skin-light [class*="hover:bg-white"]:hover { background-color: rgb(23 32 26 / .1) !important; }
+.showcase-card { background: rgb(250 252 246 / .9); backdrop-filter: blur(14px); box-shadow: 0 8px 28px rgb(0 0 0 / .2); }
+/* Phones: lift the base-map switch above the tool dock */
+@media (max-width: 640px) {
+  .skin-light [class*="bottom-4"][class*="right-4"] { bottom: 6.75rem !important; }
+}
