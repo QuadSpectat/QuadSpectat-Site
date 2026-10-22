@@ -6,6 +6,7 @@ import shareRouter from './routes/share'
 import layersRouter from './routes/layers'
 import orthophotosRouter, { warmupOrthophotos } from './routes/orthophotos'
 import authRouter from './routes/auth'
+import { clientsAdmin, clientsPublic } from './routes/clients'
 
 const app = express()
 
@@ -42,6 +43,8 @@ app.use('/api/uploads', uploadsRouter)
 app.use('/api/share', shareRouter)
 app.use('/api/layers', layersRouter)
 app.use('/api/orthophotos', orthophotosRouter)
+app.use('/api/clients', clientsAdmin)   // admin: manage client pages
+app.use('/api/client', clientsPublic)   // public: what a client's private link loads
 
 // Central error handler — include message outside production for easier debugging
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {

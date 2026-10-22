@@ -166,6 +166,8 @@ interface Props {
   baseMap?: BaseMap
   layers?: ResolvedLayer[]
   orthophotos?: ResolvedOrthophoto[]
+  /** Set on shared / client pages: authorises tile requests for that one orthophoto. */
+  shareToken?: string
   /** Overlay model for time-comparison crossfade */
   overlayModel?: Model | null
   overlayModelUrl?: string | null
@@ -193,6 +195,7 @@ export function CesiumViewer({
   baseMap = 'none',
   layers = [],
   orthophotos = [],
+  shareToken,
   overlayModel = null,
   overlayModelUrl = null,
   compareBlend = 0.5,
@@ -617,7 +620,7 @@ export function CesiumViewer({
       } else {
         // Create new imagery layer
         const adminToken = localStorage.getItem('admin_token')
-        const tileUrl = `${API_BASE}/orthophotos/${photo.id}/tiles/{z}/{x}/{y}.png${adminToken ? `?token=${encodeURIComponent(adminToken)}` : ''}`
+        const tileUrl = `${API_BASE}/orthophotos/${photo.id}/tiles/{z}/{x}/{y}.png${adminToken ? `?token=${encodeURIComponent(adminToken)}` : shareToken ? `?share=${encodeURIComponent(shareToken)}` : ''}`
         const providerOpts: Cesium.UrlTemplateImageryProvider.ConstructorOptions = {
           url: tileUrl,
           minimumLevel: photo.zoom_min ?? 0,
@@ -652,7 +655,7 @@ export function CesiumViewer({
         orthoMap.set(photo.id, layer)
       }
     }
-  }, [orthophotos, orthoCompare])
+  }, [orthophotos, orthoCompare, shareToken])
 
   // Track camera lat/lon so we can check if it's over an orthophoto's bounds.
   // Updated on moveEnd (after each navigation gesture) — not per-frame.

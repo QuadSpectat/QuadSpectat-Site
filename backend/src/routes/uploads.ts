@@ -5,6 +5,7 @@ import { db } from '../db'
 import { env } from '../env'
 import { optionalAuth } from '../middleware/optionalAuth'
 import { requireAuth } from '../middleware/auth'
+import { shareGrantsModel } from '../shareAccess'
 
 const router = Router()
 
@@ -42,7 +43,9 @@ router.get('/:id/download', optionalAuth, async (req: Request, res: Response, ne
       [req.params.id],
     )
     if (!rows[0]) { res.status(404).json({ error: 'Not found' }); return }
-    if (!req.isAdmin && !String(rows[0].asset_name ?? '').toLowerCase().includes(env.PUBLIC_ASSET_NAME.toLowerCase())) {
+    const isDemo = String(rows[0].asset_name ?? '').toLowerCase().includes(env.PUBLIC_ASSET_NAME.toLowerCase())
+    // Allowed: admin, a DEMO asset, or a valid (unexpired) share link for exactly this model (?share=<token>)
+    if (!req.isAdmin && !isDemo && !(await shareGrantsModel(req.query.share, req.params.id))) {
       res.status(404).json({ error: 'Not found' }); return
     }
 

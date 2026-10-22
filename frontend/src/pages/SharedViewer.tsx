@@ -1,4 +1,5 @@
 import { useParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { useState, useEffect, useRef } from 'react'
 import { resolveShareToken, getDownloadUrl, updateModelViaToken } from '@/lib/api'
 import type { Model, Orthophoto, ResolvedShare } from '@/lib/api'
@@ -33,6 +34,15 @@ function orthoToResolved(o: Orthophoto): ResolvedOrthophoto {
   }
 }
 
+function BackLink() {
+  const [params] = useSearchParams()
+  const from = params.get('from')
+  if (!from || !from.startsWith('/c/')) return null
+  return (
+    <a href={from} className="text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0 whitespace-nowrap">← Your projects</a>
+  )
+}
+
 export function SharedViewer() {
   const { token } = useParams<{ token: string }>()
   const [share, setShare] = useState<ResolvedShare | null>(null)
@@ -43,7 +53,9 @@ export function SharedViewer() {
     resolveShareToken(token)
       .then(setShare)
       .catch((e) => {
-        setErr('This link is invalid or has been removed.')
+        setErr(String((e as Error).message).startsWith('410')
+          ? 'This link has expired. Please contact QuadSpectat and we will send you a new one.'
+          : 'This link is invalid or has been removed.')
         console.error('[SharedViewer] Failed to resolve share token:', e)
       })
   }, [token])
@@ -67,7 +79,7 @@ export function SharedViewer() {
   }
 
   if (share.kind === 'orthophoto') {
-    return <OrthoSharedView orthophoto={share.orthophoto} />
+    return <OrthoSharedView orthophoto={share.orthophoto} token={token} />
   }
   return <ModelSharedView model={share.model} canEdit={share.can_edit} token={token} />
 }
@@ -107,7 +119,7 @@ function ModelSharedView({
 
   useEffect(() => {
     if (model.external_url) { setModelUrl(model.external_url); return }
-    getDownloadUrl(model.id).then(setModelUrl).catch(console.error)
+    getDownloadUrl(model.id, token).then(setModelUrl).catch(console.error)
   }, [model.id])
 
   function handleModeChange(m: MeasureMode) {
@@ -164,6 +176,7 @@ function ModelSharedView({
     <div className="flex flex-col h-svh bg-background text-foreground">
       <header className="flex items-center px-4 border-b border-border shrink-0 gap-3" style={{ height: '52px' }}>
         <img src="/logo.svg" alt="Quadspectat" className="h-8 w-auto shrink-0" />
+        <BackLink />
         <div className="w-px h-5 bg-border mx-1 shrink-0" />
         <h1 className="text-sm font-semibold tracking-tight truncate">{model.name}</h1>
         <span className="text-[11px] text-muted-foreground ml-auto shrink-0">
@@ -173,6 +186,7 @@ function ModelSharedView({
 
       <div className="relative flex-1 overflow-hidden">
         <CesiumViewer
+          shareToken={token}
           selectedModel={editModel}
           modelUrl={modelUrl}
           measureMode={measureMode}
@@ -250,7 +264,7 @@ function ModelSharedView({
 
 // ─── Orthophoto-shared view ──────────────────────────────────────────────────
 
-function OrthoSharedView({ orthophoto }: { orthophoto: Orthophoto }) {
+function OrthoSharedView({ orthophoto, token }: { orthophoto: Orthophoto; token: string }) {
   const photo = orthoToResolved(orthophoto)
 
   const [measureMode, setMeasureMode]   = useState<MeasureMode>('none')
@@ -286,6 +300,7 @@ function OrthoSharedView({ orthophoto }: { orthophoto: Orthophoto }) {
     <div className="flex flex-col h-svh bg-background text-foreground">
       <header className="flex items-center px-4 border-b border-border shrink-0 gap-3" style={{ height: '52px' }}>
         <img src="/logo.svg" alt="Quadspectat" className="h-8 w-auto shrink-0" />
+        <BackLink />
         <div className="w-px h-5 bg-border mx-1 shrink-0" />
         <h1 className="text-sm font-semibold tracking-tight truncate">{photo.name}</h1>
         <span className="text-[11px] text-muted-foreground ml-auto shrink-0">
@@ -295,6 +310,7 @@ function OrthoSharedView({ orthophoto }: { orthophoto: Orthophoto }) {
 
       <div className="relative flex-1 overflow-hidden">
         <CesiumViewer
+          shareToken={token}
           selectedModel={null}
           modelUrl={null}
           measureMode={measureMode}
