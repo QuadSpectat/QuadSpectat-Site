@@ -1,3 +1,5 @@
+import { fromMsl, DEFAULT_HEIGHT_REF } from '@/lib/heights'
+import type { HeightRef } from '@/lib/heights'
 import { useEffect, useRef } from 'react'
 import * as Cesium from 'cesium'
 import {
@@ -40,6 +42,7 @@ export function useMeasure(
   baseElevation: number,
   measureKey: number,
   onResult: (text: string | null) => void,
+  heightRef?: { current: HeightRef },
 ): void {
   // Keep onResult stable so the effect deps stay tight
   const onResultRef = useRef(onResult)
@@ -56,6 +59,15 @@ export function useMeasure(
     const points: Cesium.Cartesian3[] = []
     let hover: Cesium.Cartesian3 | null = null
     let finished = false
+
+    // The base elevation the user types is a height ABOVE SEA LEVEL; the scene uses ellipsoidal heights.
+    function baseEll(lat: number, lon: number): number {
+      return fromMsl(lat, lon, baseElevation, heightRef?.current ?? DEFAULT_HEIGHT_REF)
+    }
+    function baseEllAt(p: Cesium.Cartesian3): number {
+      const c = Cesium.Cartographic.fromCartesian(p)
+      return baseEll(Cesium.Math.toDegrees(c.latitude), Cesium.Math.toDegrees(c.longitude))
+    }
 
     // All entities created in this session — cleaned up on exit
     const allEntities: Cesium.Entity[] = []
@@ -163,13 +175,13 @@ export function useMeasure(
             if (points.length < 3) return new Cesium.PolygonHierarchy([])
             const basePts = points.map((p) => {
               const c = Cesium.Cartographic.fromCartesian(p)
-              return Cesium.Cartesian3.fromRadians(c.longitude, c.latitude, baseElevation)
+              return Cesium.Cartesian3.fromRadians(c.longitude, c.latitude, baseEllAt(points[0]))
             })
             return new Cesium.PolygonHierarchy(basePts)
           }, false),
           show: new Cesium.CallbackProperty(() => points.length >= 3, false),
           material: new Cesium.ColorMaterialProperty(BASE),
-          height: baseElevation,
+          height: new Cesium.CallbackProperty(() => (points.length ? baseEllAt(points[0]) : 0), false),
           outline: true,
           outlineColor: BASE.withAlpha(0.9),
         },
@@ -217,7 +229,7 @@ export function useMeasure(
       } else if (mode === 'area') {
         text = `Area: ${formatArea(computeArea(points))}`
       } else {
-        text = `Volume: ${formatVolume(computeVolume(points, baseElevation))}`
+        text = `Volume: ${formatVolume(computeVolume(points, baseEllAt(points[0])))}`
       }
 
       onResultRef.current(text)

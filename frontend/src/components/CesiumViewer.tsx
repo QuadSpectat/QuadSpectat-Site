@@ -12,6 +12,7 @@ import type { VisualSettings } from '@/lib/visualControls'
 import { DEFAULT_VISUAL, qualityToSSE } from '@/lib/visualControls'
 import type { BaseMap } from '@/components/MapSwitcher'
 import type { GeoPoint } from '@/lib/geopoints'
+import type { HeightRef } from '@/lib/heights'
 
 // ── Height-offset helper ─────────────────────────────────────────────────────
 // Translates a tileset vertically by `metres` along the ellipsoid normal at
@@ -234,6 +235,12 @@ export function CesiumViewer({
   // Keep a ref so shader uniform getters always read the latest values
   const visualRef = useRef<VisualSettings>(visualSettings)
   visualRef.current = visualSettings
+  // What shift the model currently has, so measured heights can be converted to height above sea level
+  const heightRef = useRef<HeightRef>({ appliedOffset: 0 })
+  heightRef.current = {
+    coordinateSystem: selectedModel?.coordinate_system,
+    appliedOffset: (selectedModel?.geoid_offset ?? 0) + visualSettings.heightOffset,
+  }
 
   // Exposed as state so useMeasure re-runs once the viewer is ready
   const [viewer, setViewer] = useState<Cesium.Viewer | null>(null)
@@ -708,8 +715,8 @@ export function CesiumViewer({
   }, [hasActiveOrtho])
 
   // Measurement
-  useMeasure(viewer, measureMode, baseElevation, measureKey, onMeasureResult)
-  useGeopoints(viewer, geopointActive, geopoints, onGeopointAdd ?? (() => {}))
+  useMeasure(viewer, measureMode, baseElevation, measureKey, onMeasureResult, heightRef)
+  useGeopoints(viewer, geopointActive, geopoints, onGeopointAdd ?? (() => {}), heightRef)
 
   // Sync KML/overlay layers
   useEffect(() => {

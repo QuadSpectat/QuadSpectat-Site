@@ -2,7 +2,8 @@ export interface GeoPoint {
   id: string
   lat: number       // WGS84 decimal degrees
   lon: number       // WGS84 decimal degrees
-  alt: number       // metres above ellipsoid
+  alt: number       // metres above the WGS84 ellipsoid (as shown by Cesium)
+  altMsl?: number   // metres above sea level (EGM2008 geoid), when it could be worked out
   label: string     // "P1", "P2", …
   note: string      // free-text user note
   thumbnail?: string // base64 JPEG captured at collection time
@@ -79,15 +80,15 @@ export async function exportCsv(points: GeoPoint[], crs: ExportCrs = 'wgs84'): P
   let header: string
   let dataRows: string[]
   if (crs === 'itm') {
-    header = 'Point,Label,Easting (m),Northing (m),Altitude (m),Note'
+    header = 'Point,Label,Easting (m),Northing (m),Height above sea level (m),Ellipsoid height (m),Note'
     dataRows = points.map((p, i) => {
       const { easting, northing } = wgs84ToItm(p.lat, p.lon)
-      return `${i + 1},${p.label},${easting.toFixed(3)},${northing.toFixed(3)},${p.alt.toFixed(2)},"${p.note.replace(/"/g, '""')}"`
+      return `${i + 1},${p.label},${easting.toFixed(3)},${northing.toFixed(3)},${p.altMsl != null ? p.altMsl.toFixed(2) : ''},${p.alt.toFixed(2)},"${p.note.replace(/"/g, '""')}"`
     })
   } else {
-    header = 'Point,Label,Latitude (°),Longitude (°),Altitude (m),Note'
+    header = 'Point,Label,Latitude (°),Longitude (°),Height above sea level (m),Ellipsoid height (m),Note'
     dataRows = points.map((p, i) =>
-      `${i + 1},${p.label},${p.lat.toFixed(7)},${p.lon.toFixed(7)},${p.alt.toFixed(2)},"${p.note.replace(/"/g, '""')}"`
+      `${i + 1},${p.label},${p.lat.toFixed(7)},${p.lon.toFixed(7)},${p.altMsl != null ? p.altMsl.toFixed(2) : ''},${p.alt.toFixed(2)},"${p.note.replace(/"/g, '""')}"`
     )
   }
 
@@ -144,7 +145,7 @@ export function exportHtmlReport(points: GeoPoint[], crs: ExportCrs = 'wgs84'): 
       <td style="text-align:center;font-weight:700;color:#89b4fa">${i + 1}</td>
       <td style="font-weight:600">${p.label}</td>
       <td style="font-family:monospace;font-size:12px">${coords}</td>
-      <td style="font-family:monospace;font-size:12px">${p.alt.toFixed(1)} m</td>
+      <td style="font-family:monospace;font-size:12px">${p.altMsl != null ? `${p.altMsl.toFixed(2)} m<br><span style="color:#888">ellipsoid ${p.alt.toFixed(1)} m</span>` : `${p.alt.toFixed(1)} m (ellipsoid)`}</td>
       <td>${noteCell}</td>
       ${imgCell}
     </tr>`
@@ -176,7 +177,7 @@ export function exportHtmlReport(points: GeoPoint[], crs: ExportCrs = 'wgs84'): 
 <p class="sub">Exported ${new Date().toLocaleString()} &nbsp;·&nbsp; CRS: ${crs.toUpperCase()} &nbsp;·&nbsp; ${points.length} point${points.length !== 1 ? 's' : ''}</p>
 <table>
   <thead><tr>
-    <th>#</th><th>Label</th><th>${coordHeader}</th><th>Altitude</th><th>Note</th>${thumbHeader}
+    <th>#</th><th>Label</th><th>${coordHeader}</th><th>Height above sea level</th><th>Note</th>${thumbHeader}
   </tr></thead>
   <tbody>${rows}</tbody>
 </table>
@@ -195,7 +196,7 @@ export function exportKml(points: GeoPoint[]): void {
     <name>${escapeXml(p.label)}</name>
     ${p.note ? `<description>${escapeXml(p.note)}</description>` : ''}
     <Point><altitudeMode>absolute</altitudeMode>
-      <coordinates>${p.lon.toFixed(7)},${p.lat.toFixed(7)},${p.alt.toFixed(2)}</coordinates>
+      <coordinates>${p.lon.toFixed(7)},${p.lat.toFixed(7)},${(p.altMsl ?? p.alt).toFixed(2)}</coordinates>
     </Point>
   </Placemark>`,
     )

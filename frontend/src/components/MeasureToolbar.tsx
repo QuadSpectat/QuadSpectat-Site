@@ -165,7 +165,7 @@ export function MeasureToolbar({
       {/* Volume base elevation */}
       {showTools && mode === 'volume' && (
         <div className={cn(PANEL, 'flex items-center gap-2.5 px-3 py-2 pointer-events-auto')}>
-          <label className="text-[11px] text-white/70 whitespace-nowrap tracking-wide">Base elevation</label>
+          <label className="text-[11px] text-white/70 whitespace-nowrap tracking-wide">Base height (above sea level)</label>
           <input
             type="number" step="1" value={baseElevation}
             onChange={(e) => onBaseElevationChange(parseFloat(e.target.value) || 0)}
@@ -285,7 +285,14 @@ export function MeasureToolbar({
                       {fmt(pt.lat, 5)}°&nbsp;{fmt(pt.lon, 5)}°
                     </p>
                   )}
-                  <p className="text-[10px] font-mono text-white/30 mb-1">Alt {fmt(pt.alt, 1)} m</p>
+                  {pt.altMsl != null ? (
+                    <>
+                      <p className="text-[10px] font-mono text-white/60" title="Orthometric height (EGM2008 geoid)">H&nbsp;{fmt(pt.altMsl, 2)}&nbsp;m&nbsp;above&nbsp;sea&nbsp;level</p>
+                      <p className="text-[10px] font-mono text-white/30 mb-1">ellipsoid {fmt(pt.alt, 1)} m</p>
+                    </>
+                  ) : (
+                    <p className="text-[10px] font-mono text-white/30 mb-1">Alt {fmt(pt.alt, 1)} m (ellipsoid)</p>
+                  )}
 
                   {editingId === pt.id ? (
                     <input autoFocus value={editDraft}

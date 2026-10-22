@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react'
 import * as Cesium from 'cesium'
 import type { GeoPoint } from '@/lib/geopoints'
+import { toMsl, DEFAULT_HEIGHT_REF } from '@/lib/heights'
+import type { HeightRef } from '@/lib/heights'
 
 const PIN = new Cesium.Color(1.0, 0.55, 0.0, 1.0)   // orange
 
@@ -42,6 +44,7 @@ export function useGeopoints(
   active: boolean,
   points: GeoPoint[],
   onAdd: (pt: GeoPoint) => void,
+  heightRef?: { current: HeightRef },
 ): void {
   const entityMap = useRef<Map<string, Cesium.Entity>>(new Map())
   const onAddRef  = useRef(onAdd)
@@ -112,11 +115,15 @@ export function useGeopoints(
       const cart  = Cesium.Cartographic.fromCartesian(pos)
       const next  = pointsRef.current.length + 1
       const thumbnail = captureThumbnail(v.scene.canvas, e.position.x, e.position.y)
+      const latDeg = Cesium.Math.toDegrees(cart.latitude)
+      const lonDeg = Cesium.Math.toDegrees(cart.longitude)
+      const msl = toMsl(latDeg, lonDeg, cart.height, heightRef?.current ?? DEFAULT_HEIGHT_REF)
       onAddRef.current({
         id:    crypto.randomUUID(),
-        lat:   Cesium.Math.toDegrees(cart.latitude),
-        lon:   Cesium.Math.toDegrees(cart.longitude),
+        lat:   latDeg,
+        lon:   lonDeg,
         alt:   Math.round(cart.height * 100) / 100,
+        altMsl: msl === null ? undefined : Math.round(msl * 100) / 100,
         label: `P${next}`,
         note:  '',
         thumbnail,
