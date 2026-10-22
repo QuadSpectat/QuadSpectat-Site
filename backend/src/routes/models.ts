@@ -4,6 +4,7 @@ import { db } from '../db'
 import { deleteObject } from '../s3'
 import { env } from '../env'
 import { optionalAuth } from '../middleware/optionalAuth'
+import { requireAuth } from '../middleware/auth'
 
 const router = Router()
 
@@ -48,7 +49,7 @@ router.get('/:id', optionalAuth, async (req: Request, res: Response, next: NextF
 // POST /api/models
 // Body: { name, file_key, file_size?, file_type?, description?,
 //         longitude?, latitude?, altitude?, heading?, pitch?, roll?, scale? }
-router.post('/', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const {
       asset_name, name, file_key, file_size, file_type, description,
@@ -104,7 +105,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 // PUT /api/models/:id
 // Body: any subset of { name, description, longitude, latitude, altitude, heading, pitch, roll, scale }
 // file_key is intentionally immutable — re-upload by deleting and recreating
-router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
+router.put('/:id', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const {
       name, description,
@@ -153,7 +154,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
 })
 
 // DELETE /api/models/:id
-router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
+router.delete('/:id', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     console.log('[DELETE /models/:id] id =', JSON.stringify(req.params.id))
     const { rows } = await db.query(

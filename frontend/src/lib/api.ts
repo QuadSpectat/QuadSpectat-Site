@@ -73,7 +73,7 @@ export interface UpdateModelPayload {
   geoid_offset?: number
 }
 
-function getAuthHeader(): { Authorization: string } | Record<string, never> {
+export function getAuthHeader(): { Authorization: string } | Record<string, never> {
   const token = localStorage.getItem('admin_token')
   return token ? { Authorization: `Bearer ${token}` } : {}
 }

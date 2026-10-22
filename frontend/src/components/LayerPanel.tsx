@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils'
 import { listLayers, deleteLayer, getLayerDownloadUrl } from '@/lib/api'
 import type { Layer } from '@/lib/api'
 import { WheelSlider } from '@/components/WheelSlider'
+import { getAuthHeader } from '@/lib/api'
 
 interface Props {
   modelId: string
@@ -59,7 +60,7 @@ export function LayerPanel({ modelId, onLayersChange }: Props) {
       const res = await fetch(`/api/layers/upload?${params.toString()}`, {
         method: 'POST',
         body: file,
-        headers: { 'Content-Type': file.type || 'application/octet-stream' },
+        headers: { 'Content-Type': file.type || 'application/octet-stream', ...getAuthHeader() },
       })
       if (!res.ok) {
         const text = await res.text().catch(() => res.statusText)

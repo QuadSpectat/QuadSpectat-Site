@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils'
 import { listOrthophotos, deleteOrthophoto } from '@/lib/api'
 import type { Orthophoto } from '@/lib/api'
 import { WheelSlider } from '@/components/WheelSlider'
+import { getAuthHeader } from '@/lib/api'
 
 export interface ResolvedOrthophoto {
   id: string
@@ -108,7 +109,7 @@ export function OrthophotoPanel({ onOrthophotosChange }: Props) {
       const res = await fetch(`/api/orthophotos/upload?${params.toString()}`, {
         method: 'POST',
         body: file,
-        headers: { 'Content-Type': file.type || 'image/tiff' },
+        headers: { 'Content-Type': file.type || 'image/tiff', ...getAuthHeader() },
       })
       if (!res.ok) {
         const text = await res.text().catch(() => res.statusText)
