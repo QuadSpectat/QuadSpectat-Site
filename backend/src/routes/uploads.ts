@@ -4,6 +4,7 @@ import { presignUpload, presignDownload } from '../s3'
 import { db } from '../db'
 import { env } from '../env'
 import { optionalAuth } from '../middleware/optionalAuth'
+import { requireAuth } from '../middleware/auth'
 
 const router = Router()
 
@@ -13,7 +14,7 @@ const router = Router()
 //
 // Workflow: client gets this URL, PUTs the file directly to Spaces,
 // then calls POST /api/models with the returned key.
-router.post('/presign', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/presign', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { filename, contentType } = req.body as Record<string, unknown>
     if (typeof filename !== 'string' || typeof contentType !== 'string') {

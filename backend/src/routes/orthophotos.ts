@@ -14,6 +14,7 @@ import { join } from 'node:path'
 import { unlink } from 'node:fs/promises'
 import { fromUrl, GeoTIFFImage } from 'geotiff'
 import sharp from 'sharp'
+import { requireAuth } from '../middleware/auth'
 
 const router = Router()
 
@@ -132,7 +133,7 @@ router.get('/:id([0-9a-f-]{36})', optionalAuth, async (req, res, next) => {
 const UNSUPPORTED_FORMATS = new Set(['ecw', 'sid', 'jp2000'])
 
 // ── Presign ───────────────────────────────────────────────────────────────────
-router.post('/presign', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/presign', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { filename, contentType } = req.body as Record<string, unknown>
     if (typeof filename !== 'string' || typeof contentType !== 'string') {
@@ -152,7 +153,7 @@ router.post('/presign', async (req: Request, res: Response, next: NextFunction) 
 })
 
 // ── Create (after presigned upload) ──────────────────────────────────────────
-router.post('/', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const {
       asset_name, name, description, raw_key, original_format, cog_ready,
@@ -195,7 +196,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 })
 
 // ── Upload (raw-body proxy, kept for direct browser uploads) ─────────────────
-router.post('/upload',
+router.post('/upload', requireAuth,
   express.raw({ type: '*/*', limit: '2gb' }),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -239,7 +240,7 @@ router.post('/upload',
 )
 
 // ── Update opacity / visibility ───────────────────────────────────────────────
-router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => {
+router.patch('/:id', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { visible, opacity } = req.body as { visible?: boolean; opacity?: number }
     const fields: string[] = []
@@ -262,7 +263,7 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => 
 // Points the row at an already-converted EPSG:3857 COG and recomputes bounds +
 // zoom_max from it. Use when the raw upload is corrupt but a good COG was
 // uploaded separately (e.g. local-convert tool output).
-router.post('/:id([0-9a-f-]{36})/adopt-cog', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/:id([0-9a-f-]{36})/adopt-cog', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { cog_key } = req.body as Record<string, unknown>
     if (typeof cog_key !== 'string' || !cog_key) {
@@ -310,7 +311,7 @@ router.post('/:id([0-9a-f-]{36})/adopt-cog', async (req: Request, res: Response,
 // GET /api/orthophotos/:id/inspect → gdalinfo -json output for the cog_key.
 // Lightweight (no gdalwarp), so it doesn't OOM on Fly. Used to diagnose
 // whether a row's COG is actually EPSG:3857 with sensible bounds.
-router.get('/:id([0-9a-f-]{36})/inspect', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:id([0-9a-f-]{36})/inspect', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { rows } = await db.query<OrthoRow>(`SELECT cog_key, file_key FROM orthophotos WHERE id = $1`, [req.params.id])
     const photo = rows[0]
@@ -338,7 +339,7 @@ router.get('/:id([0-9a-f-]{36})/inspect', async (req: Request, res: Response, ne
 // Use when a row's cog_key points at a file that isn't actually an EPSG:3857 COG
 // (e.g. uploaded with cog_ready=true but produced bad output). Re-runs the full
 // processing pipeline on file_key — overwrites cog_key and bounds.
-router.post('/:id([0-9a-f-]{36})/reprocess', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/:id([0-9a-f-]{36})/reprocess', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { rows } = await db.query<OrthoRow>(`SELECT * FROM orthophotos WHERE id = $1`, [req.params.id])
     const photo = rows[0]
@@ -363,7 +364,7 @@ router.post('/:id([0-9a-f-]{36})/reprocess', async (req: Request, res: Response,
 })
 
 // ── Delete ────────────────────────────────────────────────────────────────────
-router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
+router.delete('/:id', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { rows } = await db.query<OrthoRow>(
       `DELETE FROM orthophotos WHERE id = $1 RETURNING *`,

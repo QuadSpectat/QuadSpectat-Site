@@ -5,6 +5,7 @@ import { db } from '../db'
 import { presignUpload, presignDownload, deleteObject, uploadObject } from '../s3'
 import { env } from '../env'
 import { optionalAuth } from '../middleware/optionalAuth'
+import { requireAuth } from '../middleware/auth'
 
 const router = Router()
 
@@ -16,7 +17,7 @@ async function parentModelIsPublic(modelId: string): Promise<boolean> {
 
 // POST /api/layers/upload?filename=X&model_id=Y  (raw binary body, proxied to Spaces)
 // express.raw() buffers the body as a Buffer on req.body — works even after express.json()
-router.post('/upload',
+router.post('/upload', requireAuth,
   express.raw({ type: '*/*', limit: '500mb' }),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -44,7 +45,7 @@ router.post('/upload',
 
 // POST /api/layers/presign
 // Body: { filename, contentType, model_id }
-router.post('/presign', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/presign', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { filename, contentType, model_id } = req.body as Record<string, unknown>
     if (typeof filename !== 'string' || typeof contentType !== 'string' || typeof model_id !== 'string') {
@@ -62,7 +63,7 @@ router.post('/presign', async (req: Request, res: Response, next: NextFunction) 
 
 // POST /api/layers
 // Body: { model_id, name, file_key, file_type }
-router.post('/', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { model_id, name, file_key, file_type } = req.body as Record<string, unknown>
     if (!model_id || !name || !file_key) {
@@ -116,7 +117,7 @@ router.get('/:id/download', optionalAuth, async (req: Request, res: Response, ne
 })
 
 // DELETE /api/layers/:id
-router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
+router.delete('/:id', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { rows } = await db.query('DELETE FROM layers WHERE id = $1 RETURNING *', [req.params.id])
     if (!rows[0]) { res.status(404).json({ error: 'Not found' }); return }
@@ -128,7 +129,7 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
 })
 
 // PATCH /api/layers/:id/visible  — toggle visibility stored in DB
-router.patch('/:id/visible', async (req: Request, res: Response, next: NextFunction) => {
+router.patch('/:id/visible', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { visible } = req.body as { visible: boolean }
     await db.query('UPDATE layers SET visible = $1 WHERE id = $2', [visible ? 1 : 0, req.params.id])

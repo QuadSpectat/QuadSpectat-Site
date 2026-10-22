@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express'
 import { randomBytes } from 'node:crypto'
 import { db } from '../db'
+import { requireAuth } from '../middleware/auth'
 
 const router = Router()
 
@@ -11,7 +12,7 @@ type EditableField = typeof EDITABLE_FIELDS[number]
 // Body: { model_id?: string, orthophoto_id?: string, label?: string, can_edit?: boolean }
 // Exactly one of model_id / orthophoto_id must be supplied.
 // can_edit is honoured only for models.
-router.post('/', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { model_id, orthophoto_id, label, can_edit } = req.body as Record<string, unknown>
     const mId = typeof model_id      === 'string' && model_id      ? model_id      : null
@@ -83,7 +84,7 @@ router.get('/:token', async (req: Request, res: Response, next: NextFunction) =>
 
 // GET /api/share?model_id=...   or   ?orthophoto_id=...
 // Lists share links bound to that resource
-router.get('/', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { model_id, orthophoto_id } = req.query as Record<string, string>
     if (model_id) {
@@ -142,7 +143,7 @@ router.patch('/:token/model', async (req: Request, res: Response, next: NextFunc
 })
 
 // DELETE /api/share/:token
-router.delete('/:token', async (req: Request, res: Response, next: NextFunction) => {
+router.delete('/:token', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     await db.query('DELETE FROM share_links WHERE token = $1', [req.params.token])
     res.status(204).send()
