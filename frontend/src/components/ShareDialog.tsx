@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import {
   createShareLink, createOrthophotoShareLink,
   listShareLinks, listOrthophotoShareLinks,
-  deleteShareLink,
+  deleteShareLink, getMe, login,
 } from '@/lib/api'
 import type { ShareLink } from '@/lib/api'
 
@@ -22,11 +22,38 @@ export function ShareDialog({ target, onClose }: Props) {
   const [label, setLabel]   = useState('')
   const [canEdit, setCanEdit] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
+  // Creating and listing links needs the admin sign-in (the same one /admin uses).
+  const [authed, setAuthed]   = useState<boolean | null>(null)
+  const [user, setUser]       = useState('')
+  const [pass, setPass]       = useState('')
+  const [authErr, setAuthErr] = useState('')
+  const [authBusy, setAuthBusy] = useState(false)
+  const [createErr, setCreateErr] = useState('')
 
   const origin = window.location.origin
   const heading = target.kind === 'model' ? 'Share Model' : 'Share Orthophoto'
 
   useEffect(() => {
+    getMe().then(() => setAuthed(true)).catch(() => setAuthed(false))
+  }, [])
+
+  async function handleSignIn() {
+    setAuthErr(''); setAuthBusy(true)
+    try {
+      const { token } = await login(user.trim(), pass)
+      localStorage.setItem('admin_token', token)
+      setPass('')
+      setAuthed(true)
+    } catch {
+      setAuthErr('Wrong username or password.')
+    } finally {
+      setAuthBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    if (authed !== true) { if (authed === false) setLoading(false); return }
+    setLoading(true)
     const promise = target.kind === 'model'
       ? listShareLinks(target.id)
       : listOrthophotoShareLinks(target.id)
@@ -34,10 +61,11 @@ export function ShareDialog({ target, onClose }: Props) {
       .then(setLinks)
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [target.id, target.kind])
+  }, [target.id, target.kind, authed])
 
   async function handleCreate() {
     setCreating(true)
+    setCreateErr('')
     try {
       const { token } = target.kind === 'model'
         ? await createShareLink(target.id, label.trim() || undefined, canEdit)
@@ -53,6 +81,13 @@ export function ShareDialog({ target, onClose }: Props) {
       setCanEdit(false)
     } catch (err) {
       console.error(err)
+      if (String((err as Error).message).startsWith('401')) {
+        localStorage.removeItem('admin_token')
+        setAuthed(false)
+        setAuthErr('Your sign-in expired. Please sign in again.')
+      } else {
+        setCreateErr('Could not create the link. Please try again.')
+      }
     } finally {
       setCreating(false)
     }
@@ -83,6 +118,34 @@ export function ShareDialog({ target, onClose }: Props) {
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground">✕</button>
         </div>
 
+        {authed === false && (
+          <form
+            onSubmit={(e) => { e.preventDefault(); void handleSignIn() }}
+            className="px-4 py-4 flex flex-col gap-3"
+          >
+            <p className="text-sm">Sign in to create share links.</p>
+            <input
+              type="text" autoComplete="username" placeholder="Username" value={user} onChange={(e) => setUser(e.target.value)} required
+              className="h-9 rounded-md border border-input bg-background px-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+            <input
+              type="password" autoComplete="current-password" placeholder="Password" value={pass} onChange={(e) => setPass(e.target.value)} required
+              className="h-9 rounded-md border border-input bg-background px-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+            {authErr && <p className="text-xs text-destructive" role="alert">{authErr}</p>}
+            <button
+              type="submit" disabled={authBusy}
+              className="h-9 rounded-md text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 transition-colors"
+            >
+              {authBusy ? 'Signing in…' : 'Sign in'}
+            </button>
+          </form>
+        )}
+        {authed === null && (
+          <div className="flex items-center justify-center h-16 text-xs text-muted-foreground">Checking sign-in…</div>
+        )}
+
+        {authed === true && (<>
         {/* Create new link */}
         <div className="px-4 py-3 border-b border-border shrink-0 flex flex-col gap-2">
           <div className="flex gap-2">
@@ -104,6 +167,7 @@ export function ShareDialog({ target, onClose }: Props) {
               {creating ? '…' : '+ New link'}
             </button>
           </div>
+          {createErr && <p className="text-xs text-destructive" role="alert">{createErr}</p>}
           {target.kind === 'model' && (
             <>
               <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -196,6 +260,7 @@ export function ShareDialog({ target, onClose }: Props) {
             </div>
           ))}
         </div>
+        </>)}
       </div>
     </div>
   )

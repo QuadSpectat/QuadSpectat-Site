@@ -212,7 +212,7 @@ export default function App() {
           title={selectedModel ? 'Create a share link for this model' : 'Select a model to share it'}
         >
           <Share2 size={15} strokeWidth={2} />
-          <span className="hidden sm:inline">Share link</span>
+          <span className="hidden sm:inline">{selectedModel ? 'Share link' : 'Select a model to share'}</span>
         </button>
       </header>
 
