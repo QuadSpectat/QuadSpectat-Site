@@ -10,6 +10,8 @@ import { LayerPanel } from '@/components/LayerPanel'
 import { ComparePanel } from '@/components/ComparePanel'
 import { VisualControls } from '@/components/VisualControls'
 import { MapSwitcher } from '@/components/MapSwitcher'
+import { ViewsPanel } from '@/components/ViewsPanel'
+import type { ViewApi } from '@/lib/views'
 import { useModels } from '@/hooks/useModels'
 import { getDownloadUrl, updateModel, listOrthophotos, deleteOrthophoto } from '@/lib/api'
 import type { GeoPoint } from '@/lib/geopoints'
@@ -74,6 +76,8 @@ export default function App() {
   const snapRef        = useRef<(() => void) | null>(null)
   const resetCameraRef = useRef<(() => void) | null>(null)
   const flyToOrthoRef  = useRef<((photo: ResolvedOrthophoto) => void) | null>(null)
+  const viewApiRef     = useRef<ViewApi | null>(null)
+  const undoRef        = useRef<(() => void) | null>(null)
 
   // Load orthophotos on mount
   useEffect(() => {
@@ -257,6 +261,8 @@ export default function App() {
             snapRef={snapRef}
             resetCameraRef={resetCameraRef}
             flyToOrthoRef={flyToOrthoRef}
+            viewApiRef={viewApiRef}
+            undoRef={undoRef}
             geopointActive={geopointActive}
             geopoints={geopoints}
             onGeopointAdd={(pt) => setGeopoints((prev) => [...prev, pt])}
@@ -264,6 +270,7 @@ export default function App() {
           <div className="hidden lg:block">
             <MeasureToolbar
               part="tools" placement="top-center"
+            onUndo={() => undoRef.current?.()}
             mode={measureMode}
             onModeChange={handleModeChange}
             baseElevation={baseElevation}
@@ -281,6 +288,7 @@ export default function App() {
           <div className="lg:hidden">
             <MeasureToolbar
               part="all" placement="top-right"
+            onUndo={() => undoRef.current?.()}
             mode={measureMode}
             onModeChange={handleModeChange}
             baseElevation={baseElevation}
@@ -354,6 +362,9 @@ export default function App() {
 
         {/* Inspector: measurements and points (large screens; on small screens they float over the map) */}
         <aside className="hidden lg:flex w-72 shrink-0 flex-col gap-3 p-3 border-l border-border bg-card overflow-y-auto">
+          {selectedModel && (
+            <ViewsPanel editable modelId={selectedModel.id} viewApiRef={viewApiRef} />
+          )}
           <h2 className="text-[11px] font-semibold tracking-[0.14em] uppercase text-muted-foreground">Measurements</h2>
           <MeasureToolbar
             part="panels"

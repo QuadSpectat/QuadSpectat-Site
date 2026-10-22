@@ -151,6 +151,18 @@ sqlite.exec(`
     PRIMARY KEY (client_token, share_token)
   );
 `)
+// ── Saved camera views per model (additive; safe to run on every start) ─────────
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS saved_views (
+    id         TEXT PRIMARY KEY,
+    model_id   TEXT NOT NULL,
+    name       TEXT NOT NULL,
+    camera     TEXT NOT NULL,
+    position   INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_saved_views_model ON saved_views(model_id);
+`)
 // Links created before expiry existed become valid until one year after they were created.
 sqlite.exec(`UPDATE share_links SET expires_at = strftime('%Y-%m-%dT%H:%M:%SZ', created_at, '+365 days') WHERE expires_at IS NULL`)
 sqlite.exec(`UPDATE client_pages SET expires_at = strftime('%Y-%m-%dT%H:%M:%SZ', created_at, '+365 days') WHERE expires_at IS NULL`)

@@ -8,6 +8,8 @@ import { MeasureToolbar } from '@/components/MeasureToolbar'
 import { VisualControls } from '@/components/VisualControls'
 import { MapSwitcher } from '@/components/MapSwitcher'
 import { LogoMark } from '@/components/LogoMark'
+import { ViewsPanel } from '@/components/ViewsPanel'
+import type { ViewApi } from '@/lib/views'
 import { DEFAULT_VISUAL } from '@/lib/visualControls'
 import type { MeasureMode } from '@/lib/measure'
 import type { VisualSettings } from '@/lib/visualControls'
@@ -150,6 +152,8 @@ function ModelSharedView({
   const [editOpen, setEditOpen] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const viewApiRef = useRef<ViewApi | null>(null)
+  const undoRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     if (model.external_url) { setModelUrl(model.external_url); return }
@@ -220,12 +224,15 @@ function ModelSharedView({
           onMeasureResult={setMeasureResult}
           visualSettings={visualSettings}
           baseMap={baseMap}
+          viewApiRef={viewApiRef}
+          undoRef={undoRef}
           geopointActive={geopointActive}
           geopoints={geopoints}
           onGeopointAdd={(pt) => setGeopoints((prev) => [...prev, pt])}
         />
         <MeasureToolbar
           placement="bottom-dock"
+          onUndo={() => undoRef.current?.()}
           mode={measureMode}
           onModeChange={handleModeChange}
           baseElevation={baseElevation}
@@ -241,8 +248,12 @@ function ModelSharedView({
         <VisualControls settings={visualSettings} onChange={setVisualSettings} />
         <MapSwitcher value={baseMap} onChange={setBaseMap} />
 
+        <div className="absolute left-3 top-20 z-20 w-64 max-w-[calc(100%-1.5rem)]">
+          <ViewsPanel editable={false} modelId={model.id} shareToken={token} viewApiRef={viewApiRef} />
+        </div>
+
         {canEdit && (
-          <div className="absolute top-20 left-4 z-20 flex flex-col items-start gap-1">
+          <div className="absolute top-44 left-4 z-20 flex flex-col items-start gap-1">
             <button
               onClick={() => setEditOpen((o) => !o)}
               className="h-8 px-3 rounded-xl text-xs font-medium
@@ -304,6 +315,8 @@ function OrthoSharedView({ orthophoto, token, expires }: { orthophoto: Orthophot
   const [geopointActive, setGeopointActive] = useState(false)
 
   const flyToOrthoRef = useRef<((p: ResolvedOrthophoto) => void) | null>(null)
+  const viewApiRef = useRef<ViewApi | null>(null)
+  const undoRef = useRef<(() => void) | null>(null)
 
   // Fly to the orthophoto once the viewer wires up its ref
   useEffect(() => {
@@ -338,12 +351,15 @@ function OrthoSharedView({ orthophoto, token, expires }: { orthophoto: Orthophot
           baseMap={baseMap}
           orthophotos={[photo]}
           flyToOrthoRef={flyToOrthoRef}
+          viewApiRef={viewApiRef}
+          undoRef={undoRef}
           geopointActive={geopointActive}
           geopoints={geopoints}
           onGeopointAdd={(pt) => setGeopoints((prev) => [...prev, pt])}
         />
         <MeasureToolbar
           placement="bottom-dock"
+          onUndo={() => undoRef.current?.()}
           mode={measureMode}
           onModeChange={handleModeChange}
           baseElevation={baseElevation}

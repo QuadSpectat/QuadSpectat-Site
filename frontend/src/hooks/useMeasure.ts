@@ -43,10 +43,16 @@ export function useMeasure(
   measureKey: number,
   onResult: (text: string | null) => void,
   heightRef?: { current: HeightRef },
+  extras?: {
+    undoRef?: React.MutableRefObject<(() => void) | null>
+    onNotice?: (msg: string) => void
+  },
 ): void {
   // Keep onResult stable so the effect deps stay tight
   const onResultRef = useRef(onResult)
   useEffect(() => { onResultRef.current = onResult })
+  const extrasRef = useRef(extras)
+  useEffect(() => { extrasRef.current = extras })
 
   useEffect(() => {
     if (!viewer || mode === 'none') {
@@ -229,7 +235,7 @@ export function useMeasure(
       } else if (mode === 'area') {
         text = `Area: ${formatArea(computeArea(points))}`
       } else {
-        text = `Volume: ${formatVolume(computeVolume(points, baseEllAt(points[0])))}`
+        text = `Volume: ${formatVolume(computeVolume(points, baseEllAt(points[0])))} · base ${baseElevation.toFixed(1)} m above sea level`
       }
 
       onResultRef.current(text)
@@ -247,7 +253,10 @@ export function useMeasure(
     handler.setInputAction((e: Cesium.ScreenSpaceEventHandler.PositionedEvent) => {
       if (finished) return
       const pos = pick(e.position)
-      if (!pos) return
+      if (!pos) {
+        extrasRef.current?.onNotice?.('Nothing to measure here. Click on the model or the ground.')
+        return
+      }
       points.push(pos)
       addDot(pos)
       refreshSegLabels()
@@ -270,16 +279,23 @@ export function useMeasure(
       finish()
     }, Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK)
 
-    handler.setInputAction((_e: Cesium.ScreenSpaceEventHandler.PositionedEvent) => {
+    // Undo: remove the last point + its dot, refresh segment labels
+    function undoLast() {
       if (finished || points.length === 0) return
       points.pop()
       const dot = dotStack.pop()
       if (dot) removeTracked(dot)
       refreshSegLabels()
-    }, Cesium.ScreenSpaceEventType.RIGHT_CLICK)
+    }
+
+    handler.setInputAction(() => undoLast(), Cesium.ScreenSpaceEventType.RIGHT_CLICK)
+
+    const undoRef = extrasRef.current?.undoRef
+    if (undoRef) undoRef.current = undoLast
 
     // ── Cleanup ───────────────────────────────────────────────────────────
     return () => {
+      if (undoRef && undoRef.current === undoLast) undoRef.current = null
       handler.destroy()
       if (!v.isDestroyed()) {
         for (const e of allEntities) v.entities.remove(e)

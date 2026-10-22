@@ -80,13 +80,13 @@ export async function exportCsv(points: GeoPoint[], crs: ExportCrs = 'wgs84'): P
   let header: string
   let dataRows: string[]
   if (crs === 'itm') {
-    header = 'Point,Label,Easting (m),Northing (m),Height above sea level (m),Ellipsoid height (m),Note'
+    header = 'Point,Label,Easting (m),Northing (m),Height above sea level, approx. (m),Ellipsoid height (m),Note'
     dataRows = points.map((p, i) => {
       const { easting, northing } = wgs84ToItm(p.lat, p.lon)
       return `${i + 1},${p.label},${easting.toFixed(3)},${northing.toFixed(3)},${p.altMsl != null ? p.altMsl.toFixed(2) : ''},${p.alt.toFixed(2)},"${p.note.replace(/"/g, '""')}"`
     })
   } else {
-    header = 'Point,Label,Latitude (°),Longitude (°),Height above sea level (m),Ellipsoid height (m),Note'
+    header = 'Point,Label,Latitude (°),Longitude (°),Height above sea level, approx. (m),Ellipsoid height (m),Note'
     dataRows = points.map((p, i) =>
       `${i + 1},${p.label},${p.lat.toFixed(7)},${p.lon.toFixed(7)},${p.altMsl != null ? p.altMsl.toFixed(2) : ''},${p.alt.toFixed(2)},"${p.note.replace(/"/g, '""')}"`
     )
@@ -174,10 +174,11 @@ export function exportHtmlReport(points: GeoPoint[], crs: ExportCrs = 'wgs84'): 
 </head>
 <body>
 <h1>Collected Points</h1>
+<p class="sub" style="margin-bottom:6px">Indicative measurements. Heights above sea level are approximate (EGM2008 geoid), not a survey.</p>
 <p class="sub">Exported ${new Date().toLocaleString()} &nbsp;·&nbsp; CRS: ${crs.toUpperCase()} &nbsp;·&nbsp; ${points.length} point${points.length !== 1 ? 's' : ''}</p>
 <table>
   <thead><tr>
-    <th>#</th><th>Label</th><th>${coordHeader}</th><th>Height above sea level</th><th>Note</th>${thumbHeader}
+    <th>#</th><th>Label</th><th>${coordHeader}</th><th>Height above sea level (approx.)</th><th>Note</th>${thumbHeader}
   </tr></thead>
   <tbody>${rows}</tbody>
 </table>
@@ -206,6 +207,7 @@ export function exportKml(points: GeoPoint[]): void {
 <kml xmlns="http://www.opengis.net/kml/2.2">
 <Document>
   <name>Collected Points</name>
+  <description>Indicative measurements. Heights above sea level are approximate (EGM2008 geoid).</description>
   <Style id="geopin">
     <IconStyle><color>ff00aaff</color><scale>1.0</scale></IconStyle>
     <LabelStyle><scale>0.8</scale></LabelStyle>

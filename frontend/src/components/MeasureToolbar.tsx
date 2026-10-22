@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from 'react'
-import { Ruler, Hexagon, Box, Trash2, Home, MapPin, X, FileText, Download, Pencil } from 'lucide-react'
+import { Ruler, Hexagon, Box, Trash2, Home, MapPin, X, FileText, Download, Pencil, Undo2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { MeasureMode } from '@/lib/measure'
 import type { GeoPoint, ExportCrs } from '@/lib/geopoints'
@@ -25,6 +25,8 @@ interface Props {
   part?: 'all' | 'tools' | 'panels'
   /** Earlier measurement results, newest first (shown in the inspector). */
   history?: { id: string; text: string }[]
+  /** Removes the last measurement point (for devices without a right mouse button). */
+  onUndo?: () => void
 }
 
 const TOOLS: { key: Exclude<MeasureMode, 'none'>; label: string; Icon: typeof Ruler }[] = [
@@ -46,7 +48,7 @@ function fmt(n: number, d: number) { return n.toFixed(d) }
 export function MeasureToolbar({
   mode, onModeChange, baseElevation, onBaseElevationChange, result, onResetCamera,
   geopointActive, onGeopointToggle, geopoints, onGeopointDelete, onGeopointNote, onGeopointClear,
-  placement = 'top-right', part = 'all', history,
+  placement = 'top-right', part = 'all', history, onUndo,
 }: Props) {
   const showTools  = part !== 'panels'
   const showPanels = part !== 'tools'
@@ -81,6 +83,31 @@ export function MeasureToolbar({
 
   function handleToolClick(key: Exclude<MeasureMode, 'none'>) {
     onModeChange(mode === key ? 'none' : key)
+  }
+
+  const showUndo = showTools && ((mode !== 'none' && !result) || geopointActive) &&
+    (geopointActive ? geopoints.length > 0 : !!onUndo)
+
+  function handleUndo() {
+    if (geopointActive) {
+      const last = geopoints[geopoints.length - 1]
+      if (last) onGeopointDelete(last.id)
+    } else {
+      onUndo?.()
+    }
+  }
+
+  function handleClearMeasurement() {
+    if (result && !window.confirm('Delete this measurement?')) return
+    onModeChange('none')
+  }
+
+  function handleDeletePoint(id: string, label: string) {
+    if (window.confirm(`Delete point ${label}?`)) onGeopointDelete(id)
+  }
+
+  function handleClearAll() {
+    if (window.confirm(`Delete all ${geopoints.length} points?`)) onGeopointClear()
   }
 
   function commitNote(id: string) {
@@ -132,11 +159,27 @@ export function MeasureToolbar({
           </span>
         </button>
 
+        {showUndo && (
+          <>
+            <div className="w-px h-4 bg-white/[0.20] mx-1" />
+            <button
+              title="Undo last point"
+              aria-label="Undo last point"
+              onClick={handleUndo}
+              className="flex items-center justify-center h-11 w-11 rounded-xl text-white/75
+                         hover:text-white/95 hover:bg-white/[0.08] border border-transparent
+                         transition-all duration-150 select-none"
+            >
+              <Undo2 size={16} strokeWidth={1.8} />
+            </button>
+          </>
+        )}
+
         <div className="w-px h-4 bg-white/[0.20] mx-1" />
 
         <button
           title="Clear measurement"
-          onClick={() => onModeChange('none')}
+          onClick={handleClearMeasurement}
           disabled={mode === 'none' && !result}
           className="flex items-center justify-center h-8 w-8 rounded-xl text-white/60
                      hover:text-red-400 hover:bg-red-500/10 border border-transparent
@@ -175,6 +218,7 @@ export function MeasureToolbar({
                        focus:bg-[#9ACD3C]/[0.08] transition-colors"
           />
           <span className="text-[11px] text-white/60">m</span>
+          <span className="text-[10px] text-white/45 leading-tight max-w-[9rem]">Flat plane the volume is measured against</span>
         </div>
       )}
 
@@ -189,7 +233,7 @@ export function MeasureToolbar({
       {showPanels && result && (
         <div className={cn(PANEL, 'px-4 py-2.5 pointer-events-auto', part === 'panels' && 'border-[#9ACD3C]/60')}>
           <p className={cn('font-semibold text-white/95 tabular-nums font-mono', part === 'panels' ? 'text-xl' : 'text-sm')}>{result}</p>
-          <p className="text-[11px] text-white/60 mt-0.5">Click a tool to measure again</p>
+          <p className="text-[11px] text-white/60 mt-0.5">Indicative · click a tool to measure again</p>
         </div>
       )}
       {showPanels && part === 'panels' && !result && !(history && history.length) && geopoints.length === 0 && (
@@ -254,7 +298,7 @@ export function MeasureToolbar({
                            text-white/40 hover:text-white/70 border border-white/[0.10] hover:border-white/20 transition-all">
                 <Download size={9} />KML
               </button>
-              <button onClick={onGeopointClear} title="Clear all points"
+              <button onClick={handleClearAll} title="Clear all points"
                 className="flex items-center justify-center h-5 w-5 rounded
                            text-white/25 hover:text-red-400 border border-white/[0.08] transition-all">
                 <Trash2 size={9} />
@@ -287,7 +331,7 @@ export function MeasureToolbar({
                   )}
                   {pt.altMsl != null ? (
                     <>
-                      <p className="text-[10px] font-mono text-white/60" title="Orthometric height (EGM2008 geoid)">H&nbsp;{fmt(pt.altMsl, 2)}&nbsp;m&nbsp;above&nbsp;sea&nbsp;level</p>
+                      <p className="text-[10px] font-mono text-white/60" title="Orthometric height from the EGM2008 geoid, indicative">H&nbsp;{fmt(pt.altMsl, 2)}&nbsp;m&nbsp;above&nbsp;sea&nbsp;level&nbsp;(approx.)</p>
                       <p className="text-[10px] font-mono text-white/30 mb-1">ellipsoid {fmt(pt.alt, 1)} m</p>
                     </>
                   ) : (
@@ -321,7 +365,7 @@ export function MeasureToolbar({
                     </button>
                   )}
                 </div>
-                <button onClick={() => onGeopointDelete(pt.id)}
+                <button onClick={() => handleDeletePoint(pt.id, pt.label)}
                   className="shrink-0 w-5 h-5 flex items-center justify-center rounded
                              text-white/20 hover:text-red-400 transition-all opacity-0 group-hover:opacity-100">
                   <X size={10} />

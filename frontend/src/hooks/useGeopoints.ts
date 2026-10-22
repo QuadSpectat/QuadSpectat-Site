@@ -45,7 +45,10 @@ export function useGeopoints(
   points: GeoPoint[],
   onAdd: (pt: GeoPoint) => void,
   heightRef?: { current: HeightRef },
+  extras?: { onNotice?: (msg: string) => void },
 ): void {
+  const extrasRef = useRef(extras)
+  extrasRef.current = extras
   const entityMap = useRef<Map<string, Cesium.Entity>>(new Map())
   const onAddRef  = useRef(onAdd)
   const pointsRef = useRef(points)
@@ -111,8 +114,11 @@ export function useGeopoints(
 
     handler.setInputAction((e: Cesium.ScreenSpaceEventHandler.PositionedEvent) => {
       const pos = pickPos(v, e.position)
-      if (!pos) return
-      const cart  = Cesium.Cartographic.fromCartesian(pos)
+      if (!pos) {
+        extrasRef.current?.onNotice?.('Nothing to measure here. Click on the model or the ground.')
+        return
+      }
+      const cart = Cesium.Cartographic.fromCartesian(pos)
       const next  = pointsRef.current.length + 1
       const thumbnail = captureThumbnail(v.scene.canvas, e.position.x, e.position.y)
       const latDeg = Cesium.Math.toDegrees(cart.latitude)

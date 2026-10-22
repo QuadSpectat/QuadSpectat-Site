@@ -1,3 +1,5 @@
+import type { CameraState, SavedView } from './views'
+
 // ── COG Conversion ─────────────────────────────────────────────────────────
 export async function cogConvert(file: File, outputName: string): Promise<{ success: boolean; output: string }> {
   const form = new FormData()
@@ -233,6 +235,20 @@ export const getLayerDownloadUrl = (id: string) =>
 
 export const deleteLayer = (id: string) =>
   apiFetch<void>(`/layers/${id}`, { method: 'DELETE' })
+
+// ── Saved camera views ───────────────────────────────────────────────────────
+export type { CameraState, SavedView }
+
+export const listViews = (modelId: string, shareToken?: string) =>
+  apiFetch<SavedView[]>(
+    `/views?model_id=${encodeURIComponent(modelId)}${shareToken ? `&share=${encodeURIComponent(shareToken)}` : ''}`,
+  )
+
+export const createView = (modelId: string, name: string, camera: CameraState) =>
+  apiFetch<SavedView>('/views', { method: 'POST', body: JSON.stringify({ model_id: modelId, name, camera }) })
+
+export const deleteView = (id: string) =>
+  apiFetch<void>(`/views/${id}`, { method: 'DELETE' })
 
 // ── Orthophotos ───────────────────────────────────────────────────────────────
 export interface Orthophoto {

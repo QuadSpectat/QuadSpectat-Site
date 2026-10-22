@@ -13,6 +13,8 @@ import { DEFAULT_VISUAL, qualityToSSE } from '@/lib/visualControls'
 import type { BaseMap } from '@/components/MapSwitcher'
 import type { GeoPoint } from '@/lib/geopoints'
 import type { HeightRef } from '@/lib/heights'
+import type { ViewApi } from '@/lib/views'
+import { OrientationAids } from '@/components/OrientationAids'
 
 // ── Height-offset helper ─────────────────────────────────────────────────────
 // Translates a tileset vertically by `metres` along the ellipsoid normal at
@@ -187,6 +189,10 @@ interface Props {
   geopointActive?: boolean
   geopoints?: GeoPoint[]
   onGeopointAdd?: (pt: GeoPoint) => void
+  /** Parent passes a ref; CesiumViewer writes capture/flyTo for saved camera views into it */
+  viewApiRef?: React.MutableRefObject<ViewApi | null>
+  /** Parent passes a ref; CesiumViewer's measure tool writes its undo function into it */
+  undoRef?: React.MutableRefObject<(() => void) | null>
 }
 
 export function CesiumViewer({
@@ -208,6 +214,8 @@ export function CesiumViewer({
   geopointActive = false,
   geopoints = [],
   onGeopointAdd,
+  viewApiRef,
+  undoRef,
 }: Props) {
   const containerRef  = useRef<HTMLDivElement>(null)
   const creditRef     = useRef<HTMLDivElement>(null)
@@ -245,6 +253,17 @@ export function CesiumViewer({
   // Exposed as state so useMeasure re-runs once the viewer is ready
   const [viewer, setViewer] = useState<Cesium.Viewer | null>(null)
   const [tileError, setTileError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const noticeTimer = useRef<number | undefined>(undefined)
+  // Home button target — set wherever resetCameraRef is set
+  const homeRef = useRef<(() => void) | null>(null)
+
+  const onNotice = (msg: string) => {
+    window.clearTimeout(noticeTimer.current)
+    setNotice(msg)
+    noticeTimer.current = window.setTimeout(() => setNotice(null), 3000)
+  }
+  useEffect(() => () => window.clearTimeout(noticeTimer.current), [])
 
   // Snap-to-ground: reset model matrix, read native height, report to parent
   const snapToGround = () => {
@@ -310,6 +329,33 @@ export function CesiumViewer({
     // when not referenced, but cheap enough to leave on for now.
     ;(window as unknown as { __viewer: Cesium.Viewer }).__viewer = v
 
+    if (viewApiRef) {
+      viewApiRef.current = {
+        capture: () => {
+          const vv = viewerRef.current
+          if (!vv || vv.isDestroyed()) return null
+          const c = vv.camera.positionCartographic
+          return {
+            lon: Cesium.Math.toDegrees(c.longitude),
+            lat: Cesium.Math.toDegrees(c.latitude),
+            height: c.height,
+            heading: vv.camera.heading,
+            pitch: vv.camera.pitch,
+            roll: vv.camera.roll,
+          }
+        },
+        flyTo: (c) => {
+          const vv = viewerRef.current
+          if (!vv || vv.isDestroyed()) return
+          vv.camera.flyTo({
+            destination: Cesium.Cartesian3.fromDegrees(c.lon, c.lat, c.height),
+            orientation: { heading: c.heading, pitch: c.pitch, roll: c.roll },
+            duration: 1.5,
+          })
+        },
+      }
+    }
+
     if (flyToOrthoRef) {
       flyToOrthoRef.current = (photo: ResolvedOrthophoto) => {
         const vv = viewerRef.current
@@ -330,6 +376,7 @@ export function CesiumViewer({
       overlayEntityRef.current = null
       overlayTilesetRef.current = null
       if (flyToOrthoRef) flyToOrthoRef.current = null
+      if (viewApiRef) viewApiRef.current = null
       setViewer(null)
     }
   }, [])
@@ -374,6 +421,7 @@ export function CesiumViewer({
         const fly = () => { if (viewerRef.current) void viewerRef.current.zoomTo(tileset) }
         fly()
         if (resetCameraRef) resetCameraRef.current = fly
+        homeRef.current = fly
       }).catch((err: unknown) => {
         if (!cancelled) {
           const msg = err instanceof Error ? err.message : String(err)
@@ -412,6 +460,7 @@ export function CesiumViewer({
     const fly = () => { if (viewerRef.current) void viewerRef.current.flyTo(entity, { duration: 1.5 }) }
     fly()
     if (resetCameraRef) resetCameraRef.current = fly
+    homeRef.current = fly
   }, [selectedModel?.id, modelUrl])
 
   // Swap base imagery layer when baseMap changes (does NOT remove orthophoto layers)
@@ -715,8 +764,8 @@ export function CesiumViewer({
   }, [hasActiveOrtho])
 
   // Measurement
-  useMeasure(viewer, measureMode, baseElevation, measureKey, onMeasureResult, heightRef)
-  useGeopoints(viewer, geopointActive, geopoints, onGeopointAdd ?? (() => {}), heightRef)
+  useMeasure(viewer, measureMode, baseElevation, measureKey, onMeasureResult, heightRef, { undoRef, onNotice })
+  useGeopoints(viewer, geopointActive, geopoints, onGeopointAdd ?? (() => {}), heightRef, { onNotice })
 
   // Sync KML/overlay layers
   useEffect(() => {
@@ -789,6 +838,15 @@ export function CesiumViewer({
       <div ref={containerRef} className="w-full h-full" />
       {/* Hidden credit container — keeps Cesium logo off the canvas */}
       <div ref={creditRef} className="hidden" />
+      <OrientationAids viewer={viewer} onHome={() => homeRef.current?.()} />
+      {notice && (
+        <div role="status"
+             className="absolute top-16 left-1/2 -translate-x-1/2 rounded-2xl border border-white/[0.15]
+                        bg-[#0b100d]/[0.97] backdrop-blur-xl shadow-2xl shadow-black/80 text-white/80
+                        text-xs px-3 py-2 max-w-sm text-center z-10 pointer-events-none">
+          {notice}
+        </div>
+      )}
       {tileError && (
         <div className="absolute top-14 left-1/2 -translate-x-1/2 bg-red-900/90 text-red-100
                         text-xs px-3 py-2 rounded-md max-w-sm text-center z-10 pointer-events-none">
