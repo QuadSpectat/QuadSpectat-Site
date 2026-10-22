@@ -234,6 +234,13 @@ export function useMeasure(
     // Profile: sample the surface along the line with sampleHeightMostDetailed (works on 3D tiles and terrain).
     // Positions with no surface come back undefined and are kept as gaps, never interpolated.
     let cancelled = false
+    // After a failed/empty sampling, drop the second point so the user can pick another end without toggling the tool
+    function retryProfile() {
+      points.pop()
+      const dot = dotStack.pop()
+      if (dot) removeTracked(dot)
+      finished = false
+    }
     async function runProfile() {
       const ref = heightRef?.current ?? DEFAULT_HEIGHT_REF
       const ca = Cesium.Cartographic.fromCartesian(points[0])
@@ -252,6 +259,7 @@ export function useMeasure(
         if (cancelled) return
         extrasRef.current?.onNotice?.('Could not sample the surface along this line. Try again.')
         onResultRef.current(null)
+        retryProfile()
         return
       }
       if (cancelled) return
@@ -265,6 +273,7 @@ export function useMeasure(
       if (!st) {
         extrasRef.current?.onNotice?.('No surface found along this line. Draw it over the model or the ground.')
         onResultRef.current(null)
+        retryProfile()
         return
       }
       onResultRef.current(
@@ -332,7 +341,7 @@ export function useMeasure(
     }, Cesium.ScreenSpaceEventType.MOUSE_MOVE)
 
     handler.setInputAction((_e: Cesium.ScreenSpaceEventHandler.PositionedEvent) => {
-      if (finished) return
+      if (finished || mode === 'profile') return // a profile finishes on its second click
       // LEFT_DOUBLE_CLICK fires after 2× LEFT_CLICK — remove the duplicate last point
       if (points.length > 0) {
         points.pop()

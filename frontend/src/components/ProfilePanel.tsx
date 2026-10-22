@@ -59,8 +59,9 @@ export function ProfilePanel({ profile, onClose }: Props) {
     setHoverIdx(i)
   }
 
+  // bottom-[9rem]: clears the client dock toolbar and its result bubble (SharedViewer, bottom-dock placement)
   return (
-    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 w-[min(34rem,calc(100%-1.5rem))]
+    <div className="absolute bottom-[9rem] left-1/2 -translate-x-1/2 z-10 w-[min(34rem,calc(100%-1.5rem))]
                     rounded-2xl border border-white/[0.15] bg-[#0b100d]/[0.97] backdrop-blur-xl shadow-2xl shadow-black/80
                     px-3 py-2.5 pointer-events-auto">
       <div className="flex items-center justify-between gap-2 mb-1">
