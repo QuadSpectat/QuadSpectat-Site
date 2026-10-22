@@ -8,8 +8,8 @@ const ICON = {
   camera: 'M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316ZM16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0Z',
   cube: 'm21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9',
   map: 'M9 6.75V15m6-6v8.25m.503 3.498 4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 0 0-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0Z',
-  lidar: 'M12 14.25a2.25 2.25 0 1 0 0-4.5 2.25 2.25 0 0 0 0 4.5ZM12 18.75a6.75 6.75 0 1 0 0-13.5 6.75 6.75 0 0 0 0 13.5ZM12 22.5a10.5 10.5 0 1 0 0-21 10.5 10.5 0 0 0 0 21Z',
   ruler: 'M3 17 17 3l4 4L7 21l-4-4Zm4-4 2 2m1-5 2 2m1-5 2 2',
+  archive: 'M3.75 7.5h16.5M4.5 7.5v10.5A2.25 2.25 0 0 0 6.75 20.25h10.5A2.25 2.25 0 0 0 19.5 18V7.5M9 11.25h6M3.75 7.5l1.5-3h13.5l1.5 3',
   share: 'M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186 9.566-5.314m-9.566 7.5 9.566 5.314m0 0a2.25 2.25 0 1 0 3.935 2.186 2.25 2.25 0 0 0-3.935-2.186Zm0-12.814a2.25 2.25 0 1 0 3.933-2.185 2.25 2.25 0 0 0-3.933 2.185Z',
 }
 
@@ -17,7 +17,7 @@ const SERVICES = [
   { icon: ICON.camera, title: 'Aerial Photography', description: 'Cinematic 4K video and high-resolution stills from any altitude. Perfect for real estate, construction, and events.' },
   { icon: ICON.cube, title: '3D Photogrammetry', description: 'Accurate 3D models and textured meshes from drone imagery. Ideal for construction monitoring, archaeology, and GIS.' },
   { icon: ICON.map, title: 'Survey & Mapping', description: 'Precision topographic surveys, orthophotos, and digital elevation models with centimetre-level accuracy.' },
-  { icon: ICON.lidar, title: 'Point Clouds & LiDAR', description: 'LAS and E57 scans, including indoor scans from places a regular drone cannot reach.' },
+  { icon: ICON.archive, title: 'Project Archive', description: 'Every model and orthophoto stays organised by project and date, so a client can come back to it later.' },
   { icon: ICON.ruler, title: 'Measure & Compare', description: 'Distance, area and height straight from the model, plus a before / after comparison of the same site.' },
   { icon: ICON.share, title: 'Share by Link', description: 'Clients open the model or orthophoto from a single link. No account and no software.' },
 ]
@@ -103,7 +103,7 @@ export function LandingPage() {
       {/* ── Formats strip ───────────────────────────────────────── */}
       <div className="border-b border-border/60 bg-card">
         <div className="max-w-6xl mx-auto px-4 sm:px-8 py-4 flex flex-wrap justify-between gap-x-8 gap-y-2 font-mono text-[11px] tracking-[0.14em] uppercase text-primary">
-          {['3D Tiles', 'COG GeoTIFF', 'LAS · E57 point clouds', 'GLB models', 'Share by link'].map((f) => <span key={f}>{f}</span>)}
+          {['3D Tiles', 'COG GeoTIFF', 'Orthophotos', 'GLB models', 'Share by link'].map((f) => <span key={f}>{f}</span>)}
         </div>
       </div>
 
