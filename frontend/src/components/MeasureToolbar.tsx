@@ -72,7 +72,7 @@ export function MeasureToolbar({
       : placement === 'top-center'
         ? 'absolute top-[calc(0.75rem+env(safe-area-inset-top))] left-1/2 -translate-x-1/2 z-10 flex flex-col gap-2 items-center pointer-events-none'
         : placement === 'bottom-dock'
-          ? 'absolute bottom-[calc(1.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-10 flex flex-col-reverse gap-2 items-center pointer-events-none max-w-[calc(100%-1.5rem)]'
+          ? 'absolute bottom-[calc(1.5rem+env(safe-area-inset-bottom)+var(--qs-dock-h,0px))] left-1/2 -translate-x-1/2 z-10 flex flex-col-reverse gap-2 items-center pointer-events-none max-w-[calc(100%-1.5rem)]'
           : 'absolute top-[calc(3.5rem+env(safe-area-inset-top))] sm:top-3 right-[max(0.75rem,env(safe-area-inset-right))] z-10 flex flex-col gap-2 items-end pointer-events-none max-w-[calc(100%-1.5rem)]'
   const elevInputRef    = useRef<HTMLInputElement>(null)
   const elevRef         = useRef(baseElevation)

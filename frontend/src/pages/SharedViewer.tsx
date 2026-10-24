@@ -1,7 +1,8 @@
 import { useParams } from 'react-router-dom'
 import { useSearchParams } from 'react-router-dom'
 import { useState, useEffect, useRef } from 'react'
-import { resolveShareToken, getDownloadUrl, updateModelViaToken } from '@/lib/api'
+import { getDownloadUrl, updateModelViaToken } from '@/lib/api'
+import { earlyShare } from '@/lib/earlyModel'
 import type { Model, Orthophoto, ResolvedShare } from '@/lib/api'
 import { CesiumViewer } from '@/components/CesiumViewer'
 import { MeasureToolbar } from '@/components/MeasureToolbar'
@@ -9,6 +10,8 @@ import { VisualControls } from '@/components/VisualControls'
 import { MapSwitcher } from '@/components/MapSwitcher'
 import { LogoMark } from '@/components/LogoMark'
 import { ViewsPanel } from '@/components/ViewsPanel'
+import { PhonePanels } from '@/components/PhonePanels'
+import { usePhoneLayout } from '@/hooks/usePhoneLayout'
 import type { ViewApi } from '@/lib/views'
 import { DEFAULT_VISUAL } from '@/lib/visualControls'
 import type { MeasureMode } from '@/lib/measure'
@@ -86,7 +89,7 @@ export function SharedViewer() {
 
   useEffect(() => {
     if (!token) { setErr('Invalid link'); return }
-    resolveShareToken(token)
+    earlyShare(token)
       .then(setShare)
       .catch((e) => {
         setErr(String((e as Error).message).startsWith('410')
@@ -136,6 +139,7 @@ function ModelSharedView({
     geoid_offset: typeof initialModel.geoid_offset === 'number' ? initialModel.geoid_offset : 0,
     show_watermark: typeof initialModel.show_watermark === 'number' ? initialModel.show_watermark : 0,
   }
+  const phone = usePhoneLayout()
   const [model, setModel]         = useState<Model>(safeModel)
   const [editModel, setEditModel] = useState<Model>(safeModel)
   const [modelUrl, setModelUrl]   = useState<string | null>(null)
@@ -234,6 +238,7 @@ function ModelSharedView({
         />
         <MeasureToolbar
           placement="bottom-dock"
+          part={phone ? 'tools' : 'all'}
           onUndo={() => undoRef.current?.()}
           onFinish={() => finishRef.current?.()}
           mode={measureMode}
@@ -251,9 +256,23 @@ function ModelSharedView({
         <VisualControls settings={visualSettings} onChange={setVisualSettings} />
         <MapSwitcher value={baseMap} onChange={setBaseMap} />
 
-        <div className="absolute left-[max(0.75rem,env(safe-area-inset-left))] top-[calc(5rem+env(safe-area-inset-top))] z-20 w-64 max-w-[calc(100%-1.5rem)]">
-          <ViewsPanel editable={false} modelId={model.id} shareToken={token} viewApiRef={viewApiRef} />
-        </div>
+        {phone ? (
+          <PhonePanels
+            measure={{
+              mode: measureMode, onModeChange: handleModeChange, baseElevation, onBaseElevationChange: setBaseElevation,
+              result: measureResult, geopointActive, onGeopointToggle: () => setGeopointActive((v) => !v), geopoints,
+              onGeopointDelete: (id) => setGeopoints((prev) => prev.filter((p) => p.id !== id)),
+              onGeopointNote: (id, note) => setGeopoints((prev) => prev.map((p) => p.id === id ? { ...p, note } : p)),
+              onGeopointClear: () => { setGeopoints([]); setGeopointActive(false) },
+            }}
+            visual={{ settings: visualSettings, onChange: setVisualSettings }}
+            views={{ modelId: model.id, viewApiRef, shareToken: token, editable: false }}
+          />
+        ) : (
+          <div className="absolute left-[max(0.75rem,env(safe-area-inset-left))] top-[calc(5rem+env(safe-area-inset-top))] z-20 w-64 max-w-[calc(100%-1.5rem)]">
+            <ViewsPanel editable={false} modelId={model.id} shareToken={token} viewApiRef={viewApiRef} />
+          </div>
+        )}
 
         {canEdit && (
           <div className="absolute top-[calc(11rem+env(safe-area-inset-top))] left-[max(1rem,env(safe-area-inset-left))] z-20 flex flex-col items-start gap-1">
@@ -306,6 +325,7 @@ function ModelSharedView({
 
 function OrthoSharedView({ orthophoto, token, expires }: { orthophoto: Orthophoto; token: string; expires?: string }) {
   const photo = orthoToResolved(orthophoto)
+  const phone = usePhoneLayout()
 
   const [measureMode, setMeasureMode]   = useState<MeasureMode>('none')
   const [measureKey, setMeasureKey]     = useState(0)
@@ -364,6 +384,7 @@ function OrthoSharedView({ orthophoto, token, expires }: { orthophoto: Orthophot
         />
         <MeasureToolbar
           placement="bottom-dock"
+          part={phone ? 'tools' : 'all'}
           onUndo={() => undoRef.current?.()}
           onFinish={() => finishRef.current?.()}
           mode={measureMode}
@@ -380,10 +401,22 @@ function OrthoSharedView({ orthophoto, token, expires }: { orthophoto: Orthophot
         />
         <VisualControls settings={visualSettings} onChange={setVisualSettings} />
         <MapSwitcher value={baseMap} onChange={setBaseMap} />
+        {phone && (
+          <PhonePanels
+            measure={{
+              mode: measureMode, onModeChange: handleModeChange, baseElevation, onBaseElevationChange: setBaseElevation,
+              result: measureResult, geopointActive, onGeopointToggle: () => setGeopointActive((v) => !v), geopoints,
+              onGeopointDelete: (id) => setGeopoints((prev) => prev.filter((p) => p.id !== id)),
+              onGeopointNote: (id, note) => setGeopoints((prev) => prev.map((p) => p.id === id ? { ...p, note } : p)),
+              onGeopointClear: () => { setGeopoints([]); setGeopointActive(false) },
+            }}
+            visual={{ settings: visualSettings, onChange: setVisualSettings }}
+          />
+        )}
 
         {photo.show_watermark !== 0 && photo.watermark_text && (
           <div
-            className="absolute bottom-[calc(0.5rem+env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] z-30 pointer-events-none select-none"
+            className="absolute bottom-[calc(0.5rem+env(safe-area-inset-bottom)+var(--qs-dock-h,0px))] left-[max(1rem,env(safe-area-inset-left))] z-20 pointer-events-none select-none"
             style={{ direction: 'rtl' }}
           >
             <span

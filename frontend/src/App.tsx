@@ -11,6 +11,8 @@ import { ComparePanel } from '@/components/ComparePanel'
 import { VisualControls } from '@/components/VisualControls'
 import { MapSwitcher } from '@/components/MapSwitcher'
 import { ViewsPanel } from '@/components/ViewsPanel'
+import { PhonePanels } from '@/components/PhonePanels'
+import { usePhoneLayout } from '@/hooks/usePhoneLayout'
 import type { ViewApi } from '@/lib/views'
 import { useModels } from '@/hooks/useModels'
 import { getDownloadUrl, updateModel, listOrthophotos, deleteOrthophoto } from '@/lib/api'
@@ -49,6 +51,7 @@ function toOrthoState(o: Orthophoto): ResolvedOrthophoto {
 export default function App() {
   const { models, loading, error, refresh, remove } = useModels()
   const navigate = useNavigate()
+  const phone = usePhoneLayout()
 
   const [selectedModel, setSelectedModel] = useState<Model | null>(null)
   const [modelUrl, setModelUrl]           = useState<string | null>(null)
@@ -299,7 +302,7 @@ export default function App() {
           </div>
           <div className="lg:hidden">
             <MeasureToolbar
-              part="all" placement="top-right"
+              part={phone ? 'tools' : 'all'} placement="top-right"
             onUndo={() => undoRef.current?.()}
             onFinish={() => finishRef.current?.()}
             mode={measureMode}
@@ -323,7 +326,7 @@ export default function App() {
             crsLabel={crsLabel()}
           />
           {/* Bottom-right overlay controls: LayerPanel + ComparePanel */}
-          <div className="absolute bottom-[calc(3.5rem+env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] z-20 flex flex-row-reverse items-end gap-2">
+          <div className="absolute bottom-[calc(3.5rem+env(safe-area-inset-bottom)+var(--qs-dock-h,0px))] right-[max(1rem,env(safe-area-inset-right))] z-20 flex flex-row-reverse items-end gap-2">
             {selectedModel && (
               <LayerPanel modelId={selectedModel.id} onLayersChange={setLayers} />
             )}
@@ -355,7 +358,7 @@ export default function App() {
             if (!txt) return null
             return (
               <div
-                className="absolute bottom-[calc(0.5rem+env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] z-30 pointer-events-none select-none"
+                className="absolute bottom-[calc(0.5rem+env(safe-area-inset-bottom)+var(--qs-dock-h,0px))] left-[max(1rem,env(safe-area-inset-left))] z-20 pointer-events-none select-none"
                 style={{ direction: 'rtl' }}
               >
                 <span
@@ -396,6 +399,23 @@ export default function App() {
           />
         </aside>
       </div>
+
+      {phone && (
+        <PhonePanels
+          measure={{
+            mode: measureMode, onModeChange: handleModeChange, baseElevation, onBaseElevationChange: setBaseElevation,
+            result: measureResult, history: measureHistory.slice(1), geopointActive, onGeopointToggle: () => setGeopointActive((v) => !v), geopoints,
+            onGeopointDelete: (id) => setGeopoints((prev) => prev.filter((p) => p.id !== id)),
+            onGeopointNote: (id, note) => setGeopoints((prev) => prev.map((p) => p.id === id ? { ...p, note } : p)),
+            onGeopointClear: () => { setGeopoints([]); setGeopointActive(false) },
+          }}
+          visual={{
+            settings: visualSettings, onChange: setVisualSettings, crsLabel: crsLabel(),
+            onSnapToGround: selectedModel?.model_type === '3d-tiles' ? () => snapRef.current?.() : undefined,
+          }}
+          views={selectedModel ? { modelId: selectedModel.id, viewApiRef, editable: true } : undefined}
+        />
+      )}
 
       {shareModel && (
         <ShareDialog

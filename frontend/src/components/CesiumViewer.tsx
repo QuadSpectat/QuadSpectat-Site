@@ -18,6 +18,12 @@ import type { GeoPoint } from '@/lib/geopoints'
 import type { HeightRef } from '@/lib/heights'
 import type { ViewApi } from '@/lib/views'
 import { OrientationAids } from '@/components/OrientationAids'
+import { effectiveSse, tilesetMemoryOptions, setQualityMode } from '@/lib/deviceProfile'
+import { usePerformanceProfile } from '@/hooks/usePerformanceProfile'
+import { useRenderOnDemand, useRenderAfterCommit, continuousRenderRequested } from '@/hooks/useRenderOnDemand'
+import { useContextLoss } from '@/hooks/useContextLoss'
+import { takeEarlyTileset } from '@/lib/earlyModel'
+import { GpuNoticeCard } from '@/components/GpuNoticeCard'
 
 // ── Height-offset helper ─────────────────────────────────────────────────────
 // Translates a tileset vertically by `metres` along the ellipsoid normal at
@@ -29,6 +35,33 @@ function applyHeightOffset(tileset: Cesium.Cesium3DTileset, metres: number): voi
   const offset  = Cesium.Cartesian3.fromRadians(cart.longitude, cart.latitude, metres)
   const translation = Cesium.Cartesian3.subtract(offset, surface, new Cesium.Cartesian3())
   tileset.modelMatrix = Cesium.Matrix4.fromTranslation(translation)
+}
+
+// ── First-view framing ───────────────────────────────────────────────────────
+// The root bounding sphere of a photogrammetry tileset is far bigger than the model, which is why zoomTo(tileset)
+// framed it off-centre and cropped. Use the union of the first-level child spheres (the real content) and size the
+// camera distance from the NARROW field of view, so portrait phones fit the whole model too.
+function contentSphere(tileset: Cesium.Cesium3DTileset, shift: Cesium.Cartesian3): Cesium.BoundingSphere {
+  const kids = tileset.root?.children ?? []
+  const spheres: Cesium.BoundingSphere[] = []
+  for (const k of kids) {
+    const bs = k.boundingSphere
+    if (bs && Number.isFinite(bs.radius) && bs.radius > 0) {
+      spheres.push(new Cesium.BoundingSphere(Cesium.Cartesian3.add(bs.center, shift, new Cesium.Cartesian3()), bs.radius))
+    }
+  }
+  if (spheres.length === 0) return tileset.boundingSphere.clone()
+  return Cesium.BoundingSphere.fromBoundingSpheres(spheres)
+}
+
+function frameOffset(v: Cesium.Viewer, sphere: Cesium.BoundingSphere): Cesium.HeadingPitchRange {
+  const f = v.camera.frustum as Cesium.PerspectiveFrustum
+  const aspect = v.canvas.clientWidth > 0 && v.canvas.clientHeight > 0 ? v.canvas.clientWidth / v.canvas.clientHeight : 1
+  const fovy = f.fovy ?? Cesium.Math.toRadians(60)
+  const fovx = 2 * Math.atan(Math.tan(fovy / 2) * aspect)
+  const narrow = Math.min(fovx, fovy)
+  const range = (sphere.radius / Math.sin(narrow / 2)) * 1.05
+  return new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-35), range)
 }
 
 // ── Color-correction post-process shader ────────────────────────────────────
@@ -204,7 +237,8 @@ interface Props {
   finishRef?: React.MutableRefObject<(() => void) | null>
 }
 
-export function CesiumViewer({
+function CesiumViewerInner({
+  onRecover,
   selectedModel, modelUrl,
   measureMode, baseElevation, measureKey, onMeasureResult,
   visualSettings = DEFAULT_VISUAL,
@@ -228,7 +262,7 @@ export function CesiumViewer({
   viewApiRef,
   undoRef,
   finishRef,
-}: Props) {
+}: Props & { onRecover: () => void }) {
   // Never show Google tiles unless the page explicitly allows it (share/client links don't)
   const baseMap: BaseMap = requestedBaseMap === 'google3d' && !allowGoogle3d ? 'osm' : requestedBaseMap
   const googleShown = baseMap === 'google3d'
@@ -270,6 +304,8 @@ export function CesiumViewer({
   // Exposed as state so useMeasure re-runs once the viewer is ready
   const [viewer, setViewer] = useState<Cesium.Viewer | null>(null)
   const [tileError, setTileError] = useState<string | null>(null)
+  const [startError, setStartError] = useState<string | null>(null)
+  const ccStageRef = useRef<Cesium.PostProcessStage | Cesium.PostProcessStageComposite | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const noticeTimer = useRef<number | undefined>(undefined)
@@ -303,7 +339,9 @@ export function CesiumViewer({
   useEffect(() => {
     if (!containerRef.current || !creditRef.current) return
 
-    const v = new Cesium.Viewer(containerRef.current, {
+    let v: Cesium.Viewer
+    try {
+    v = new Cesium.Viewer(containerRef.current, {
       baseLayerPicker: false,
       geocoder: false,
       homeButton: false,
@@ -319,7 +357,16 @@ export function CesiumViewer({
       skyAtmosphere: false,      // no atmosphere glow
       creditContainer: creditRef.current, // redirect credits to hidden element
       contextOptions: { webgl: { preserveDrawingBuffer: true } }, // needed for canvas.toDataURL()
+      // Draw a frame only when something changed (idle phones stop burning battery). ?render=continuous restores the old loop.
+      requestRenderMode: !continuousRenderRequested(),
+      maximumRenderTimeChange: Infinity,
+      showRenderLoopErrors: false,   // our own card handles render errors / lost contexts
     })
+    } catch (err) {
+      console.error('[CesiumViewer] Could not start WebGL', err)
+      setStartError(err instanceof Error ? err.message : String(err))
+      return
+    }
 
     v.imageryLayers.removeAll()
     v.scene.backgroundColor = Cesium.Color.BLACK
@@ -329,7 +376,7 @@ export function CesiumViewer({
     // Add color-correction post-process stage
     // Uniform getters read from visualRef so values update every frame without
     // recreating the stage.
-    v.scene.postProcessStages.add(new Cesium.PostProcessStage({
+    ccStageRef.current = v.scene.postProcessStages.add(new Cesium.PostProcessStage({
       fragmentShader: COLOR_CORRECTION_SHADER,
       uniforms: {
         u_exposure:    () => visualRef.current.exposure,
@@ -427,17 +474,32 @@ export function CesiumViewer({
         /([a-z0-9-]+)\.fra1\.cdn\.digitaloceanspaces\.com/,
         '$1.fra1.digitaloceanspaces.com',
       )
-      Cesium.Cesium3DTileset.fromUrl(directUrl, {
-        maximumScreenSpaceError: qualityToSSE(visualRef.current.quality),
+      // The root JSON may already be on its way (started while the engine downloaded): reuse it, never fetch twice.
+      const early = takeEarlyTileset(directUrl)
+      const rootResource = new Cesium.Resource({ url: directUrl })
+      if (early) {
+        const orig = Cesium.Resource.prototype.fetchJson
+        rootResource.fetchJson = () => (early as Promise<any>).catch(() => orig.call(rootResource)) // eslint-disable-line @typescript-eslint/no-explicit-any
+      }
+      Cesium.Cesium3DTileset.fromUrl(rootResource, {
+        maximumScreenSpaceError: effectiveSse(qualityToSSE(visualRef.current.quality)),
+        ...tilesetMemoryOptions(),
       }).then((tileset) => {
         if (cancelled || !viewerRef.current) return
-        viewerRef.current.scene.primitives.add(tileset)
+        const vv = viewerRef.current
+        vv.scene.primitives.add(tileset)
         tilesetRef.current = tileset
         // Combined offset: model's stored geoid correction + user fine-tune slider
         const geoidOffset = selectedModel?.geoid_offset ?? 0
+        const rootBefore = tileset.boundingSphere.center.clone()
         applyHeightOffset(tileset, geoidOffset + visualRef.current.heightOffset)
-        const fly = () => { if (viewerRef.current) void viewerRef.current.zoomTo(tileset) }
-        fly()
+        const shift = Cesium.Cartesian3.subtract(tileset.boundingSphere.center, rootBefore, new Cesium.Cartesian3())
+        const focus = contentSphere(tileset, shift)
+        // First view: set the camera immediately (no flight over a half-loaded scene); Home flies back to the same framing.
+        vv.camera.viewBoundingSphere(focus, frameOffset(vv, focus))
+        vv.camera.lookAtTransform(Cesium.Matrix4.IDENTITY)   // viewBoundingSphere leaves the camera in the sphere's local frame
+        vv.scene.requestRender()
+        const fly = () => { if (viewerRef.current) viewerRef.current.camera.flyToBoundingSphere(focus, { duration: 1.2, offset: frameOffset(viewerRef.current, focus) }) }
         if (resetCameraRef) resetCameraRef.current = fly
         homeRef.current = fly
       }).catch((err: unknown) => {
@@ -629,12 +691,23 @@ export function CesiumViewer({
     // 'none' → base layer already removed
   }, [baseMap])
 
-  // Sync LOD to tileset whenever quality changes
+  // Performance profile (phone Light mode / High quality): canvas resolution, MSAA, fog, globe budget
+  const perf = usePerformanceProfile(viewer)
+  // Sync LOD + memory budget to the tilesets whenever quality or the profile changes
   useEffect(() => {
-    if (tilesetRef.current) {
-      tilesetRef.current.maximumScreenSpaceError = qualityToSSE(visualSettings.quality)
+    const sse = effectiveSse(qualityToSSE(visualSettings.quality), perf)
+    for (const ts of [tilesetRef.current, overlayTilesetRef.current]) {
+      if (!ts) continue
+      ts.maximumScreenSpaceError = sse
+      const mem = tilesetMemoryOptions(perf)
+      ts.cacheBytes = mem.cacheBytes ?? 512 * 1024 * 1024
+      ts.maximumCacheOverflowBytes = mem.maximumCacheOverflowBytes ?? 512 * 1024 * 1024
     }
-  }, [visualSettings.quality])
+    // Colour correction is a full-screen pass: in Light mode skip it while every slider is neutral
+    const vs = visualSettings
+    const neutral = vs.exposure === 0 && vs.brightness === 0 && vs.contrast === 0 && vs.temperature === 0 && vs.saturation === 0
+    if (ccStageRef.current) ccStageRef.current.enabled = perf.postProcessWhenNeutral || !neutral
+  }, [visualSettings, perf.mode, viewer])
 
   // Re-apply height offset whenever the slider or model changes
   useEffect(() => {
@@ -668,13 +741,15 @@ export function CesiumViewer({
         '$1.fra1.digitaloceanspaces.com',
       )
       Cesium.Cesium3DTileset.fromUrl(directUrl, {
-        maximumScreenSpaceError: qualityToSSE(visualRef.current.quality),
+        maximumScreenSpaceError: effectiveSse(qualityToSSE(visualRef.current.quality)),
+        ...tilesetMemoryOptions(),
       }).then((tileset) => {
         if (cancelled || !viewerRef.current) return
         const geoidOffset = overlayModel.geoid_offset ?? 0
         applyHeightOffset(tileset, geoidOffset + visualRef.current.heightOffset)
         viewerRef.current.scene.primitives.add(tileset)
         overlayTilesetRef.current = tileset
+        viewerRef.current.scene.requestRender()
       }).catch(console.error)
       return () => { cancelled = true }
     }
@@ -872,6 +947,14 @@ export function CesiumViewer({
     if (googleShown && toolWanted) onNotice('Measuring is turned off while Google 3D is shown')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [googleShown, toolWanted])
+  // Render only on change: gestures, hover while a tool is active, scene collections, every React commit
+  useRenderOnDemand(viewer, toolWanted)
+  useRenderAfterCommit(viewer)
+  const recover = () => {
+    setQualityMode('light')   // a phone that lost its context gets the cheaper profile on the next start
+    onRecover()
+  }
+  const gpu = useContextLoss(viewer, recover)
   useMeasure(viewer, googleShown ? 'none' : measureMode, baseElevation, measureKey, onMeasureResult, heightRef, { undoRef, finishRef, onNotice, onProfile: setProfile })
   useGeopoints(viewer, geopointActive && !googleShown, geopoints, onGeopointAdd ?? (() => {}), heightRef, { onNotice })
 
@@ -957,6 +1040,9 @@ export function CesiumViewer({
           {notice}
         </div>
       )}
+      {(gpu !== 'ok' || startError) && (
+        <GpuNoticeCard kind={startError ? 'start' : gpu === 'repeated' ? 'repeated' : 'lost'} onReload={recover} />
+      )}
       {tileError && (
         <div className="absolute top-14 left-1/2 -translate-x-1/2 bg-red-900/90 text-red-100
                         text-xs px-3 py-2 rounded-md max-w-sm text-center z-10 pointer-events-none">
@@ -965,4 +1051,9 @@ export function CesiumViewer({
       )}
     </div>
   )
+}
+/** Rebuilds the whole viewer (fresh WebGL context, every effect re-run) when the user taps reload after a lost context. */
+export function CesiumViewer(props: Props) {
+  const [epoch, setEpoch] = useState(0)
+  return <CesiumViewerInner key={epoch} {...props} onRecover={() => setEpoch((e) => e + 1)} />
 }

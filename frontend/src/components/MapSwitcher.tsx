@@ -26,7 +26,7 @@ export function MapSwitcher({ value, onChange, inline = false, allowGoogle3d = f
       className={cn(
         inline
           ? 'flex rounded-xl border border-border bg-background p-[3px] gap-0.5 shrink-0'
-          : 'map-switcher-float absolute bottom-[calc(1rem+env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] z-10 flex rounded-xl overflow-hidden border border-white/[0.07] bg-[#090d0b]/80 backdrop-blur-md shadow-lg',
+          : 'map-switcher-float absolute bottom-[calc(1rem+env(safe-area-inset-bottom)+var(--qs-dock-h,0px))] right-[max(1rem,env(safe-area-inset-right))] z-10 flex rounded-xl overflow-hidden border border-white/[0.07] bg-[#090d0b]/80 backdrop-blur-md shadow-lg',
       )}
     >
       {OPTIONS.filter((o) => allowGoogle3d || o.value !== 'google3d').map(({ value: v, label, shortLabel }) => (

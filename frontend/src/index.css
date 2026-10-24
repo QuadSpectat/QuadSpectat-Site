@@ -64,7 +64,7 @@
 .skin-light [class*="border-white/"] { border-color: rgb(23 32 26 / .14) !important; }
 .skin-light [class*="hover:bg-white"]:hover { background-color: rgb(23 32 26 / .1) !important; }
 .showcase-card { background: rgb(250 252 246 / .9); backdrop-filter: blur(14px); box-shadow: 0 8px 28px rgb(0 0 0 / .2); }
-/* Phones: lift the base-map switch above the tool dock */
+/* Phones: base-map switch sits top-right under the identity card, clear of the tool dock, its Undo/Finish card and the bottom sheet */
 @media (max-width: 640px) {
-  .skin-light .map-switcher-float { bottom: calc(6.75rem + env(safe-area-inset-bottom)) !important; }
+  .skin-light .map-switcher-float { bottom: auto !important; top: calc(5rem + env(safe-area-inset-top)); }
 }

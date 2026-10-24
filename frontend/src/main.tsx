@@ -6,6 +6,7 @@ import { LandingPage } from './pages/LandingPage'
 import { ClientPage } from './pages/ClientPage'
 import { LoadingShell, ErrorBoundary } from './components/AppShell'
 import { loadCesium } from './lib/cesiumLoader'
+import { startEarlyLoad } from './lib/earlyModel'
 
 // Route-level code splitting. Only the globe routes (/app, /v/<token>) wait for Cesium; /, /drone, /c/<token>
 // and /admin never download it. The 3D engine must be on the page before the viewer chunk is evaluated.
@@ -24,6 +25,9 @@ function RouteFallback() {
   const { pathname } = useLocation()
   return <LoadingShell label={/^\/(app|v\/)/.test(pathname) ? 'Loading 3D…' : 'Loading…'} />
 }
+
+// Share-link visits: look up the share and warm the tileset root while the 3D engine downloads.
+startEarlyLoad(window.location.pathname)
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

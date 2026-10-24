@@ -60,8 +60,13 @@ export function OrientationAids({ viewer, onHome }: Props) {
         arrowRef.current.style.transform = `rotate(${-Cesium.Math.toDegrees(v.camera.heading)}deg)`
       }
     }
+    let lastPost = 0
     function onPostRender() {
       if (!raf) raf = requestAnimationFrame(updateCompass)
+      // The viewer only renders when something changed, so refresh the scale bar from rendered frames (throttled)
+      // instead of a timer that would keep waking an idle phone.
+      const now = performance.now()
+      if (now - lastPost > 250) { lastPost = now; updateScale() }
     }
 
     function updateScale() {
@@ -99,12 +104,10 @@ export function OrientationAids({ viewer, onHome }: Props) {
 
     v.scene.postRender.addEventListener(onPostRender)
     v.camera.changed.addEventListener(onChanged)
-    const timer = window.setInterval(updateScale, 250)
     updateCompass()
     updateScale()
     return () => {
       if (raf) cancelAnimationFrame(raf)
-      window.clearInterval(timer)
       if (!v.isDestroyed()) {
         v.scene.postRender.removeEventListener(onPostRender)
         v.camera.changed.removeEventListener(onChanged)
@@ -164,7 +167,7 @@ export function OrientationAids({ viewer, onHome }: Props) {
       </div>
 
       {scale && (
-        <div className="absolute left-[max(1rem,env(safe-area-inset-left))] bottom-[calc(5.5rem+env(safe-area-inset-bottom))] max-sm:bottom-[calc(6.5rem+env(safe-area-inset-bottom))] z-10 pointer-events-none rounded-lg border border-white/[0.15]
+        <div className="absolute left-[max(1rem,env(safe-area-inset-left))] bottom-[calc(5.5rem+env(safe-area-inset-bottom)+var(--qs-dock-h,0px))] max-sm:bottom-[calc(6.5rem+env(safe-area-inset-bottom)+var(--qs-dock-h,0px))] z-10 pointer-events-none rounded-lg border border-white/[0.15]
                         bg-[#0b100d]/[0.97] backdrop-blur-xl shadow-2xl shadow-black/80 px-2.5 pt-1.5 pb-2">
           <div className="font-mono text-[11px] leading-none text-white/80 mb-1"
                style={{ fontVariantNumeric: 'tabular-nums' }}>
