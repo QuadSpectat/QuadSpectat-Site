@@ -14,9 +14,11 @@ interface Props {
   onChange: (v: BaseMap) => void
   /** Render as a segmented control in a header (not floating over the map). */
   inline?: boolean
+  /** Google 3D is owner-only (terms, billing). Off unless explicitly allowed. */
+  allowGoogle3d?: boolean
 }
 
-export function MapSwitcher({ value, onChange, inline = false }: Props) {
+export function MapSwitcher({ value, onChange, inline = false, allowGoogle3d = false }: Props) {
   return (
     <div
       role="group"
@@ -27,7 +29,7 @@ export function MapSwitcher({ value, onChange, inline = false }: Props) {
           : 'absolute bottom-4 right-4 z-10 flex rounded-xl overflow-hidden border border-white/[0.07] bg-[#090d0b]/80 backdrop-blur-md shadow-lg',
       )}
     >
-      {OPTIONS.map(({ value: v, label, shortLabel }) => (
+      {OPTIONS.filter((o) => allowGoogle3d || o.value !== 'google3d').map(({ value: v, label, shortLabel }) => (
         <button
           key={v}
           type="button"

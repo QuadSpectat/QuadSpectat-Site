@@ -61,7 +61,11 @@ export default function App() {
   const [measureResult, setMeasureResult]       = useState<string | null>(null)
   const [measureHistory, setMeasureHistory]     = useState<{ id: string; text: string }[]>([])
   const [visualSettings, setVisualSettings]     = useState<VisualSettings>(DEFAULT_VISUAL)
-  const [baseMap, setBaseMap]                   = useState<BaseMap>('none')
+  const [baseMap, setBaseMapRaw]                = useState<BaseMap>('none')
+  const prevBaseMap = useRef<BaseMap>('none')
+  const setBaseMap = (b: BaseMap) => {
+    setBaseMapRaw((cur) => { if (cur !== 'google3d') prevBaseMap.current = cur; return b })
+  }
   const [layers, setLayers]                     = useState<ResolvedLayer[]>([])
   const [orthoPhotos, setOrthoPhotos]           = useState<ResolvedOrthophoto[]>([])
   const [overlayModel, setOverlayModel]         = useState<Model | null>(null)
@@ -206,7 +210,7 @@ export default function App() {
           </>
         )}
         <div className="flex-1" />
-        <MapSwitcher inline value={baseMap} onChange={setBaseMap} />
+        <MapSwitcher inline allowGoogle3d value={baseMap} onChange={setBaseMap} />
         <button
           type="button"
           disabled={!selectedModel}
@@ -251,6 +255,8 @@ export default function App() {
             onMeasureResult={setMeasureResult}
             visualSettings={visualSettings}
             baseMap={baseMap}
+            allowGoogle3d
+            onBaseMapFallback={() => setBaseMap(prevBaseMap.current)}
             layers={layers}
             orthophotos={orthoPhotos}
             overlayModel={overlayModel}

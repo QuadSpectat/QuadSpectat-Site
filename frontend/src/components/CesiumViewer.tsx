@@ -167,6 +167,10 @@ interface Props {
   onMeasureResult: (text: string | null) => void
   visualSettings?: VisualSettings
   baseMap?: BaseMap
+  /** Google Photorealistic 3D Tiles are owner-only: ignored (falls back to OSM) unless true. */
+  allowGoogle3d?: boolean
+  /** Called when Google 3D could not load, so the parent can restore the previous base map. */
+  onBaseMapFallback?: () => void
   layers?: ResolvedLayer[]
   orthophotos?: ResolvedOrthophoto[]
   /** Set on shared / client pages: authorises tile requests for that one orthophoto. */
@@ -199,7 +203,9 @@ export function CesiumViewer({
   selectedModel, modelUrl,
   measureMode, baseElevation, measureKey, onMeasureResult,
   visualSettings = DEFAULT_VISUAL,
-  baseMap = 'none',
+  baseMap: requestedBaseMap = 'none',
+  allowGoogle3d = false,
+  onBaseMapFallback,
   layers = [],
   orthophotos = [],
   shareToken,
@@ -217,6 +223,11 @@ export function CesiumViewer({
   viewApiRef,
   undoRef,
 }: Props) {
+  // Never show Google tiles unless the page explicitly allows it (share/client links don't)
+  const baseMap: BaseMap = requestedBaseMap === 'google3d' && !allowGoogle3d ? 'osm' : requestedBaseMap
+  const googleShown = baseMap === 'google3d'
+  const fallbackRef = useRef(onBaseMapFallback)
+  fallbackRef.current = onBaseMapFallback
   const containerRef  = useRef<HTMLDivElement>(null)
   const creditRef     = useRef<HTMLDivElement>(null)
   const viewerRef    = useRef<Cesium.Viewer | null>(null)
@@ -463,6 +474,11 @@ export function CesiumViewer({
     homeRef.current = fly
   }, [selectedModel?.id, modelUrl])
 
+  const googleFailed = (msg: string) => {
+    onNotice(msg)
+    fallbackRef.current?.()
+  }
+
   // Swap base imagery layer when baseMap changes (does NOT remove orthophoto layers)
   useEffect(() => {
     const v = viewerRef.current
@@ -502,7 +518,7 @@ export function CesiumViewer({
     } else if (baseMap === 'google3d') {
       const key = import.meta.env.VITE_GOOGLE_MAPS_KEY as string | undefined
       if (!key) {
-        setTileError('Google 3D requires VITE_GOOGLE_MAPS_KEY — add it to frontend/.env.local and restart the dev server')
+        googleFailed('Google 3D is not available (no API key set).')
       } else {
         Cesium.Cesium3DTileset.fromUrl(
           `https://tile.googleapis.com/v1/3dtiles/root.json?key=${key}`,
@@ -515,12 +531,19 @@ export function CesiumViewer({
             viewerRef.current.scene.globe.show = false
             viewerRef.current.scene.primitives.add(tileset)
             google3dRef.current = tileset
+            // HTTP errors while streaming (bad/expired key, quota): fall back once
+            let failed = false
+            tileset.tileFailed.addEventListener(() => {
+              if (failed) return
+              failed = true
+              googleFailed('Google 3D stopped loading (key or quota problem). Showing the previous base map.')
+            })
           } else {
             tileset.destroy()
           }
         }).catch((err: unknown) => {
-          const msg = err instanceof Error ? err.message : String(err)
-          setTileError(`Google 3D: ${msg}`)
+          console.error('Google 3D failed', err)
+          if (viewerRef.current && baseMap === 'google3d') googleFailed('Google 3D could not be loaded. Showing the previous base map.')
         })
       }
     }
@@ -764,8 +787,14 @@ export function CesiumViewer({
   }, [hasActiveOrtho])
 
   // Measurement
-  useMeasure(viewer, measureMode, baseElevation, measureKey, onMeasureResult, heightRef, { undoRef, onNotice })
-  useGeopoints(viewer, geopointActive, geopoints, onGeopointAdd ?? (() => {}), heightRef, { onNotice })
+  // Never take points on Google's tiles (terms bar measuring on them): tools are off while shown
+  const toolWanted = measureMode !== 'none' || geopointActive
+  useEffect(() => {
+    if (googleShown && toolWanted) onNotice('Measuring is turned off while Google 3D is shown')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [googleShown, toolWanted])
+  useMeasure(viewer, googleShown ? 'none' : measureMode, baseElevation, measureKey, onMeasureResult, heightRef, { undoRef, onNotice })
+  useGeopoints(viewer, geopointActive && !googleShown, geopoints, onGeopointAdd ?? (() => {}), heightRef, { onNotice })
 
   // Sync KML/overlay layers
   useEffect(() => {
@@ -837,7 +866,8 @@ export function CesiumViewer({
     <div className="relative w-full h-full">
       <div ref={containerRef} className="w-full h-full" />
       {/* Hidden credit container — keeps Cesium logo off the canvas */}
-      <div ref={creditRef} className="hidden" />
+      {/* Credits stay hidden except while Google 3D is shown: Google requires attribution on screen */}
+      <div ref={creditRef} className={googleShown ? 'absolute bottom-1 left-2 z-10 max-w-[60%] text-[10px] text-white/80 [&_a]:text-white/90' : 'hidden'} />
       <OrientationAids viewer={viewer} onHome={selectedModel ? () => homeRef.current?.() : undefined} />
       {notice && (
         <div role="status"
