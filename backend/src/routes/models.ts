@@ -8,6 +8,20 @@ import { requireAuth } from '../middleware/auth'
 
 const router = Router()
 
+// Reject non-numeric / out-of-range pose values (null/undefined mean "not provided").
+function poseError(b: Record<string, unknown>): string | null {
+  const limits: Record<string, [number, number]> = {
+    longitude: [-180, 180], latitude: [-90, 90], altitude: [-1e5, 1e5],
+    heading: [-3600, 3600], pitch: [-3600, 3600], roll: [-3600, 3600], scale: [1e-9, 1e9], geoid_offset: [-1e3, 1e3],
+  }
+  for (const [k, [lo, hi]] of Object.entries(limits)) {
+    const v = b[k]
+    if (v === undefined || v === null) continue
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < lo || v > hi) return `${k} must be a number between ${lo} and ${hi}`
+  }
+  return null
+}
+
 // GET /api/models?limit=50&offset=0
 router.get('/', optionalAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -57,6 +71,8 @@ router.post('/', requireAuth, async (req: Request, res: Response, next: NextFunc
       model_type, external_url, coordinate_system, geoid_offset, show_watermark, watermark_text,
     } = req.body as Record<string, unknown>
 
+    const perr = poseError(req.body as Record<string, unknown>)
+    if (perr) { res.status(400).json({ error: perr }); return }
     if (!asset_name || typeof asset_name !== 'string') {
       res.status(400).json({ error: 'asset_name is required' })
       return
@@ -113,6 +129,8 @@ router.put('/:id', requireAuth, async (req: Request, res: Response, next: NextFu
       coordinate_system, geoid_offset, watermark_text,
     } = req.body as Record<string, unknown>
 
+    const perr = poseError(req.body as Record<string, unknown>)
+    if (perr) { res.status(400).json({ error: perr }); return }
     const { rows } = await db.query(
       `UPDATE models
        SET name               = COALESCE($1,  name),

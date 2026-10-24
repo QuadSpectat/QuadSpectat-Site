@@ -6,11 +6,11 @@ import { useState, useEffect, useRef, useCallback, type ChangeEvent, type DragEv
 import {
   LayoutDashboard, Box, Map, Upload, Trash2, ExternalLink,
   RefreshCw, AlertCircle, CheckCircle2, Loader2, X, ChevronRight,
-  FileImage, Globe, Eye, Info, LogOut, Bell, Copy, Zap, Users,
+  FileImage, Globe, Eye, Info, LogOut, Bell, Copy, Zap, Users, Pencil,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
-  listModels, deleteModel, presignUpload, uploadToSpaces, createModel,
+  listModels, deleteModel, updateModel, presignUpload, uploadToSpaces, createModel,
   listOrthophotos, deleteOrthophoto, presignOrthophotoUpload, createOrthophoto,
   login, getMe, getAgeInfo,
 } from '@/lib/api'
@@ -251,6 +251,119 @@ function useToasts() {
   return { toasts, add, remove }
 }
 
+// ─── Position validation (shared by upload + edit) ────────────────────────────
+
+interface PoseText { lon: string; lat: string; alt: string; heading: string; pitch: string; roll: string; scale: string }
+
+/** Parse the pose fields. Empty / non-numeric / out-of-range values are rejected (they used to become NaN -> null -> 0,0,0 in the database). */
+type PoseNum = { longitude: number; latitude: number; altitude: number; heading: number; pitch: number; roll: number; scale: number }
+function parsePose(t: PoseText): { error: string | null; v: PoseNum } {
+  const empty: PoseNum = { longitude: 0, latitude: 0, altitude: 0, heading: 0, pitch: 0, roll: 0, scale: 1 }
+  const num = (label: string, s: string) => {
+    const n = s.trim() === '' ? NaN : Number(s)
+    if (!Number.isFinite(n)) throw new Error(`${label} must be a number`)
+    return n
+  }
+  try {
+    const longitude = num('Longitude', t.lon), latitude = num('Latitude', t.lat), altitude = num('Altitude', t.alt)
+    if (longitude < -180 || longitude > 180) throw new Error('Longitude must be between -180 and 180')
+    if (latitude < -90 || latitude > 90) throw new Error('Latitude must be between -90 and 90')
+    const heading = num('Heading', t.heading), pitch = num('Pitch', t.pitch), roll = num('Roll', t.roll)
+    const scale = num('Scale', t.scale)
+    if (scale <= 0) throw new Error('Scale must be greater than 0')
+    return { error: null, v: { longitude, latitude, altitude, heading, pitch, roll, scale } }
+  } catch (e) {
+    return { error: (e as Error).message, v: empty }
+  }
+}
+
+const POSE_HINT = 'Where the model sits on the globe. Altitude is metres above the WGS84 ellipsoid (0 = ground when no terrain/base map is shown). 0, 0 is in the Atlantic Ocean off Africa: enter the real site location (e.g. Haifa: latitude 32.83, longitude 34.979).'
+
+// ─── Edit Model Modal ─────────────────────────────────────────────────────────
+
+function EditModelModal({ model, onClose, onSaved }: { model: Model; onClose: () => void; onSaved: (m: Model) => void }) {
+  const isGlb = model.model_type !== '3d-tiles'
+  const presetKnown = CRS_PRESETS.some((p) => p.value === model.coordinate_system)
+  const [name, setName] = useState(model.name)
+  const [description, setDescription] = useState(model.description ?? '')
+  const [pose, setPose] = useState<PoseText>({
+    lon: String(model.longitude), lat: String(model.latitude), alt: String(model.altitude),
+    heading: String(model.heading), pitch: String(model.pitch), roll: String(model.roll), scale: String(model.scale),
+  })
+  const [crsValue, setCrsValue] = useState(presetKnown ? model.coordinate_system : 'custom')
+  const [customOffset, setCustomOffset] = useState(String(model.geoid_offset))
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const setP = (k: keyof PoseText) => (v: string) => setPose((p) => ({ ...p, [k]: v }))
+  const preset = CRS_PRESETS.find((p) => p.value === crsValue) ?? CRS_PRESETS[0]
+
+  async function save(e: FormEvent) {
+    e.preventDefault()
+    if (!name.trim()) { setError('Name is required'); return }
+    const payload: Parameters<typeof updateModel>[1] = { name: name.trim(), description: description.trim() }
+    if (isGlb) {
+      const r = parsePose(pose)
+      if (r.error) { setError(r.error); return }
+      Object.assign(payload, r.v)
+    }
+    const off = preset.offset !== null ? preset.offset : Number(customOffset)
+    if (!Number.isFinite(off)) { setError('Geoid offset must be a number'); return }
+    payload.coordinate_system = crsValue
+    payload.geoid_offset = off
+    setSaving(true); setError(null)
+    try {
+      onSaved(await updateModel(model.id, payload))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal title={`Edit model: ${model.name}`} onClose={onClose}>
+      <form onSubmit={(e) => { void save(e) }} className="flex flex-col gap-4" data-testid="edit-model-form">
+        <Field label="Display Name" value={name} onChange={setName} required />
+        <Field label="Description" value={description} onChange={setDescription} placeholder="Optional notes" />
+        {isGlb ? (
+          <div className="flex flex-col gap-2">
+            <span className="text-xs font-semibold text-white/60 uppercase tracking-wider">Position &amp; Orientation</span>
+            <p className="text-[11px] text-white/50 leading-tight">{POSE_HINT}</p>
+            <div className="grid grid-cols-3 gap-3">
+              <Field label="Latitude (°)" value={pose.lat} onChange={setP('lat')} type="number" step="any" required />
+              <Field label="Longitude (°)" value={pose.lon} onChange={setP('lon')} type="number" step="any" required />
+              <Field label="Altitude (m)" value={pose.alt} onChange={setP('alt')} type="number" step="any" required />
+              <Field label="Heading (°)" value={pose.heading} onChange={setP('heading')} type="number" step="any" required />
+              <Field label="Pitch (°)" value={pose.pitch} onChange={setP('pitch')} type="number" step="any" required />
+              <Field label="Roll (°)" value={pose.roll} onChange={setP('roll')} type="number" step="any" required />
+              <Field label="Scale" value={pose.scale} onChange={setP('scale')} type="number" step="any" required />
+            </div>
+          </div>
+        ) : (
+          <p className="text-[11px] text-white/50">3D Tiles carry their own georeference; only the name, description and height correction can be changed here.</p>
+        )}
+        <Select label="Coordinate System" value={crsValue} onChange={setCrsValue}
+          options={CRS_PRESETS.map((p) => ({ value: p.value, label: p.label }))} hint={preset.hint} />
+        {crsValue === 'custom' && (
+          <Field label="Geoid Offset (m)" value={customOffset} onChange={setCustomOffset} type="number" step="0.1" />
+        )}
+        {error && (
+          <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-400">
+            <AlertCircle size={13} className="mt-0.5 shrink-0" />{error}
+          </div>
+        )}
+        <div className="flex gap-2 pt-1">
+          <button type="button" onClick={onClose} disabled={saving}
+            className="flex-1 h-9 rounded-lg border border-white/10 text-xs font-medium text-white/60 hover:text-white hover:border-white/25 transition-colors disabled:opacity-40">Cancel</button>
+          <button type="submit" disabled={saving}
+            className="flex-1 h-9 rounded-lg bg-primary hover:bg-primary/90 text-xs font-semibold text-primary-foreground transition-colors disabled:opacity-40 flex items-center justify-center gap-1.5">
+            {saving ? <><Loader2 size={13} className="animate-spin" />Saving…</> : 'Save changes'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
 // ─── Unified Upload Asset Modal ───────────────────────────────────────────────
 
 const ORTHO_FORMATS: Record<string, string> = {
@@ -301,7 +414,7 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
   const [scale, setScale] = useState('1')
   const [crsValue, setCrsValue] = useState('itm')
   const [customOffset, setCustomOffset] = useState('-17.5')
-  const [showTransform, setShowTransform] = useState(false)
+  const [showTransform, setShowTransform] = useState(true)
 
   // Orthophoto-specific
   const [orthoFile, setOrthoFile] = useState<File | null>(null)
@@ -371,6 +484,11 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
 
         if (modelMode === 'file') {
           if (!modelFile) throw new Error('Select a model file first')
+          const pr = parsePose({ lon, lat, alt, heading, pitch, roll, scale })
+          if (pr.error) throw new Error(pr.error)
+          if (pr.v.longitude === 0 && pr.v.latitude === 0) {
+            throw new Error('Latitude and longitude are still 0, 0 (the ocean off Africa). Enter the real location of the model.')
+          }
           const ct = modelFile.name.endsWith('.glb') ? 'model/gltf-binary' : 'model/gltf+json'
           const { key, url } = await presignUpload(modelFile.name, ct)
           setProgress(10)
@@ -383,13 +501,7 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
             file_key: key,
             file_size: modelFile.size,
             file_type: ct,
-            longitude: parseFloat(lon),
-            latitude: parseFloat(lat),
-            altitude: parseFloat(alt),
-            heading: parseFloat(heading),
-            pitch: parseFloat(pitch),
-            roll: parseFloat(roll),
-            scale: parseFloat(scale),
+            ...pr.v,
             coordinate_system,
             geoid_offset,
             show_watermark: showWatermark,
@@ -585,8 +697,11 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
               <button type="button" onClick={() => setShowTransform((s) => !s)}
                 className="flex items-center gap-1.5 text-xs text-white/55 hover:text-white/70 transition-colors">
                 <ChevronRight size={13} className={cn('transition-transform', showTransform && 'rotate-90')} />
-                Position &amp; Orientation (optional)
+                Position &amp; Orientation (GLB / GLTF only)
               </button>
+              {showTransform && (
+                <p className="mt-2 text-[11px] text-white/50 leading-tight">{POSE_HINT}</p>
+              )}
               {showTransform && (
                 <div className="mt-3 grid grid-cols-3 gap-3">
                   <Field label="Longitude (°)" value={lon} onChange={setLon} type="number" step="any" />
@@ -783,10 +898,10 @@ function DashboardTab({ models, orthophotos }: { models: Model[]; orthophotos: O
 // ─── Models Tab ───────────────────────────────────────────────────────────────
 
 function ModelsTab({
-  models, loading, onRefresh, onDelete, onUpload, toast,
+  models, loading, onRefresh, onDelete, onUpload, onEdit, toast,
 }: {
   models: Model[]; loading: boolean
-  onRefresh: () => void; onDelete: (id: string) => void; onUpload: () => void
+  onRefresh: () => void; onDelete: (id: string) => void; onUpload: () => void; onEdit: (m: Model) => void
   toast: (type: Toast['type'], msg: string) => void
 }) {
   async function handleDelete(m: Model) {
@@ -887,6 +1002,13 @@ function ModelsTab({
                       >
                         <Eye size={13} />
                       </a>
+                      <button
+                        title="Edit model (position, orientation, name)"
+                        onClick={() => onEdit(m)}
+                        className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-white/10 text-white/50 hover:text-white transition-colors"
+                      >
+                        <Pencil size={13} />
+                      </button>
                       <button
                         title="Delete model"
                         onClick={() => handleDelete(m)}
@@ -1377,6 +1499,7 @@ export function AdminPage() {
   const [modelsLoading, setModelsLoading] = useState(false)
   const [orthosLoading, setOrthosLoading] = useState(false)
   const [showUpload, setShowUpload] = useState(false)
+  const [editModel, setEditModel] = useState<Model | null>(null)
   const { toasts, add: addToast, remove: removeToast } = useToasts()
 
   // ── Auth state ─────────────────────────────────────────────────────────────
@@ -1544,6 +1667,7 @@ export function AdminPage() {
                 onRefresh={fetchModels}
                 onDelete={(id) => setModels((ms) => ms.filter((m) => m.id !== id))}
                 onUpload={() => setShowUpload(true)}
+                onEdit={setEditModel}
                 toast={addToast}
               />
             </>
@@ -1588,6 +1712,19 @@ export function AdminPage() {
       </main>
 
       {/* Modals */}
+      {editModel && (
+        <EditModelModal
+          model={editModel}
+          onClose={() => setEditModel(null)}
+          onSaved={(m) => {
+            setModels((ms) => ms.map((x) => (x.id === m.id ? m : x)))
+            setEditModel(null)
+            addToast('success', `Saved "${m.name}". Reload the viewer tab to see it.`)
+            void fetchModels()
+          }}
+        />
+      )}
+
       {showUpload && (() => {
         const existingAssets = [...new Set([
           ...models.map((m) => m.asset_name).filter(Boolean),

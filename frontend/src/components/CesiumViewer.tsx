@@ -448,11 +448,25 @@ export function CesiumViewer({
 
     // glTF / GLB entity path
     const { longitude, latitude, altitude, heading, pitch, roll, scale } = selectedModel
+    if (![longitude, latitude, altitude].every((n) => typeof n === 'number' && Number.isFinite(n))
+        || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
+      const msg = 'This model has no valid position (longitude / latitude / altitude). Open Admin > Models > Edit and enter where it is.'
+      setTileError(msg)
+      const noop = () => onNotice(msg)
+      if (resetCameraRef) resetCameraRef.current = noop
+      homeRef.current = noop
+      return
+    }
     const position = Cesium.Cartesian3.fromDegrees(longitude, latitude, altitude)
     const hpr = new Cesium.HeadingPitchRoll(
       Cesium.Math.toRadians(heading),
       Cesium.Math.toRadians(pitch),
       Cesium.Math.toRadians(roll),
+    )
+    // Same CDN-CORS workaround as the tileset path: load from the origin host, not the CDN host
+    const directUrl = modelUrl.replace(
+      /([a-z0-9-]+)\.fra1\.cdn\.digitaloceanspaces\.com/,
+      '$1.fra1.digitaloceanspaces.com',
     )
 
     const entity = v.entities.add({
@@ -462,7 +476,7 @@ export function CesiumViewer({
         Cesium.Transforms.headingPitchRollQuaternion(position, hpr),
       ),
       model: {
-        uri: modelUrl,
+        uri: directUrl,
         scale,
         minimumPixelSize: 64,
         maximumScale: 200_000,
@@ -471,10 +485,56 @@ export function CesiumViewer({
     })
 
     entityRef.current = entity
-    const fly = () => { if (viewerRef.current) void viewerRef.current.flyTo(entity, { duration: 1.5 }) }
+    let cancelled = false
+
+    // Frame the real geometry once the model is ready (entity.flyTo can wait forever on a model that
+    // never becomes ready, and frames a 2 m view for tiny models). Before it is ready (or if it never
+    // is) Home still flies to the placement point instead of doing nothing.
+    const bs = new Cesium.BoundingSphere()
+    const modelReady = (): boolean => {
+      const vv = viewerRef.current
+      if (!vv || vv.isDestroyed() || !vv.dataSourceDisplay.ready) return false
+      try {
+        return (vv.dataSourceDisplay as unknown as {
+          getBoundingSphere: (e: Cesium.Entity, allowPartial: boolean, r: Cesium.BoundingSphere) => number
+        }).getBoundingSphere(entity, false, bs) === 0 && Number.isFinite(bs.radius)  // 0 = BoundingSphereState.DONE (not in the public typings)
+      } catch { return false }  // visualizers not created yet on the first frames
+    }
+    const fly = () => {
+      const vv = viewerRef.current
+      if (!vv || vv.isDestroyed()) return
+      if (modelReady()) {
+        vv.camera.flyToBoundingSphere(
+          new Cesium.BoundingSphere(bs.center.clone(), bs.radius),
+          { duration: 1.5, offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-35), Math.max(bs.radius * 3, 5)) },
+        )
+      } else {
+        vv.camera.flyToBoundingSphere(
+          new Cesium.BoundingSphere(position, 1),
+          { duration: 1.5, offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-35), 60) },
+        )
+      }
+    }
     fly()
     if (resetCameraRef) resetCameraRef.current = fly
     homeRef.current = fly
+
+    const started = Date.now()
+    const timer = window.setInterval(() => {
+      if (cancelled) { window.clearInterval(timer); return }
+      if (modelReady()) {
+        window.clearInterval(timer)
+        const far = Cesium.Cartesian3.distance(bs.center, position)
+        if (far > 5000) {
+          setTileError(`The model's geometry is ${(far / 1000).toFixed(0)} km away from its placement point (the file is not centred on its origin), so it is not drawn where you placed it. Re-export it centred, or use Edit to move the placement point.`)
+        }
+        fly()
+      } else if (Date.now() - started > 25_000) {
+        window.clearInterval(timer)
+        setTileError('The model file was fetched but could not be displayed (still not ready after 25 s). Possible causes: the download was blocked (check the browser console / Spaces CORS), a texture or extension in the file is unsupported, or the geometry is invalid.')
+      }
+    }, 300)
+    return () => { cancelled = true; window.clearInterval(timer) }
   }, [selectedModel?.id, modelUrl])
 
   const googleFailed = (msg: string) => {
