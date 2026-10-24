@@ -205,33 +205,83 @@ export const updateModelViaToken = (
   apiFetch<Model>(`/share/${token}/model`, { method: 'PATCH', body: JSON.stringify(patch) })
 
 // ── Layers ───────────────────────────────────────────────────────────────────
+export type ClampMode = 'drape' | 'heights'
+export type LayerSourceCrs = 'EPSG:4326' | 'EPSG:2039'
+
+/** A layer row. The owner gets every field; share links and the public demo get the first block only. */
 export interface Layer {
   id: string
   model_id: string
   name: string
-  file_key: string
   file_type: string
   visible: number
-  created_at: string
+  /** 'none' = a layer saved before clamp modes existed: file heights untouched (same as 'heights') */
+  clamp_mode?: ClampMode | 'none'
+  height_offset?: number
+  sort_order?: number
+  has_z?: number
+  status?: 'ready' | 'error'
+  // owner only
+  file_key?: string
+  created_at?: string
+  source_name?: string | null
+  source_crs?: LayerSourceCrs | null
+  status_message?: string | null
+  client_visible?: number
+  feature_count?: number | null
+  byte_size?: number | null
+  bbox?: string | null
+  opacity?: number
 }
 
-export const listLayers = (model_id: string) =>
-  apiFetch<Layer[]>(`/layers?model_id=${encodeURIComponent(model_id)}`)
+export interface LayerLimits { maxBytes: number; warnFeatures: number; maxFeatures: number; extensions: string[]; sourceCrs: string[] }
 
-export const presignLayerUpload = (filename: string, contentType: string, model_id: string) =>
-  apiFetch<{ key: string; url: string }>('/layers/presign', {
-    method: 'POST',
-    body: JSON.stringify({ filename, contentType, model_id }),
-  })
+const shareQ = (shareToken?: string) => (shareToken ? `share=${encodeURIComponent(shareToken)}` : '')
 
-export const createLayer = (payload: { model_id: string; name: string; file_key: string; file_type: string }) =>
-  apiFetch<Layer>('/layers', { method: 'POST', body: JSON.stringify(payload) })
+export const listLayers = (model_id: string, shareToken?: string) =>
+  apiFetch<Layer[]>(`/layers?model_id=${encodeURIComponent(model_id)}${shareToken ? '&' + shareQ(shareToken) : ''}`)
 
-export const getLayerDownloadUrl = (id: string) =>
-  apiFetch<{ url: string }>(`/layers/${id}/download`).then((d) => d.url)
+export const getLayerLimits = () => apiFetch<LayerLimits>('/layers/limits')
+
+export const getLayerDownloadUrl = (id: string, shareToken?: string) =>
+  apiFetch<{ url: string }>(`/layers/${id}/download${shareToken ? '?' + shareQ(shareToken) : ''}`).then((d) => d.url)
 
 export const deleteLayer = (id: string) =>
   apiFetch<void>(`/layers/${id}`, { method: 'DELETE' })
+
+export type LayerPatch = Partial<{
+  visible: boolean; client_visible: boolean; height_offset: number; opacity: number
+  clamp_mode: ClampMode; sort_order: number; name: string; status: 'ready' | 'error'; status_message: string | null
+}>
+
+export const patchLayer = (id: string, patch: LayerPatch) =>
+  apiFetch<Layer>(`/layers/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
+
+/** Re-reads the stored file on the server and refreshes the layer's status (the panel's Retry). */
+export const recheckLayer = (id: string) =>
+  apiFetch<Layer>(`/layers/${id}/recheck`, { method: 'POST' })
+
+/** Uploads one layer file. The server validates it and answers with a plain-language error (thrown as Error.message). */
+export async function uploadLayer(file: File, modelId: string, sourceCrs: LayerSourceCrs): Promise<Layer & { warnings?: string[] }> {
+  const params = new URLSearchParams({ filename: file.name, model_id: modelId, source_crs: sourceCrs })
+  let res: Response
+  try {
+    // Always octet-stream: the browser would label a .json file application/json
+    res = await fetch(`${BASE}/layers/upload?${params.toString()}`, {
+      method: 'POST', body: file, headers: { 'Content-Type': 'application/octet-stream', ...getAuthHeader() },
+    })
+  } catch {
+    throw new Error('Could not reach the server. Check the connection and retry.')
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText)
+    let msg = text
+    try { msg = (JSON.parse(text) as { error?: string }).error ?? text } catch { /* not JSON */ }
+    if (res.status === 401) msg = 'You are signed out. Sign in again as admin to upload layers.'
+    throw new Error(msg)
+  }
+  return res.json() as Promise<Layer & { warnings?: string[] }>
+}
 
 // ── Saved camera views ───────────────────────────────────────────────────────
 export type { CameraState, SavedView }

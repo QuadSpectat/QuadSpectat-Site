@@ -6,7 +6,7 @@ import { CesiumViewer } from '@/components/CesiumViewer'
 import { ModelSidebar } from '@/components/ModelSidebar'
 import { MeasureToolbar } from '@/components/MeasureToolbar'
 import { ShareDialog } from '@/components/ShareDialog'
-import { LayerPanel } from '@/components/LayerPanel'
+import { LayerPanel, LayerPanelBody, useLayers, isOwnerSession } from '@/components/LayerPanel'
 import { ComparePanel } from '@/components/ComparePanel'
 import { VisualControls } from '@/components/VisualControls'
 import { MapSwitcher } from '@/components/MapSwitcher'
@@ -22,7 +22,6 @@ import type { Model, Orthophoto } from '@/lib/api'
 import type { MeasureMode } from '@/lib/measure'
 import type { VisualSettings } from '@/lib/visualControls'
 import type { BaseMap } from '@/components/MapSwitcher'
-import type { ResolvedLayer } from '@/components/LayerPanel'
 import type { ResolvedOrthophoto } from '@/components/OrthophotoPanel'
 import type { OrthoCompare } from '@/components/ComparePanel'
 
@@ -69,7 +68,7 @@ export default function App() {
   const setBaseMap = (b: BaseMap) => {
     setBaseMapRaw((cur) => { if (cur !== 'google3d') prevBaseMap.current = cur; return b })
   }
-  const [layers, setLayers]                     = useState<ResolvedLayer[]>([])
+  const layerCtl = useLayers(selectedModel?.id ?? null, { canEdit: isOwnerSession() })
   const [orthoPhotos, setOrthoPhotos]           = useState<ResolvedOrthophoto[]>([])
   const [overlayModel, setOverlayModel]         = useState<Model | null>(null)
   const [overlayModelUrl, setOverlayModelUrl]   = useState<string | null>(null)
@@ -264,7 +263,8 @@ export default function App() {
             baseMap={baseMap}
             allowGoogle3d
             onBaseMapFallback={() => setBaseMap(prevBaseMap.current)}
-            layers={layers}
+            layers={layerCtl.resolved}
+            onLayerState={layerCtl.onLoadState}
             orthophotos={orthoPhotos}
             overlayModel={overlayModel}
             overlayModelUrl={overlayModelUrl}
@@ -327,9 +327,7 @@ export default function App() {
           />
           {/* Bottom-right overlay controls: LayerPanel + ComparePanel */}
           <div className="absolute bottom-[calc(3.5rem+env(safe-area-inset-bottom)+var(--qs-dock-h,0px))] right-[max(1rem,env(safe-area-inset-right))] z-20 flex flex-row-reverse items-end gap-2">
-            {selectedModel && (
-              <LayerPanel modelId={selectedModel.id} onLayersChange={setLayers} />
-            )}
+            {selectedModel && !phone && <LayerPanel ctl={layerCtl} />}
             <ComparePanel
               models={models}
               selectedModel={selectedModel}
@@ -414,6 +412,7 @@ export default function App() {
             onSnapToGround: selectedModel?.model_type === '3d-tiles' ? () => snapRef.current?.() : undefined,
           }}
           views={selectedModel ? { modelId: selectedModel.id, viewApiRef, editable: true } : undefined}
+          layers={selectedModel ? { count: layerCtl.items.length, content: <LayerPanelBody ctl={layerCtl} /> } : undefined}
         />
       )}
 

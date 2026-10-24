@@ -45,6 +45,13 @@ export function presignDownload(key: string): Promise<string> {
   return getSignedUrl(s3, command, { expiresIn: env.PRESIGN_EXPIRY_SECONDS })
 }
 
+/** Read a whole (small) object into memory, e.g. to re-check a layer file. */
+export async function getObjectBuffer(key: string): Promise<Buffer> {
+  const r = await s3.send(new GetObjectCommand({ Bucket: env.SPACES_BUCKET, Key: key }))
+  const bytes = await r.Body?.transformToByteArray()
+  return Buffer.from(bytes ?? [])
+}
+
 export function deleteObject(key: string): Promise<unknown> {
   return s3.send(new DeleteObjectCommand({ Bucket: env.SPACES_BUCKET, Key: key }))
 }

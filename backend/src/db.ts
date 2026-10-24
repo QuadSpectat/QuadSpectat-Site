@@ -163,6 +163,34 @@ sqlite.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_saved_views_model ON saved_views(model_id);
 `)
+// ── Layers: status, placement, persistence, client visibility (additive; safe to run on every start) ──
+// Old rows get defaults that reproduce the previous behaviour: visible, offset 0, clamp_mode 'none' (file heights
+// untouched), not shown to clients, status 'ready'. sort_order is backfilled from the upload order once.
+{
+  const layerCols = new Set((sqlite.prepare(`PRAGMA table_info(layers)`).all() as Array<{ name: string }>).map((c) => c.name))
+  ;[
+    ['opacity', `REAL NOT NULL DEFAULT 1`],
+    ['height_offset', `REAL NOT NULL DEFAULT 0`],
+    ['clamp_mode', `TEXT NOT NULL DEFAULT 'none'`],
+    ['source_crs', `TEXT`],
+    ['source_name', `TEXT`],
+    ['status', `TEXT NOT NULL DEFAULT 'ready'`],
+    ['status_message', `TEXT`],
+    ['sort_order', `INTEGER NOT NULL DEFAULT 0`],
+    ['client_visible', `INTEGER NOT NULL DEFAULT 0`],
+    ['feature_count', `INTEGER`],
+    ['byte_size', `INTEGER`],
+    ['bbox', `TEXT`],
+    ['has_z', `INTEGER NOT NULL DEFAULT 0`],
+  ].forEach(([name, def]) => {
+    if (!layerCols.has(name)) sqlite.exec(`ALTER TABLE layers ADD COLUMN ${name} ${def}`)
+  })
+  if (!layerCols.has('sort_order')) {
+    sqlite.exec(`UPDATE layers SET sort_order = (
+      SELECT COUNT(*) FROM layers l2 WHERE l2.model_id = layers.model_id
+        AND (l2.created_at < layers.created_at OR (l2.created_at = layers.created_at AND l2.rowid < layers.rowid)))`)
+  }
+}
 // Links created before expiry existed become valid until one year after they were created.
 sqlite.exec(`UPDATE share_links SET expires_at = strftime('%Y-%m-%dT%H:%M:%SZ', created_at, '+365 days') WHERE expires_at IS NULL`)
 sqlite.exec(`UPDATE client_pages SET expires_at = strftime('%Y-%m-%dT%H:%M:%SZ', created_at, '+365 days') WHERE expires_at IS NULL`)

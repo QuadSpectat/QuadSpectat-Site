@@ -11,6 +11,7 @@ import { MapSwitcher } from '@/components/MapSwitcher'
 import { LogoMark } from '@/components/LogoMark'
 import { ViewsPanel } from '@/components/ViewsPanel'
 import { PhonePanels } from '@/components/PhonePanels'
+import { LayerPanel, LayerPanelBody, useLayers } from '@/components/LayerPanel'
 import { usePhoneLayout } from '@/hooks/usePhoneLayout'
 import type { ViewApi } from '@/lib/views'
 import { DEFAULT_VISUAL } from '@/lib/visualControls'
@@ -159,6 +160,9 @@ function ModelSharedView({
   const viewApiRef = useRef<ViewApi | null>(null)
   const undoRef = useRef<(() => void) | null>(null)
   const finishRef = useRef<(() => void) | null>(null)
+  // Read-only: only the layers the owner marked "visible to clients"; the link authorises just this model's layers
+  const layerCtl = useLayers(model.id, { shareToken: token, canEdit: false })
+  const hasLayers = layerCtl.items.length > 0
 
   useEffect(() => {
     if (model.external_url) { setModelUrl(model.external_url); return }
@@ -222,6 +226,8 @@ function ModelSharedView({
         <CesiumViewer
           shareToken={token}
           selectedModel={editModel}
+          layers={layerCtl.resolved}
+          onLayerState={layerCtl.onLoadState}
           modelUrl={modelUrl}
           measureMode={measureMode}
           baseElevation={baseElevation}
@@ -267,10 +273,16 @@ function ModelSharedView({
             }}
             visual={{ settings: visualSettings, onChange: setVisualSettings }}
             views={{ modelId: model.id, viewApiRef, shareToken: token, editable: false }}
+            layers={hasLayers ? { count: layerCtl.items.length, content: <LayerPanelBody ctl={layerCtl} /> } : undefined}
           />
         ) : (
           <div className="absolute left-[max(0.75rem,env(safe-area-inset-left))] top-[calc(5rem+env(safe-area-inset-top))] z-20 w-64 max-w-[calc(100%-1.5rem)]">
             <ViewsPanel editable={false} modelId={model.id} shareToken={token} viewApiRef={viewApiRef} />
+          </div>
+        )}
+        {!phone && hasLayers && (
+          <div className="absolute bottom-[calc(3.5rem+env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] z-20">
+            <LayerPanel ctl={layerCtl} />
           </div>
         )}
 

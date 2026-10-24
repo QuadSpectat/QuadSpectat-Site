@@ -1,0 +1,3 @@
+# Pure pip packages, no GDAL / QGIS needed (pyproj ships its own PROJ).
+ezdxf>=1.1
+pyproj>=3.4

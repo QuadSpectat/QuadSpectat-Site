@@ -24,6 +24,12 @@ import { useRenderOnDemand, useRenderAfterCommit, continuousRenderRequested } fr
 import { useContextLoss } from '@/hooks/useContextLoss'
 import { takeEarlyTileset } from '@/lib/earlyModel'
 import { GpuNoticeCard } from '@/components/GpuNoticeCard'
+import { LayerFeatureCard } from '@/components/LayerFeatureCard'
+import type { FeaturePick } from '@/components/LayerFeatureCard'
+import {
+  loadLayerDataSource, nameDataSource, applyVisibility, captureOrigins, applyLayerOffset, drapePoints, describeEntity,
+} from '@/lib/layerRender'
+import type { EntityOrigin } from '@/lib/layerRender'
 
 // ── Height-offset helper ─────────────────────────────────────────────────────
 // Translates a tileset vertically by `metres` along the ellipsoid normal at
@@ -87,111 +93,12 @@ void main() {
 }
 `
 
-import type { ResolvedLayer } from '@/components/LayerPanel'
+import type { ResolvedLayer, LayerLoadState } from '@/components/LayerPanel'
 import type { ResolvedOrthophoto } from '@/components/OrthophotoPanel'
 import type { OrthoCompare } from '@/components/ComparePanel'
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? '/api'
 
-// Sets visibility on a DataSource AND each of its entities.
-// DataSource.show alone is sometimes not enough for KML/KMZ in Cesium.
-function applyVisibility(ds: Cesium.DataSource, visible: boolean): void {
-  ds.show = visible
-  for (const entity of ds.entities.values) {
-    entity.show = visible
-  }
-}
-
-// ── Layer height offset helpers ──────────────────────────────────────────────
-
-interface EntityOrigin {
-  // rectangle / ground-overlay
-  rectHeight?: number
-  // polygon flat height
-  polyHeight?: number
-  // polyline positions (cloned originals)
-  linePositions?: Cesium.Cartesian3[]
-  // point / billboard position
-  pointCart?: Cesium.Cartesian3
-}
-
-// Captures the original height data for every entity in a DataSource.
-// Called once after the DataSource loads so we can re-apply absolute offsets.
-function captureOrigins(ds: Cesium.DataSource): Map<string, EntityOrigin> {
-  const now = Cesium.JulianDate.now()
-  const map = new Map<string, EntityOrigin>()
-  for (const entity of ds.entities.values) {
-    const o: EntityOrigin = {}
-    if (entity.rectangle) {
-      o.rectHeight = (entity.rectangle.height?.getValue(now) as number | undefined) ?? 0
-    }
-    if (entity.polygon) {
-      o.polyHeight = (entity.polygon.height?.getValue(now) as number | undefined) ?? 0
-    }
-    if (entity.polyline?.positions) {
-      const pts = entity.polyline.positions.getValue(now) as Cesium.Cartesian3[] | undefined
-      if (pts?.length) o.linePositions = pts.map((p) => p.clone())
-    }
-    if (entity.position && !entity.polyline && !entity.polygon) {
-      const pos = entity.position.getValue(now, new Cesium.Cartesian3())
-      if (Cesium.defined(pos)) o.pointCart = pos.clone()
-    }
-    map.set(entity.id, o)
-  }
-  return map
-}
-
-// Applies an absolute vertical offset (metres) to every entity, reading from
-// the captured originals so there is no float drift on repeated adjustments.
-// Also disables ground-clamping flags so Cesium actually respects the heights.
-function applyLayerOffset(
-  ds: Cesium.DataSource,
-  offsetM: number,
-  origins: Map<string, EntityOrigin>,
-): void {
-  for (const entity of ds.entities.values) {
-    const o = origins.get(entity.id)
-    if (!o) continue
-
-    // Rectangle (KML GroundOverlay)
-    if (entity.rectangle && o.rectHeight !== undefined) {
-      entity.rectangle.heightReference = new Cesium.ConstantProperty(Cesium.HeightReference.NONE)
-      entity.rectangle.height = new Cesium.ConstantProperty(o.rectHeight + offsetM)
-    }
-
-    // Polygon — use flat height property; unset perPositionHeight so it's respected
-    if (entity.polygon && o.polyHeight !== undefined) {
-      entity.polygon.heightReference = new Cesium.ConstantProperty(Cesium.HeightReference.NONE)
-      entity.polygon.perPositionHeight = new Cesium.ConstantProperty(false)
-      entity.polygon.height = new Cesium.ConstantProperty(o.polyHeight + offsetM)
-    }
-
-    // Polyline — disable clampToGround and shift each vertex Z
-    if (entity.polyline && o.linePositions?.length) {
-      entity.polyline.clampToGround = new Cesium.ConstantProperty(false)
-      entity.polyline.positions = new Cesium.ConstantProperty(
-        o.linePositions.map((p) => {
-          const c = Cesium.Cartographic.fromCartesian(p)
-          return Cesium.Cartesian3.fromRadians(c.longitude, c.latitude, c.height + offsetM)
-        }),
-      )
-    }
-
-    // Point / billboard
-    if (entity.position && o.pointCart) {
-      if (entity.billboard) {
-        entity.billboard.heightReference = new Cesium.ConstantProperty(Cesium.HeightReference.NONE)
-      }
-      if (entity.label) {
-        entity.label.heightReference = new Cesium.ConstantProperty(Cesium.HeightReference.NONE)
-      }
-      const c = Cesium.Cartographic.fromCartesian(o.pointCart)
-      entity.position = new Cesium.ConstantPositionProperty(
-        Cesium.Cartesian3.fromRadians(c.longitude, c.latitude, c.height + offsetM),
-      )
-    }
-  }
-}
 import React from 'react'
 
 interface Props {
@@ -208,6 +115,8 @@ interface Props {
   /** Called when Google 3D could not load, so the parent can restore the previous base map. */
   onBaseMapFallback?: () => void
   layers?: ResolvedLayer[]
+  /** Reports each layer's load result so the panel can show errors (and the owner can retry) */
+  onLayerState?: (id: string, state: LayerLoadState) => void
   orthophotos?: ResolvedOrthophoto[]
   /** Set on shared / client pages: authorises tile requests for that one orthophoto. */
   shareToken?: string
@@ -237,6 +146,16 @@ interface Props {
   finishRef?: React.MutableRefObject<(() => void) | null>
 }
 
+/** One drawn layer: the data source, the settings it was built with, and the offset currently applied to it. */
+interface LayerRuntime {
+  ds: Cesium.DataSource
+  /** url + placement + reload counter: a change means the file must be loaded again */
+  key: string
+  offset: number
+  visible: boolean
+  origins: Map<string, EntityOrigin>
+}
+
 function CesiumViewerInner({
   onRecover,
   selectedModel, modelUrl,
@@ -246,6 +165,7 @@ function CesiumViewerInner({
   allowGoogle3d = false,
   onBaseMapFallback,
   layers = [],
+  onLayerState,
   orthophotos = [],
   shareToken,
   overlayModel = null,
@@ -273,14 +193,14 @@ function CesiumViewerInner({
   const viewerRef    = useRef<Cesium.Viewer | null>(null)
   const entityRef    = useRef<Cesium.Entity | null>(null)
   const tilesetRef   = useRef<Cesium.Cesium3DTileset | null>(null)
-  // Map from layer id → loaded DataSource
-  const layerDsRef      = useRef<Map<string, Cesium.DataSource>>(new Map())
-  // IDs currently loading — prevents duplicate loads on rapid visibility toggles
-  const layerPendingRef = useRef<Set<string>>(new Set())
-  // Latest desired visibility per layer — so load completion uses up-to-date value
-  const layerVisRef     = useRef<Map<string, boolean>>(new Map())
-  // Captured original entity heights per layer (keyed by entity id)
-  const layerOriginsRef = useRef<Map<string, Map<string, EntityOrigin>>>(new Map())
+  // Everything the viewer knows about each drawn layer (see the sync effect further down)
+  const layerRtRef = useRef<Map<string, LayerRuntime>>(new Map())
+  // Layer id → key of the load in flight (a changed key makes a running load stale)
+  const layerLoadingRef = useRef<Map<string, string>>(new Map())
+  const onLayerStateRef = useRef(onLayerState)
+  onLayerStateRef.current = onLayerState
+  const layersRef = useRef(layers)
+  layersRef.current = layers
   // Tracked base-map imagery layer (so we can swap without removeAll)
   const baseLayerRef    = useRef<Cesium.ImageryLayer | null>(null)
   // Google Photorealistic 3D Tiles primitive (basemap alternative)
@@ -958,71 +878,106 @@ function CesiumViewerInner({
   useMeasure(viewer, googleShown ? 'none' : measureMode, baseElevation, measureKey, onMeasureResult, heightRef, { undoRef, finishRef, onNotice, onProfile: setProfile })
   useGeopoints(viewer, geopointActive && !googleShown, geopoints, onGeopointAdd ?? (() => {}), heightRef, { onNotice })
 
-  // Sync KML/overlay layers
+  // Sync KML/overlay layers.
+  // Each layer is loaded once per key (file + placement mode + retry counter). Afterwards ONLY what changed is touched:
+  // visibility when it differs, the vertical offset when that layer's offset differs (never for the others, so 3D
+  // polygons keep their heights and clamped lines keep clamping).
   useEffect(() => {
-    const v = viewerRef.current
-    if (!v) return
+    const v = viewer
+    if (!v || v.isDestroyed()) return
+    const rt = layerRtRef.current
+    const loading = layerLoadingRef.current
+    const wanted = new Set(layers.map((l) => l.id))
 
-    const existing    = layerDsRef.current
-    const pending     = layerPendingRef.current
-    const wantedVis   = layerVisRef.current
-    const allOrigins  = layerOriginsRef.current
-    const incomingIds = new Set(layers.map((l) => l.id))
-
-    // Remove deleted layers
-    for (const [id, ds] of existing) {
-      if (!incomingIds.has(id)) {
-        v.dataSources.remove(ds, true)
-        existing.delete(id)
-        wantedVis.delete(id)
-        allOrigins.delete(id)
-      }
+    for (const [id, r] of rt) {
+      if (!wanted.has(id)) { v.dataSources.remove(r.ds, true); rt.delete(id) }
     }
+    for (const id of [...loading.keys()]) if (!wanted.has(id)) loading.delete(id)
 
     for (const layer of layers) {
-      wantedVis.set(layer.id, layer.visible)
+      const drape = layer.clampMode === 'drape' && layer.fileType !== 'czml'
+      const offset = drape ? 0 : layer.heightOffset
+      const key = `${layer.url}|${drape ? 'drape' : 'heights'}|${layer.reloadKey}`
+      let cur = rt.get(layer.id)
 
-      if (existing.has(layer.id)) {
-        const ds = existing.get(layer.id)!
-        applyVisibility(ds, layer.visible)
-
-        const origins = allOrigins.get(layer.id)
-        if (origins) {
-          applyLayerOffset(ds, layer.heightOffset ?? 0, origins)
-        }
-      } else if (!pending.has(layer.id)) {
-        pending.add(layer.id)
-        let loadPromise: Promise<Cesium.DataSource>
-        const lowerUrl = layer.url.toLowerCase().split('?')[0]
-        if (lowerUrl.endsWith('.kml') || lowerUrl.endsWith('.kmz')) {
-          loadPromise = Cesium.KmlDataSource.load(layer.url, {
-            camera: v.camera,
-            canvas: v.canvas,
-          })
-        } else if (lowerUrl.endsWith('.czml')) {
-          loadPromise = Cesium.CzmlDataSource.load(layer.url)
-        } else {
-          loadPromise = Cesium.GeoJsonDataSource.load(layer.url)
-        }
-        loadPromise.then((ds) => {
-          pending.delete(layer.id)
-          if (!viewerRef.current) return
-          ds.name = layer.name
-          applyVisibility(ds, wantedVis.get(layer.id) ?? true)
-          // Capture originals BEFORE applying any offset
-          const origins = captureOrigins(ds)
-          allOrigins.set(layer.id, origins)
-          const off = layer.heightOffset ?? 0
-          if (off !== 0) applyLayerOffset(ds, off, origins)
-          viewerRef.current.dataSources.add(ds)
-          existing.set(layer.id, ds)
-        }).catch((err) => {
-          pending.delete(layer.id)
-          console.error(err)
-        })
+      if (cur && cur.key !== key) {          // file or placement mode changed: rebuild from the file
+        v.dataSources.remove(cur.ds, true)
+        rt.delete(layer.id)
+        cur = undefined
       }
+
+      if (cur) {
+        if (cur.visible !== layer.visible) { applyVisibility(cur.ds, layer.visible); cur.visible = layer.visible }
+        if (cur.offset !== offset) { applyLayerOffset(cur.ds, offset, cur.origins); cur.offset = offset }
+        continue
+      }
+      if (loading.get(layer.id) === key) continue   // already on its way
+
+      loading.set(layer.id, key)
+      onLayerStateRef.current?.(layer.id, { state: 'loading' })
+      const stillWanted = () => loading.get(layer.id) === key && !v.isDestroyed()
+      loadLayerDataSource(v, layer, drape)
+        .then(async (ds) => {
+          if (!stillWanted()) return           // deleted, hidden away or reloaded meanwhile: never add a zombie
+          loading.delete(layer.id)
+          nameDataSource(ds, layer.name)
+          const origins = captureOrigins(ds)
+          const r: LayerRuntime = { ds, key, offset: 0, visible: true, origins }
+          rt.set(layer.id, r)
+          // Use the latest wishes (they may have changed while the file loaded)
+          const latest = layersRef.current.find((l) => l.id === layer.id) ?? layer
+          const latestDrape = latest.clampMode === 'drape' && latest.fileType !== 'czml'
+          if (!latest.visible) { applyVisibility(ds, false); r.visible = false }
+          const off = latestDrape ? 0 : latest.heightOffset
+          if (off !== 0) { applyLayerOffset(ds, off, origins); r.offset = off }
+          v.dataSources.add(ds)
+          v.scene.requestRender()
+          onLayerStateRef.current?.(layer.id, { state: 'ok' })
+          if (drape) await drapePoints(v, ds, () => rt.get(layer.id) === r)
+        })
+        .catch((err: unknown) => {
+          if (!stillWanted()) return
+          loading.delete(layer.id)
+          const status = (err as { statusCode?: number } | null)?.statusCode
+          const msg = status ? `the file could not be downloaded (HTTP ${status})` : err instanceof Error ? err.message : String(err)
+          console.error('[layer]', layer.name, err)
+          onLayerStateRef.current?.(layer.id, { state: 'error', message: `The viewer could not draw this file: ${msg.slice(0, 200)}` })
+        })
     }
-  }, [layers])
+    v.scene.requestRender()
+  }, [layers, viewer])
+
+  // Click a layer feature: name, attributes, coordinates (WGS84 / ITM). Off while a tool or Google 3D owns the click.
+  const [featurePick, setFeaturePick] = useState<FeaturePick | null>(null)
+  useEffect(() => {
+    if (!viewer || viewer.isDestroyed() || toolWanted || googleShown) { setFeaturePick(null); return }
+    const handler = new Cesium.ScreenSpaceEventHandler(viewer.canvas)
+    handler.setInputAction((click: { position: Cesium.Cartesian2 }) => {
+      if (!layerRtRef.current.size) return
+      const picked = viewer.scene.pick(click.position) as { id?: unknown } | undefined
+      const ent = picked?.id instanceof Cesium.Entity ? picked.id : undefined
+      let layerName: string | null = null
+      if (ent) {
+        for (const [id, r] of layerRtRef.current) {
+          if (ent.entityCollection?.owner === r.ds) { layerName = layersRef.current.find((l) => l.id === id)?.name ?? 'Layer'; break }
+        }
+      }
+      if (!ent || layerName === null) { setFeaturePick(null); return }
+      let cart: Cesium.Cartesian3 | undefined
+      try { cart = viewer.scene.pickPositionSupported ? viewer.scene.pickPosition(click.position) : undefined } catch { /* no depth */ }
+      cart ??= viewer.camera.pickEllipsoid(click.position, viewer.scene.globe.ellipsoid) ?? undefined
+      let at: FeaturePick['click'] = null
+      if (cart) { const c = Cesium.Cartographic.fromCartesian(cart); at = { lon: Cesium.Math.toDegrees(c.longitude), lat: Cesium.Math.toDegrees(c.latitude) } }
+      setFeaturePick({ layerName, info: describeEntity(ent), click: at })
+    }, Cesium.ScreenSpaceEventType.LEFT_CLICK)
+    return () => { handler.destroy() }
+  }, [viewer, toolWanted, googleShown])
+  // a layer that is hidden or removed must not leave its card behind
+  useEffect(() => {
+    if (!featurePick) return
+    const l = layers.find((x) => x.name === featurePick.layerName)
+    if (!l || !l.visible) setFeaturePick(null)
+  }, [layers, featurePick])
 
   return (
     <div className="relative w-full h-full">
@@ -1030,6 +985,7 @@ function CesiumViewerInner({
       {/* Hidden credit container — keeps Cesium logo off the canvas */}
       {/* Credits stay hidden except while Google 3D is shown: Google requires attribution on screen */}
       <div ref={creditRef} className={googleShown ? 'absolute bottom-1 left-2 z-10 max-w-[60%] text-[10px] text-white/80 [&_a]:text-white/90' : 'hidden'} />
+      {featurePick && <LayerFeatureCard pick={featurePick} onClose={() => setFeaturePick(null)} />}
       <OrientationAids viewer={viewer} onHome={selectedModel ? () => homeRef.current?.() : undefined} />
       {profile && measureMode === 'profile' && <ProfilePanel profile={profile} onClose={() => setProfile(null)} />}
       {notice && (

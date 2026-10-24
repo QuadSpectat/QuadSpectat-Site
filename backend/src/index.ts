@@ -8,6 +8,8 @@ import orthophotosRouter, { warmupOrthophotos } from './routes/orthophotos'
 import authRouter from './routes/auth'
 import viewsRouter from './routes/views'
 import { clientsAdmin, clientsPublic } from './routes/clients'
+import { requireAuth } from './middleware/auth'
+import { LAYER_LIMITS, mb } from './layerLimits'
 
 const app = express()
 
@@ -29,6 +31,19 @@ app.use((req, res, next) => {
   if (req.method === 'OPTIONS') { res.sendStatus(204); return }
   next()
 })
+
+// Layer files are read as raw bytes BEFORE the global JSON parser. A browser labels a .json file
+// "application/json"; with express.json() first it consumed the stream, req.body became an object and an EMPTY
+// object was stored while the UI reported success (and any .json over 100 KB failed with 500).
+// Auth runs first so an anonymous caller cannot make the server buffer 25 MB.
+app.use('/api/layers/upload', requireAuth, express.raw({ type: () => true, limit: LAYER_LIMITS.maxBytes }),
+  (err: { status?: number; type?: string }, _req: Request, res: Response, next: NextFunction) => {
+    if (err?.type === 'entity.too.large') {
+      res.status(413).json({ error: `The file is larger than the ${mb(LAYER_LIMITS.maxBytes)} limit per layer. Simplify it or split it into several layers.` })
+      return
+    }
+    next(err)
+  })
 
 app.use(express.json())
 

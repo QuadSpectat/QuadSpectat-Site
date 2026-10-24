@@ -1,4 +1,4 @@
-import { Ruler, Eye, SlidersHorizontal } from 'lucide-react'
+import { Ruler, Eye, SlidersHorizontal, Layers } from 'lucide-react'
 import { BottomSheet } from '@/components/BottomSheet'
 import type { SheetTab } from '@/components/BottomSheet'
 import { MeasureToolbar } from '@/components/MeasureToolbar'
@@ -14,10 +14,12 @@ interface Props {
   visual: { settings: VisualSettings; onChange: (s: VisualSettings) => void; onSnapToGround?: () => void; crsLabel?: string }
   /** Views tab only when a model is open */
   views?: { modelId: string | null; viewApiRef: React.MutableRefObject<ViewApi | null>; shareToken?: string; editable: boolean }
+  /** Layers tab (the same body as the desktop popover); omitted when the model has no layers a visitor may see */
+  layers?: { count: number; content: React.ReactNode }
 }
 
 /** The Visual / Views / Measurements panels as one bottom sheet (phones). Desktop keeps its floating panels. */
-export function PhonePanels({ measure, visual, views }: Props) {
+export function PhonePanels({ measure, visual, views, layers }: Props) {
   const short = measure.result ? measure.result.replace(/^[^0-9-]*/, '').slice(0, 14) : undefined
   const tabs: SheetTab[] = [
     {
@@ -33,6 +35,12 @@ export function PhonePanels({ measure, visual, views }: Props) {
           <ViewsPanel {...views} />
         </div>
       ),
+    })
+  }
+  if (layers) {
+    tabs.push({
+      id: 'layers', label: 'Layers', icon: <Layers size={14} strokeWidth={1.9} />,
+      content: layers.content,
     })
   }
   tabs.push({
