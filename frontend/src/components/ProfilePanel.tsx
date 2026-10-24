@@ -70,12 +70,12 @@ export function ProfilePanel({ profile, onClose }: Props) {
         </span>
         <div className="flex items-center gap-1">
           <button onClick={() => download(profile)} title="Export CSV" aria-label="Export profile as CSV"
-            className="flex items-center gap-1 h-8 px-2 rounded-xl text-[11px] font-medium text-white/75
+            className="flex items-center gap-1 h-8 coarse:h-11 px-2 coarse:px-3 rounded-xl text-[11px] font-medium text-white/75
                        hover:text-white/95 hover:bg-white/[0.08] border border-white/[0.12] transition-all">
             <Download size={12} />CSV
           </button>
           <button onClick={onClose} title="Close profile" aria-label="Close profile"
-            className="flex items-center justify-center h-8 w-8 rounded-xl text-white/60 hover:text-white/95
+            className="flex items-center justify-center h-8 w-8 coarse:h-11 coarse:w-11 rounded-xl text-white/60 hover:text-white/95
                        hover:bg-white/[0.08] border border-transparent transition-all">
             <X size={14} />
           </button>

@@ -249,7 +249,7 @@ export function useMeasure(
       const b = { lat: Cesium.Math.toDegrees(cb.latitude), lon: Cesium.Math.toDegrees(cb.longitude) }
       const length = horizontalDistance(a.lat, a.lon, b.lat, b.lon)
       const stations = lineStations(a, b, sampleCount(length))
-      onResultRef.current(`Profile: ${formatDistance(length)} · sampling…`)
+      extrasRef.current?.onNotice?.(`Sampling the surface along ${formatDistance(length)}...`)
       let heights: (number | null)[]
       try {
         const carts = stations.map((s) => Cesium.Cartographic.fromDegrees(s.lon, s.lat))
@@ -258,7 +258,6 @@ export function useMeasure(
       } catch {
         if (cancelled) return
         extrasRef.current?.onNotice?.('Could not sample the surface along this line. Try again.')
-        onResultRef.current(null)
         retryProfile()
         return
       }
@@ -325,7 +324,7 @@ export function useMeasure(
       }
       if (mode === 'profile' && points.length === 1 &&
           Cesium.Cartesian3.distance(points[0], pos) < 0.1) {
-        extrasRef.current?.onNotice?.('That is the same spot. Click a second, different point.')
+        extrasRef.current?.onNotice?.('That is the same spot. Choose a different second point.')
         return
       }
       points.push(pos)

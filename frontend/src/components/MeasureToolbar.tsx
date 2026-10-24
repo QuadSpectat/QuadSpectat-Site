@@ -51,6 +51,7 @@ const TOUCH_INSTRUCTIONS: Record<Exclude<MeasureMode, 'none'>, string> = {
   distance: 'Tap to add points. Tap Finish when done. Undo removes the last point.',
   area:     'Tap to add corners. Tap Finish to close the area. Undo removes the last point.',
   volume:   'Set the base height, then tap the corners. Tap Finish to close. Undo removes the last point.',
+  profile:  'Tap the start of the line, then tap the end. The profile appears by itself. Undo removes the last point.',
 }
 
 const PANEL = 'rounded-2xl border border-white/[0.15] bg-[#0b100d]/[0.97] backdrop-blur-xl shadow-2xl shadow-black/80'
@@ -246,11 +247,11 @@ export function MeasureToolbar({
                            text-white/85 bg-white/[0.08] border border-white/[0.15] active:bg-white/[0.16] select-none">
                 <Undo2 size={16} strokeWidth={1.8} />Undo
               </button>
-              <button type="button" onClick={() => onFinish?.()}
+              {mode !== 'profile' && <button type="button" onClick={() => onFinish?.()}
                 className="flex-1 inline-flex items-center justify-center gap-1.5 h-11 rounded-xl text-xs font-bold
                            bg-[#9ACD3C] text-[#17220a] active:brightness-90 select-none">
                 <Check size={16} strokeWidth={2.4} />Finish
-              </button>
+              </button>}
             </div>
           )}
         </div>
