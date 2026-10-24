@@ -18,6 +18,8 @@ export const env = {
   SPACES_BUCKET: optional('SPACES_BUCKET', 'quadspectat-models'),
   SPACES_REGION: optional('SPACES_REGION', 'fra1'),
   SPACES_ENDPOINT: optional('SPACES_ENDPOINT', 'https://fra1.digitaloceanspaces.com'),
+  SPACES_FORCE_PATH_STYLE: optional('SPACES_FORCE_PATH_STYLE') === 'true',  // local S3 stand-ins only
+  SPACES_PUBLIC_BASE_URL: optional('SPACES_PUBLIC_BASE_URL'),             // public/CDN base for tilesets
   PRESIGN_EXPIRY_SECONDS: Number(optional('PRESIGN_EXPIRY_SECONDS', '3600')),
   PUBLIC_ASSET_NAME: optional('PUBLIC_ASSET_NAME', 'DEMO'),
 } as const

@@ -535,6 +535,14 @@ function lat2merc(lat: number): number {
   return Math.log(Math.tan((90 + lat) * Math.PI / 360)) / (Math.PI / 180) * EARTH_HALF / 180
 }
 
+function merc2lon(x: number): number {
+  return x * 180 / EARTH_HALF
+}
+
+function merc2lat(y: number): number {
+  return (360 / Math.PI) * Math.atan(Math.exp((y / EARTH_HALF) * Math.PI)) - 90
+}
+
 function toRGBA(
   data: ArrayLike<number> & { BYTES_PER_ELEMENT: number },
   bands: number,
@@ -655,23 +663,33 @@ async function processOrthophoto(id: string, fileKey: string, cogReady = false):
       await uploadFile(cogKey, cogPath, 'image/tiff')
     }
 
-    // Get WGS84 bounds via gdalinfo
-    const infoTarget = cogReady ? `/vsicurl/${fileUrl}` : cogPath
-    const infoJson   = await runProcess('gdalinfo', ['-json', infoTarget], gdalEnv)
-    const info = JSON.parse(infoJson) as { wgs84Extent?: { coordinates: number[][][] } }
-    const coords = info.wgs84Extent?.coordinates?.[0] ?? []
-    const lons   = coords.map((c) => c[0])
-    const lats   = coords.map((c) => c[1])
-    const boundsWest  = lons.length ? Math.min(...lons) : null
-    const boundsEast  = lons.length ? Math.max(...lons) : null
-    const boundsSouth = lats.length ? Math.min(...lats) : null
-    const boundsNorth = lats.length ? Math.max(...lats) : null
+    // Read bounds + zoom_max straight from the COG header with geotiff.js.
+    // A separate gdalinfo process costs a whole extra GDAL working set (libproj init etc.)
+    // and was enough to OOM-kill the 512 MB Fly machine even for a metadata-only read.
+    // The output is EPSG:3857 by construction (gdalwarp -t_srs above) or verified below
+    // for cog_ready uploads, so corner -> WGS84 is closed-form math.
+    const cogUrl      = await presignDownload(cogKey)
+    const tiff        = await fromUrl(cogUrl)
+    const image       = await tiff.getImage()
 
-    // Derive zoom_max from pixel resolution
-    const cogUrl  = await presignDownload(cogKey)
-    const tiff    = await fromUrl(cogUrl)
-    const image   = await tiff.getImage()
-    const [xRes]  = image.getResolution()
+    const epsg = Number((image.getGeoKeys() as { ProjectedCSTypeGeoKey?: number } | null)?.ProjectedCSTypeGeoKey ?? 0)
+    if (![3857, 3785, 900913].includes(epsg)) {
+      throw new Error(
+        `The file is not in EPSG:3857 (found ${epsg || 'no projected CRS'}). ` +
+        `Untick "already a Cloud-Optimized GeoTIFF in EPSG:3857" so the server reprojects it, ` +
+        `or convert it locally with tools/local-convert.py.`,
+      )
+    }
+    const [ox, oy]     = image.getOrigin()     as [number, number]
+    const [xRes, yRes] = image.getResolution() as [number, number]
+    const width        = image.getWidth()
+    const height       = image.getHeight()
+
+    const boundsWest  = merc2lon(ox)
+    const boundsEast  = merc2lon(ox + width * xRes)
+    const boundsNorth = merc2lat(oy)
+    const boundsSouth = merc2lat(oy + height * yRes)  // yRes < 0
+
     const zoomMax = Math.max(0, Math.min(22,
       Math.round(Math.log2((EARTH_HALF * 2) / (256 * Math.abs(xRes)))),
     ))
@@ -692,6 +710,12 @@ async function processOrthophoto(id: string, fileKey: string, cogReady = false):
 // Pre-loads COG metadata for all ready orthophotos at server startup so the
 // first tile request is fast instead of waiting ~10s for TIFF header reads.
 export async function warmupOrthophotos(): Promise<void> {
+  // Conversions run in-process; a restart/deploy kills them and leaves the row 'processing' forever.
+  await db.query(
+    `UPDATE orthophotos SET status = 'error', updated_at = datetime('now'),
+       error_message = 'Conversion was interrupted by a server restart. Use Reprocess, or convert locally with tools/local-convert.py.'
+     WHERE status IN ('pending', 'processing')`,
+  )
   const { rows } = await db.query<{ cog_key: string }>(
     "SELECT cog_key FROM orthophotos WHERE status = 'ready' AND cog_key IS NOT NULL",
   )
