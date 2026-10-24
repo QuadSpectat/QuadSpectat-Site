@@ -1,17 +1,5 @@
 import type { CameraState, SavedView } from './views'
 
-// ── COG Conversion ─────────────────────────────────────────────────────────
-export async function cogConvert(file: File, outputName: string): Promise<{ success: boolean; output: string }> {
-  const form = new FormData()
-  form.append('file', file)
-  form.append('outputName', outputName)
-  const res = await fetch(`${BASE}/cog/convert`, {
-    method: 'POST',
-    body: form,
-  })
-  if (!res.ok) throw new Error(await res.text())
-  return res.json()
-}
 const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? '/api'
 
 export interface Model {
@@ -146,7 +134,7 @@ export const getDownloadUrl = (id: string, shareToken?: string) =>
 /** PUT a file directly to a presigned S3/Spaces URL with upload progress. */
 export function uploadToSpaces(
   presignedUrl: string,
-  file: File,
+  file: Blob,
   onProgress?: (pct: number) => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -164,6 +152,15 @@ export function uploadToSpaces(
     xhr.send(file)
   })
 }
+
+// ── 3D Tiles (many files under one public prefix) ───────────────────────────
+export const presignTilesetFiles = (files: { path: string; contentType: string }[], uploadId?: string) =>
+  apiFetch<{ uploadId: string; prefix: string; files: { path: string; key: string; url: string }[] }>(
+    '/uploads/tileset/presign', { method: 'POST', body: JSON.stringify({ uploadId, files }) })
+
+export const finalizeTileset = (uploadId: string, expectedFiles: number) =>
+  apiFetch<{ external_url: string; file_size: number; count: number; warning?: string }>(
+    '/uploads/tileset/finalize', { method: 'POST', body: JSON.stringify({ uploadId, expectedFiles }) })
 
 // ── Share links ──────────────────────────────────────────────────────────────
 export interface ShareLink {

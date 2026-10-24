@@ -16,6 +16,7 @@ import {
 } from '@/lib/api'
 import type { Model, Orthophoto, CreateOrthophotoPayload } from '@/lib/api'
 import { ClientPagesTab } from '@/components/ClientPagesTab'
+import { readFolder, readZip, uploadTileset, type TileFile } from '@/lib/tilesetUpload'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -258,7 +259,7 @@ const ORTHO_FORMATS: Record<string, string> = {
 }
 
 type AssetType = 'model' | 'orthophoto'
-type ModelInputMode = 'file' | 'url'
+type ModelInputMode = 'file' | 'tileset' | 'url'
 
 interface UploadAssetModalProps {
   onClose: () => void
@@ -286,6 +287,11 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
   const [modelMode, setModelMode] = useState<ModelInputMode>('file')
   const [modelFile, setModelFile] = useState<File | null>(null)
   const [tilesUrl, setTilesUrl] = useState('')
+  const [tileFiles, setTileFiles] = useState<TileFile[] | null>(null)
+  const [tileBusy, setTileBusy] = useState(false)
+  const [progressLabel, setProgressLabel] = useState('')
+  const zipPickRef = useRef<HTMLInputElement>(null)
+  const dirPickRef = useRef<HTMLInputElement>(null)
   const [lon, setLon] = useState('0')
   const [lat, setLat] = useState('0')
   const [alt, setAlt] = useState('0')
@@ -339,6 +345,17 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
     if (!name) setName(f.name.replace(/\.[^.]+$/, ''))
   }
 
+  async function pickTileset(read: () => Promise<TileFile[]> | TileFile[]) {
+    setError(null); setTileFiles(null); setTileBusy(true)
+    try {
+      const files = await read()
+      setTileFiles(files)
+      if (!name) setName('3D Tiles')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally { setTileBusy(false) }
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!assetName) { setError('Asset name is required'); return }
@@ -378,6 +395,22 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
             show_watermark: showWatermark,
             watermark_text: wt,
           })
+        } else if (modelMode === 'tileset') {
+          if (!tileFiles?.length) throw new Error('Select a tileset .zip or folder first')
+          const r = await uploadTileset(tileFiles, (p, label) => { setProgress(p * 0.97); setProgressLabel(label) })
+          await createModel({
+            asset_name: assetName,
+            name: name.trim(),
+            description: description.trim() || undefined,
+            external_url: r.external_url,
+            file_size: r.file_size,
+            model_type: '3d-tiles',
+            coordinate_system,
+            geoid_offset,
+            show_watermark: showWatermark,
+            watermark_text: wt,
+          })
+          if (r.warning) { setError(r.warning); onSuccess(); return }   // keep the dialog open to show the warning
         } else {
           if (!tilesUrl.trim()) throw new Error('URL is required')
           if (!tilesUrl.endsWith('.json')) throw new Error('URL must point to a .json tileset file (e.g. tileset.json)')
@@ -483,11 +516,11 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
           <div className="flex flex-col gap-3">
             {/* Mode switcher */}
             <div className="flex rounded-lg border border-white/10 overflow-hidden">
-              {(['file', 'url'] as const).map((m) => (
+              {(['file', 'tileset', 'url'] as const).map((m) => (
                 <button key={m} type="button" onClick={() => { setModelMode(m); setError(null) }}
                   className={cn('flex-1 py-1.5 text-xs font-medium transition-colors',
                     modelMode === m ? 'bg-white/10 text-white' : 'text-white/55 hover:text-white hover:bg-white/5')}>
-                  {m === 'file' ? '📁 GLB / GLTF file' : '🔗 3D Tiles URL'}
+                  {m === 'file' ? '📁 GLB / GLTF file' : m === 'tileset' ? '🧱 3D Tiles ZIP / folder' : '🔗 3D Tiles URL'}
                 </button>
               ))}
             </div>
@@ -504,6 +537,39 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
               ) : (
                 <DropZone accept=".glb,.gltf" onFile={handleModelFileDrop} label="Drop GLB / GLTF here or click to browse" sublabel=".glb, .gltf — max 2 GB" />
               )
+            ) : modelMode === 'tileset' ? (
+              <div className="flex flex-col gap-2">
+                {tileFiles ? (
+                  <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-primary/50 bg-primary/10">
+                    <Globe size={18} className="text-primary shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-white truncate">{tileFiles.length} files ready</p>
+                      <p className="text-[11px] text-white/55">{formatBytes(tileFiles.reduce((a, f) => a + f.body.size, 0))} · tileset.json found</p>
+                    </div>
+                    <button type="button" onClick={() => setTileFiles(null)} className="text-white/50 hover:text-red-400 transition-colors"><X size={14} /></button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <button type="button" disabled={tileBusy} onClick={() => zipPickRef.current?.click()}
+                      className="flex-1 h-16 rounded-xl border-2 border-dashed border-white/10 hover:border-white/25 text-xs text-white/70 flex flex-col items-center justify-center gap-1">
+                      {tileBusy ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}Choose .zip
+                    </button>
+                    <button type="button" disabled={tileBusy} onClick={() => dirPickRef.current?.click()}
+                      className="flex-1 h-16 rounded-xl border-2 border-dashed border-white/10 hover:border-white/25 text-xs text-white/70 flex flex-col items-center justify-center gap-1">
+                      <Upload size={16} />Choose folder
+                    </button>
+                  </div>
+                )}
+                <input ref={zipPickRef} type="file" accept=".zip" className="sr-only" data-testid="tileset-zip"
+                  onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void pickTileset(() => readZip(f)) }} />
+                <input ref={dirPickRef} type="file" className="sr-only" data-testid="tileset-dir"
+                  {...({ webkitdirectory: '', directory: '' } as Record<string, string>)}
+                  onChange={(e) => { const l = e.target.files ? Array.from(e.target.files) : []; e.target.value = ''; if (l.length) void pickTileset(() => readFolder(l)) }} />
+                <p className="text-[11px] text-white/50">
+                  The folder (or zip) must contain tileset.json or Cesium.json with its tiles. Files go straight to storage,
+                  one by one. For tilesets over ~1 GB pick the folder instead of a zip.
+                </p>
+              </div>
             ) : (
               <Field label="Tileset URL" value={tilesUrl} onChange={setTilesUrl} required
                 placeholder="https://example.com/tileset/tileset.json"
@@ -549,6 +615,13 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
               <DropZone accept=".tif,.tiff,.ecw,.jp2,.j2k,.sid" onFile={handleOrthoFileDrop}
                 label="Drop orthophoto here or click to browse"
                 sublabel="GeoTIFF · ECW · JPEG2000 · MrSID" />
+            )}
+            {orthoFile && !cogReady && orthoFile.size > 400 * 1024 * 1024 && (
+              <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/25 text-xs text-amber-300">
+                <AlertCircle size={13} className="mt-0.5 shrink-0" />
+                <span>{formatBytes(orthoFile.size)} is likely too large for the 512 MB server to convert (it can run out of memory).
+                  Convert it on your PC with <code className="font-mono">tools\local-convert.bat</code> (see the COG Convert tab) instead.</span>
+              </div>
             )}
             <label className="flex items-center gap-2.5 cursor-pointer select-none">
               <input type="checkbox" checked={cogReady} onChange={(e) => setCogReady(e.target.checked)}
@@ -599,6 +672,7 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
           </div>
         )}
         {uploading && <ProgressBar pct={progress} />}
+        {uploading && progressLabel && <p className="text-[11px] text-white/55 text-right">{progressLabel}</p>}
 
         <div className="flex gap-2 pt-1">
           <button type="button" onClick={onClose} disabled={uploading}
@@ -1012,8 +1086,8 @@ function CogConverterTab({
   }
 
   const gdalCmd = cmdInput
-    ? `gdalwarp -t_srs EPSG:3857 -r bilinear -of COG -co COMPRESS=LZW -co OVERVIEW_LEVEL=AUTO -co BIGTIFF=IF_SAFER "${cmdInput}" "${cmdOutput || cmdInput.replace(/\.[^.]+$/, '_cog.tif')}"`
-    : 'gdalwarp -t_srs EPSG:3857 -r bilinear -of COG -co COMPRESS=LZW -co OVERVIEW_LEVEL=AUTO -co BIGTIFF=IF_SAFER "input.tif" "output_cog.tif"'
+    ? `gdalwarp -overwrite -t_srs EPSG:3857 -r bilinear -of COG -co COMPRESS=LZW -co BIGTIFF=IF_SAFER "${cmdInput}" "${cmdOutput || cmdInput.replace(/\.[^.]+$/, '_cog.tif')}"`
+    : 'gdalwarp -overwrite -t_srs EPSG:3857 -r bilinear -of COG -co COMPRESS=LZW -co BIGTIFF=IF_SAFER "input.tif" "output_cog.tif"'
 
   function copyCmd() {
     void navigator.clipboard.writeText(gdalCmd).then(() => {
@@ -1149,7 +1223,7 @@ function CogConverterTab({
           <div className="px-5 pb-5 border-t border-white/10 pt-4 flex flex-col gap-5">
             {/* Generate command */}
             <div className="flex flex-col gap-3">
-              <p className="text-xs text-white/50 font-medium">Step 1 — Run in OSGeo4W Shell (QGIS)</p>
+              <p className="text-xs text-white/50 font-medium">Step 1 — Recommended: run tools\local-convert.bat (converts, checks the CRS, uploads, registers). Or run this in an OSGeo4W Shell</p>
               <div className="flex flex-col gap-1">
                 <span className="text-xs font-medium text-white/55">Input file</span>
                 <div onClick={() => cmdPickRef.current?.click()}

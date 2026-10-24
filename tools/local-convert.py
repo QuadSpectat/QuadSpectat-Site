@@ -1,23 +1,46 @@
 #!/usr/bin/env python3
 """
-local-convert.py — local GeoTIFF/ECW/JP2 -> COG + upload to 3D Viewer
-Run from OSGeo4W Shell (installed with QGIS):
+local-convert.py - convert a GeoTIFF/ECW/JP2 on THIS PC to an EPSG:3857 Cloud-Optimized GeoTIFF,
+upload it straight to the viewer's storage and register it as an orthophoto.
 
-  python local-convert.py <input_file> <display_name> [output_cog.tif]
+Use it for big files: the Fly.io server has 512 MB of RAM and cannot reproject multi-GB rasters.
 
-Examples:
-  python local-convert.py "C:\\Surveys\\barkai.tif" "Barkai 2025"
-  python local-convert.py site.ecw "Site Survey" site_cog.tif
+Easiest: double-click / drag a .tif onto  tools\\local-convert.bat  (sets everything up).
+
+  python local-convert.py <input_file> [display_name] [--api URL] [--compress auto|jpeg|lzw|deflate]
+                          [--source-srs EPSG:2039] [--no-upload] [--keep] [--output out_cog.tif]
+
+Login (admin account, same as the website). Put it in tools/.env (never committed):
+    QS_ADMIN_USER=admin
+    QS_ADMIN_PASSWORD=...
+    QS_API=https://quadspectat-api.fly.dev      (optional)
+or set the same names as environment variables; otherwise you are asked. No Spaces keys are needed:
+the API hands out a short-lived upload URL.
+
+Conversion engine: GDAL's gdalwarp if it is on PATH (OSGeo4W / QGIS shell), otherwise the Python
+'rasterio' package (pip install -r tools/requirements-local.txt; it bundles GDAL).
 """
+from __future__ import annotations
 
-import sys
-import os
-import subprocess
+import argparse
+import getpass
 import json
-import urllib.request
+import os
+import shutil
+import subprocess
+import sys
+import time
 import urllib.error
+import urllib.request
 
-BACKEND = "https://quadspectat-api.fly.dev"
+try:  # Windows consoles often default to cp1252
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
+DEFAULT_API = "https://quadspectat-api.fly.dev"
+MAX_SINGLE_PUT = 5 * 1024 ** 3  # S3/Spaces limit for one PUT
 
 
 def die(msg: str) -> None:
@@ -25,208 +48,261 @@ def die(msg: str) -> None:
     sys.exit(1)
 
 
-def api(method: str, path: str, body: dict | None = None) -> dict:
-    url = BACKEND + path
-    data = json.dumps(body).encode() if body else None
-    headers = {"Content-Type": "application/json"}
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            return json.loads(r.read())
-    except urllib.error.HTTPError as e:
-        text = e.read().decode(errors="replace")
-        die(f"HTTP {e.code} from {path}: {text}")
-    except urllib.error.URLError as e:
-        die(f"Network error: {e.reason}")
+# -- config ------------------------------------------------------------------
+
+def load_dotenv(path: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    if not os.path.exists(path):
+        return out
+    with open(path, encoding="utf-8-sig") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            out[k.strip()] = v.strip().strip('"').strip("'")
+    return out
+
+
+def cfg(name: str, dotenv: dict[str, str], default: str | None = None) -> str | None:
+    return os.environ.get(name) or dotenv.get(name) or default
+
+
+# -- API ---------------------------------------------------------------------
+
+class Api:
+    def __init__(self, base: str):
+        self.base = base.rstrip("/")
+        self.token: str | None = None
+
+    def call(self, method: str, path: str, body: dict | None = None, timeout: int = 60) -> dict:
+        headers = {"Content-Type": "application/json"}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        data = json.dumps(body).encode() if body is not None else None
+        req = urllib.request.Request(self.base + path, data=data, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                raw = r.read()
+                return json.loads(raw) if raw else {}
+        except urllib.error.HTTPError as e:
+            text = e.read().decode(errors="replace")
+            if e.code == 401:
+                die(f"HTTP 401 from {path}: not logged in / wrong admin credentials ({text})")
+            die(f"HTTP {e.code} from {path}: {text}")
+        except urllib.error.URLError as e:
+            die(f"Cannot reach {self.base}: {e.reason}")
+        return {}
+
+    def login(self, user: str, password: str) -> None:
+        self.token = self.call("POST", "/api/auth/login", {"username": user, "password": password})["token"]
 
 
 def upload_put(presigned_url: str, file_path: str) -> None:
-    """PUT file to presigned Spaces URL (streams in 4 MB chunks with progress)."""
-    file_size = os.path.getsize(file_path)
-    mb = file_size / 1024 / 1024
-    uploaded = 0
-    chunk = 4 * 1024 * 1024
+    """PUT the file to the presigned URL, streaming, with a progress bar."""
+    size = os.path.getsize(file_path)
+    if size > MAX_SINGLE_PUT:
+        die(f"{size / 1024 ** 3:.1f} GB is above the 5 GB single-upload limit of the storage. "
+            "Use --compress jpeg (much smaller) or split the raster.")
+    sent = 0
 
-    class ProgressFile:
+    class Body:
         def __init__(self, fh):
-            self._fh = fh
+            self.fh = fh
 
         def read(self, n=-1):
-            nonlocal uploaded
-            data = self._fh.read(n)
-            uploaded += len(data)
-            if file_size:
-                pct = uploaded * 100 // file_size
-                bar = "#" * (pct // 5) + "-" * (20 - pct // 5)
-                print(f"\r    [{bar}] {pct:3d}%  {uploaded/1024/1024:.1f}/{mb:.1f} MB", end="", flush=True)
-            return data
+            nonlocal sent
+            chunk = self.fh.read(n if n and n > 0 else 1024 * 1024)
+            sent += len(chunk)
+            pct = sent * 100 // max(size, 1)
+            print(f"\r    [{'#' * (pct // 5)}{'-' * (20 - pct // 5)}] {pct:3d}%  {sent / 1048576:.1f}/{size / 1048576:.1f} MB",
+                  end="", flush=True)
+            return chunk
 
         def __len__(self):
-            return file_size
+            return size
 
     with open(file_path, "rb") as fh:
-        req = urllib.request.Request(presigned_url, data=ProgressFile(fh), method="PUT")
+        req = urllib.request.Request(presigned_url, data=Body(fh), method="PUT")
         req.add_header("Content-Type", "application/octet-stream")
-        req.add_header("Content-Length", str(file_size))
+        req.add_header("Content-Length", str(size))
         try:
-            with urllib.request.urlopen(req, timeout=3600) as r:
-                print()  # newline after progress bar
+            with urllib.request.urlopen(req, timeout=6 * 3600) as r:
+                print()
                 if r.status >= 300:
                     die(f"Upload failed: HTTP {r.status}")
         except urllib.error.HTTPError as e:
             print()
-            die(f"Upload failed: HTTP {e.code} — {e.read().decode(errors='replace')}")
+            die(f"Upload failed: HTTP {e.code} - {e.read().decode(errors='replace')[:400]}\n"
+                "  (403 usually means the upload link expired after 1 hour - rerun)")
 
 
-def _warp_cmd(input_file: str, output_file: str, source_srs: str | None) -> list[str]:
-    # NOTE: do NOT pass OVERVIEW_LEVEL=AUTO — the COG driver builds overviews
-    # automatically and recent GDAL versions reject that flag with a warning
-    # that can cause gdalwarp to skip the reprojection while exiting 0.
-    cmd = ["gdalwarp", "-overwrite"]
-    if source_srs:
-        cmd += ["-s_srs", source_srs]
-    cmd += [
-        "-t_srs", "EPSG:3857",
-        "-r", "bilinear",
-        "-of", "COG",
-        "-co", "COMPRESS=LZW",
-        "-co", "BIGTIFF=IF_SAFER",
-        input_file,
-        output_file,
-    ]
-    return cmd
+# -- conversion --------------------------------------------------------------
+
+def _is_3857(wkt: str) -> bool:
+    return any(t in wkt for t in ("3857", "Pseudo-Mercator", "Popular Visualisation"))
 
 
-def _run(cmd: list[str]) -> int:
-    print("    $", " ".join(f'"{a}"' if " " in a else a for a in cmd))
-    return subprocess.run(cmd).returncode
-
-
-def _output_is_web_mercator(output_file: str) -> tuple[bool, str]:
-    """Returns (is_3857, first WKT line) for diagnostics."""
+def probe(path: str) -> dict:
+    """{'bands': n, 'dtype': 'Byte'|..., 'wkt': str}"""
+    if shutil.which("gdalinfo"):
+        r = subprocess.run(["gdalinfo", "-json", path], capture_output=True, text=True)
+        if r.returncode == 0:
+            d = json.loads(r.stdout)
+            bands = d.get("bands") or []
+            return {"bands": len(bands), "dtype": (bands[0].get("type") if bands else ""),
+                    "wkt": (d.get("coordinateSystem") or {}).get("wkt", "")}
     try:
-        info = subprocess.run(
-            ["gdalinfo", "-json", output_file],
-            capture_output=True, text=True, check=True,
-        )
-    except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        die(f"gdalinfo on the converted file failed: {e}")
-    data = json.loads(info.stdout)
-    wkt = (data.get("coordinateSystem") or {}).get("wkt", "")
-    is_3857 = (
-        "3857" in wkt
-        or "WGS 84 / Pseudo-Mercator" in wkt
-        or "Pseudo-Mercator" in wkt
-    )
-    return is_3857, (wkt.splitlines()[0] if wkt else "(no WKT)")
+        import rasterio
+        with rasterio.open(path) as s:
+            return {"bands": s.count, "dtype": "Byte" if s.dtypes[0] == "uint8" else s.dtypes[0],
+                    "wkt": s.crs.to_wkt() if s.crs else ""}
+    except Exception as e:  # noqa: BLE001
+        die(f"Cannot read {path}: {e}")
+    return {}
 
 
-def warp_to_web_mercator(input_file: str, output_file: str) -> None:
-    """
-    Reproject to EPSG:3857 + repackage as COG. Some Israeli source rasters
-    declare their CRS as 'user-defined' (PCS code 32767) with raw ITM
-    parameters instead of citing EPSG:2039 — GDAL then can't pick a datum
-    transformation and silently passes the pixels through unchanged. We catch
-    that with a post-warp verification and retry forcing the source SRS.
-    """
-    # First pass: let GDAL auto-detect the source SRS
-    if _run(_warp_cmd(input_file, output_file, None)) != 0:
-        die(
-            "gdalwarp failed.\n"
-            "  Make sure you are running from the OSGeo4W Shell that came with QGIS,\n"
-            "  or that gdalwarp is in your PATH."
-        )
-    is_3857, first_wkt = _output_is_web_mercator(output_file)
-    if is_3857:
-        print("    OK  coordinate system: EPSG:3857 (Web Mercator)")
+def choose_compression(req: str, info: dict) -> list[str]:
+    if req == "auto":
+        req = "jpeg" if (info["dtype"] == "Byte" and info["bands"] == 3) else "lzw"
+    if req == "jpeg":
+        # lossy but ~5-10x smaller; the viewer's tile renderer handles YCbCr (commit 737c5c2)
+        return ["COMPRESS=JPEG", "QUALITY=85", "PHOTOMETRIC=YCBCR", "BIGTIFF=IF_SAFER"]
+    if req == "deflate":
+        return ["COMPRESS=DEFLATE", "BIGTIFF=IF_SAFER"]
+    return ["COMPRESS=LZW", "BIGTIFF=IF_SAFER"]
+
+
+def _gdalwarp(src: str, dst: str, co: list[str], source_srs: str | None) -> None:
+    # Do NOT pass OVERVIEW_LEVEL=AUTO: the COG driver builds overviews itself and some GDAL
+    # versions then skip the reprojection while exiting 0.
+    cmd = ["gdalwarp", "-overwrite"] + (["-s_srs", source_srs] if source_srs else []) + \
+          ["-t_srs", "EPSG:3857", "-r", "bilinear", "-of", "COG"]
+    for c in co:
+        cmd += ["-co", c]
+    cmd += [src, dst]
+    print("    $", " ".join(f'"{a}"' if " " in a else a for a in cmd))
+    if subprocess.run(cmd).returncode != 0:
+        die("gdalwarp failed.")
+
+
+def _rasterio_warp(src: str, dst: str, co: list[str], source_srs: str | None) -> None:
+    try:
+        import rasterio
+        from rasterio.crs import CRS
+        from rasterio.enums import Resampling
+        from rasterio.shutil import copy as rcopy
+        from rasterio.vrt import WarpedVRT
+    except ImportError:
+        die("Neither gdalwarp nor the 'rasterio' Python package is available.\n"
+            "  Fix:  pip install -r tools/requirements-local.txt   (or run tools\\local-convert.bat)")
+    opts = dict(kv.split("=", 1) for kv in co)
+    print(f"    (rasterio {rasterio.__version__} / GDAL {rasterio.__gdal_version__}) -> EPSG:3857 COG {opts}")
+    with rasterio.open(src) as s:
+        vrt_kw = dict(crs=CRS.from_epsg(3857), resampling=Resampling.bilinear)
+        if source_srs:
+            vrt_kw["src_crs"] = CRS.from_string(source_srs)
+        with WarpedVRT(s, **vrt_kw) as vrt:  # streams block by block, no full-size RAM copy
+            if os.path.exists(dst):
+                os.remove(dst)
+            rcopy(vrt, dst, driver="COG", **opts)
+
+
+def convert(src: str, dst: str, requested: str, source_srs: str | None) -> None:
+    info = probe(src)
+    co = choose_compression(requested, info)
+    run = _gdalwarp if shutil.which("gdalwarp") else _rasterio_warp
+    run(src, dst, co, source_srs)
+    wkt = probe(dst)["wkt"]
+    if _is_3857(wkt):
+        print("    OK  coordinate system: EPSG:3857")
         return
+    # Israeli rasters sometimes declare ITM as a user-defined CRS; GDAL then cannot pick a datum shift
+    # and passes the pixels through. Retry once forcing EPSG:2039.
+    print(f"    ! output is not EPSG:3857 ({(wkt.splitlines() or ['no CRS'])[0]}); retrying with source EPSG:2039 (Israeli ITM)")
+    run(src, dst, co, "EPSG:2039")
+    wkt = probe(dst)["wkt"]
+    if not _is_3857(wkt):
+        die("Even with source EPSG:2039 the output is not EPSG:3857 - the source CRS is unusual. "
+            "Pass --source-srs EPSG:xxxx.")
+    print("    OK  coordinate system: EPSG:3857")
 
-    # gdalwarp silently skipped the reprojection. Most common cause for our
-    # users: source is Israeli ITM but declared as user-defined PCS. Retry
-    # with -s_srs EPSG:2039.
-    print(f"    ! output is not EPSG:3857 ({first_wkt})")
-    print("    retrying with -s_srs EPSG:2039 (Israeli ITM)…")
-    if _run(_warp_cmd(input_file, output_file, "EPSG:2039")) != 0:
-        die("Retry with -s_srs EPSG:2039 also failed.")
-    is_3857, first_wkt = _output_is_web_mercator(output_file)
-    if not is_3857:
-        die(
-            "Even after forcing -s_srs EPSG:2039 the output is not in\n"
-            "  EPSG:3857. Source file's coordinate system may be unusual.\n"
-            "  First line of output WKT:\n  " + first_wkt
-        )
-    print("    OK  coordinate system: EPSG:3857 (Web Mercator)")
 
+# -- main --------------------------------------------------------------------
 
 def main() -> None:
-    print("=" * 52)
-    print("  3D Viewer — Local COG Converter")
-    print("=" * 52)
+    ap = argparse.ArgumentParser(description="Convert to COG and upload to the QuadSpectat viewer")
+    ap.add_argument("input")
+    ap.add_argument("name", nargs="?", help="display name (default: file name)")
+    ap.add_argument("--output", help="COG output path (default: <input>_cog.tif)")
+    ap.add_argument("--api", help=f"API base URL (default {DEFAULT_API})")
+    ap.add_argument("--compress", choices=["auto", "jpeg", "lzw", "deflate"], default="auto")
+    ap.add_argument("--source-srs", help="force the source CRS, e.g. EPSG:2039")
+    ap.add_argument("--no-upload", action="store_true", help="only convert")
+    ap.add_argument("--keep", action="store_true", help="keep the local COG afterwards (no prompt)")
+    args = ap.parse_args()
 
-    if len(sys.argv) < 3:
-        print(__doc__)
-        sys.exit(1)
+    here = os.path.dirname(os.path.abspath(__file__))
+    dotenv = load_dotenv(os.path.join(here, ".env"))
+    api_base = args.api or cfg("QS_API", dotenv, DEFAULT_API)
 
-    input_file = os.path.abspath(sys.argv[1])
-    display_name = sys.argv[2]
-    base = os.path.splitext(input_file)[0]
-    output_file = os.path.abspath(sys.argv[3]) if len(sys.argv) > 3 else f"{base}_cog.tif"
+    src = os.path.abspath(args.input)
+    if not os.path.exists(src):
+        die(f"Input file not found:\n  {src}")
+    name = args.name or os.path.splitext(os.path.basename(src))[0]
+    dst = os.path.abspath(args.output) if args.output else os.path.splitext(src)[0] + "_cog.tif"
+    if os.path.abspath(dst) == src:
+        die("Output would overwrite the input file.")
 
-    if not os.path.exists(input_file):
-        die(f"Input file not found:\n  {input_file}")
+    print("=" * 56)
+    print("  QuadSpectat - local COG converter + uploader")
+    print("=" * 56)
 
-    if os.path.exists(output_file):
-        ans = input(f"\n  Output file already exists:\n  {output_file}\n  Overwrite? [y/N] ").strip().lower()
-        if ans != "y":
-            print("Aborted.")
-            sys.exit(0)
+    api = Api(api_base)
+    if not args.no_upload:  # fail early on bad credentials, before a long conversion
+        user = cfg("QS_ADMIN_USER", dotenv) or input("  Admin username: ").strip()
+        pw = cfg("QS_ADMIN_PASSWORD", dotenv) or getpass.getpass("  Admin password: ")
+        print(f"\n[0/3] Logging in to {api_base} ...")
+        api.login(user, pw)
+        print("    OK")
 
-    # ── Step 1: Convert ──────────────────────────────────────────────────────
-    print(f"\n[1/3] Converting to Cloud-Optimized GeoTIFF…")
-    print(f"    Input:  {input_file}")
-    print(f"    Output: {output_file}")
-    warp_to_web_mercator(input_file, output_file)
-    size_mb = os.path.getsize(output_file) / 1024 / 1024
-    print(f"    Done  ({size_mb:.1f} MB)")
+    print(f"\n[1/3] Converting to a Cloud-Optimized GeoTIFF ...\n    Input:  {src}\n    Output: {dst}")
+    t0 = time.time()
+    convert(src, dst, args.compress, args.source_srs)
+    print(f"    Done ({os.path.getsize(dst) / 1048576:.1f} MB, {time.time() - t0:.0f}s)")
+    if args.no_upload:
+        print("\n  --no-upload: stopping here.")
+        return
 
-    # ── Step 2: Get presigned upload URL ─────────────────────────────────────
-    print(f"\n[2/3] Requesting upload URL…")
-    filename = os.path.basename(output_file)
-    result = api("POST", "/api/orthophotos/presign", {
-        "filename": filename,
-        "contentType": "application/octet-stream",
+    print("\n[2/3] Requesting an upload URL ...")
+    pre = api.call("POST", "/api/orthophotos/presign",
+                   {"filename": os.path.basename(dst), "contentType": "application/octet-stream"})
+    print(f"    OK -> {pre['key']}")
+
+    print("\n[3/3] Uploading to storage ...")
+    upload_put(pre["url"], dst)
+
+    print(f"\nRegistering '{name}' ...")
+    row = api.call("POST", "/api/orthophotos", {
+        "asset_name": name, "name": name, "raw_key": pre["key"],
+        "original_format": "GeoTIFF", "cog_ready": True,
     })
-    presigned_url = result["url"]
-    key = result["key"]
-    print(f"    OK  →  key: {key}")
+    for _ in range(60):  # cog_ready rows only need their header read; wait for 'ready' / 'error'
+        if row.get("status") in ("ready", "error"):
+            break
+        time.sleep(2)
+        rows = api.call("GET", "/api/orthophotos")
+        row = next((r for r in rows if r["id"] == row["id"]), row)
+    if row.get("status") == "error":
+        die(f"The server rejected the file: {row.get('error_message')}")
+    print(f"\n  OK '{row['name']}'  id={row['id']}  status={row.get('status')}")
+    print("  Refresh the Orthophotos tab.")
 
-    # ── Step 3: Upload ───────────────────────────────────────────────────────
-    print(f"\n[3/3] Uploading to DigitalOcean Spaces…")
-    upload_put(presigned_url, output_file)
-    print(f"    Done")
-
-    # ── Register in viewer ───────────────────────────────────────────────────
-    print(f"\nRegistering '{display_name}' in viewer…")
-    ortho = api("POST", "/api/orthophotos", {
-        "asset_name": display_name,
-        "name": display_name,
-        "raw_key": key,
-        "original_format": "GeoTIFF",
-        "cog_ready": True,
-    })
-    print(f"\n  ✓ '{ortho['name']}' is live in the viewer!")
-    print(f"    ID: {ortho['id']}")
-    print(f"    Status: {ortho['status']}")
-    print(f"\n  Refresh the Orthophotos tab to see it.")
-
-    # ── Optionally delete local COG ──────────────────────────────────────────
-    if os.path.abspath(output_file) != os.path.abspath(input_file):
-        ans = input(f"\nDelete local COG file? ({os.path.basename(output_file)}) [y/N] ").strip().lower()
-        if ans == "y":
-            os.remove(output_file)
+    if not args.keep and os.path.exists(dst):
+        if input(f"\nDelete the local COG ({os.path.basename(dst)})? [y/N] ").strip().lower() == "y":
+            os.remove(dst)
             print("  Deleted.")
-
-    print("\nAll done.\n")
+    print("\nAll done.")
 
 
 if __name__ == "__main__":
