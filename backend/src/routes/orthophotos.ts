@@ -45,9 +45,18 @@ interface CogMeta {
   expiry:     number
   /** TIFF PhotometricInterpretation tag (2 = RGB, 6 = YCbCr). */
   photometric: number
-  /** All IFDs sorted finest→coarsest (overviews[0] = full resolution). */
+  /** All IFDs sorted finest→coarsest (overviews[0] = full resolution). Mask IFDs are not included. */
   overviews:  OverviewLevel[]
+  /** Internal transparency masks (NewSubfileType bit 4), keyed by "WxH" of the image they belong to. */
+  masks:      Map<string, GeoTIFFImage>
+  /** JPEG/YCbCr COGs without an internal mask: where the empty border is (from the coarsest overview), else null. */
+  border:     BorderMask | null
 }
+
+/** Coarse map of the image's empty border (1 = empty, already dilated by one cell). */
+interface BorderMask { w: number; h: number; empty: Uint8Array }
+/** Maps a tile's output pixels onto the BorderMask: u/v run 0..1 across the whole image. */
+interface BorderGate { mask: BorderMask; u0: number; du: number; v0: number; dv: number }
 
 const cogMetaCache = new Map<string, CogMeta | Promise<CogMeta>>()
 
@@ -70,8 +79,13 @@ async function getCogMeta(cogKey: string): Promise<CogMeta> {
     const fullH      = fullImg.getHeight()
 
     const ovs: OverviewLevel[] = []
+    const masks = new Map<string, GeoTIFFImage>()
     for (let i = 0; i < imageCount; i++) {
       const img = i === 0 ? fullImg : await tiff.getImage(i)
+      // GDAL stores an internal mask (e.g. JPEG COG warped with an alpha band) as an extra IFD with
+      // NewSubfileType bit 4. It must not be mistaken for an overview level.
+      const sub = (img.fileDirectory as { NewSubfileType?: number }).NewSubfileType ?? 0
+      if (i > 0 && (sub & 4) !== 0) { masks.set(`${img.getWidth()}x${img.getHeight()}`, img); continue }
       const w   = img.getWidth()
       const h   = img.getHeight()
       const xRes = fullRes[0] * (fullW / w)
@@ -93,8 +107,16 @@ async function getCogMeta(cogKey: string): Promise<CogMeta> {
       expiry:     Date.now() + 50 * 60 * 1000,
       photometric: fd.PhotometricInterpretation ?? 2,
       overviews:  ovs,
+      masks,
+      border: null,
     }
-    console.log(`[cog] ${cogKey.split('/').pop()} IFDs:${imageCount} fullRes:${meta.imageW}x${meta.imageH} res:${meta.resolution[0].toFixed(3)},${meta.resolution[1].toFixed(3)} photo:${meta.photometric}`)
+    if (meta.photometric === 6 && meta.bands === 3 && masks.size === 0) {
+      meta.border = await buildBorderMask(ovs, meta.nodata).catch((e: unknown) => {
+        console.error('[cog] border mask failed:', e instanceof Error ? e.message : e)
+        return null
+      })
+    }
+    console.log(`[cog] ${cogKey.split('/').pop()} IFDs:${imageCount} fullRes:${meta.imageW}x${meta.imageH} res:${meta.resolution[0].toFixed(3)},${meta.resolution[1].toFixed(3)} photo:${meta.photometric} masks:${masks.size}`)
     cogMetaCache.set(cogKey, meta)
     return meta
   })()
@@ -107,12 +129,12 @@ async function getCogMeta(cogKey: string): Promise<CogMeta> {
 router.get('/', optionalAuth, async (req, res, next) => {
   try {
     if (req.isAdmin) {
-      const { rows } = await db.query<OrthoRow>(`SELECT * FROM orthophotos ORDER BY created_at DESC`)
+      const { rows } = await db.query<OrthoRow>(`SELECT * FROM orthophotos ORDER BY sort_order DESC, created_at DESC, id`)
       res.json(rows)
       return
     }
     const { rows } = await db.query<OrthoRow>(
-      `SELECT * FROM orthophotos WHERE LOWER(asset_name) LIKE LOWER($1) ORDER BY created_at DESC`,
+      `SELECT * FROM orthophotos WHERE LOWER(asset_name) LIKE LOWER($1) ORDER BY sort_order DESC, created_at DESC, id`,
       [`%${env.PUBLIC_ASSET_NAME}%`],
     )
     res.json(rows)
@@ -179,9 +201,10 @@ router.post('/', requireAuth, async (req: Request, res: Response, next: NextFunc
 
     const { rows } = await db.query<OrthoRow>(
       `INSERT INTO orthophotos (id, asset_name, name, description, file_key, original_format, status,
-                                show_watermark, watermark_text)
-       VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8) RETURNING *`,
-      [id, asset_name, name, desc, raw_key, fmt, showWm, wmText],
+                                show_watermark, watermark_text, sort_order)
+       VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8,
+               (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM orthophotos WHERE asset_name = $9)) RETURNING *`,
+      [id, asset_name, name, desc, raw_key, fmt, showWm, wmText, asset_name],
     )
     res.status(201).json(rows[0])
 
@@ -221,9 +244,10 @@ router.post('/upload', requireAuth,
       await uploadObject(fileKey, body, 'image/tiff')
 
       const { rows } = await db.query<OrthoRow>(
-        `INSERT INTO orthophotos (id, asset_name, name, file_key, original_format, status)
-         VALUES ($1, $2, $3, $4, $5, 'pending') RETURNING *`,
-        [id, finalAssetName, displayName, fileKey, ext],
+        `INSERT INTO orthophotos (id, asset_name, name, file_key, original_format, status, sort_order)
+         VALUES ($1, $2, $3, $4, $5, 'pending',
+                 (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM orthophotos WHERE asset_name = $6)) RETURNING *`,
+        [id, finalAssetName, displayName, fileKey, ext, finalAssetName],
       )
       res.status(201).json(rows[0])
 
@@ -256,6 +280,28 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response, next: Next
     )
     if (!rows[0]) return res.status(404).json({ error: 'Not found' })
     res.json(rows[0])
+  } catch (err) { next(err) }
+})
+
+// ── Stacking order ────────────────────────────────────────────────────────────
+// PUT /api/orthophotos/order  body: { ids: [topmost, ..., bottom-most] }
+// `ids` = the orthophotos of one asset as the viewer lists them. Stored as sort_order (higher = on top); the relative
+// order of the listed ids is exactly the order given. Writes no updated_at, so cached tiles stay valid.
+router.put('/order', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { ids } = req.body as { ids?: unknown }
+    if (!Array.isArray(ids) || ids.length === 0 || ids.length > 500 || !ids.every((i) => typeof i === 'string') || new Set(ids).size !== ids.length) {
+      return res.status(400).json({ error: 'ids must be a non-empty array of unique orthophoto ids' })
+    }
+    const { rows } = await db.query<{ id: string }>(
+      `SELECT id FROM orthophotos WHERE id IN (${ids.map((_, k) => `$${k + 1}`).join(',')})`, ids,
+    )
+    if (rows.length !== ids.length) return res.status(404).json({ error: 'Unknown orthophoto id in list' })
+    const n = ids.length
+    for (let i = 0; i < n; i++) {
+      await db.query(`UPDATE orthophotos SET sort_order = $1 WHERE id = $2`, [n - 1 - i, ids[i]])
+    }
+    res.json({ ok: true })
   } catch (err) { next(err) }
 })
 
@@ -395,7 +441,7 @@ router.get('/:id([0-9a-f-]{36})/tiles/:z/:x/:y', optionalAuth, async (req: Reque
     // ETag keyed on cog_key + updated_at so adopt-cog / reprocess automatically
     // invalidates cached tiles in the browser. We still want a short max-age so
     // navigation feels snappy, but no_cache=true forces revalidation.
-    const etag = `"${photo.cog_key}-${photo.updated_at}"`
+    const etag = `"${photo.cog_key}-${photo.updated_at}-${TILE_RENDER_VERSION}"`
     if (req.headers['if-none-match'] === etag) return res.status(304).end()
     res.setHeader('Content-Type', 'image/png')
     res.setHeader('Cache-Control', 'public, max-age=60, must-revalidate')
@@ -423,7 +469,7 @@ router.get('/:id([0-9a-f-]{36})/tiles/:z/:x/:y', optionalAuth, async (req: Reque
     let png: Buffer
     try {
       const cogMeta = await getCogMeta(photo.cog_key)
-      const { bands, nodata, overviews, photometric } = cogMeta
+      const { bands, nodata, overviews, photometric, masks } = cogMeta
 
       // Select the finest overview whose pixel resolution is ≤ 2× the tile's
       // target metres-per-pixel. This avoids loading the full-res raster for
@@ -474,7 +520,25 @@ router.get('/:id([0-9a-f-]{36})/tiles/:z/:x/:y', optionalAuth, async (req: Reque
         fillValue: 0,
       })
 
-      const raw     = toRGBA(rasters as unknown as ArrayLike<number> & { BYTES_PER_ELEMENT: number }, bands, nodata, photometric)
+      // Internal TIFF mask (if the COG has one for this level) decides transparency exactly.
+      let maskData: ArrayLike<number> | null = null
+      const maskImg = masks.get(`${ov.width}x${ov.height}`)
+      if (maskImg) {
+        try {
+          maskData = await maskImg.readRasters({
+            window: [cLeft, cTop, cRight, cBottom], width: outW, height: outH, interleave: true, fillValue: 0,
+          }) as unknown as ArrayLike<number>
+        } catch { maskData = null }
+      }
+
+      const gate: BorderGate | null = cogMeta.border
+        ? {
+            mask: cogMeta.border,
+            u0: cLeft / ov.width,  du: (cRight  - cLeft) / outW / ov.width,
+            v0: cTop  / ov.height, dv: (cBottom - cTop)  / outH / ov.height,
+          }
+        : null
+      const raw     = toRGBA(rasters as unknown as ArrayLike<number> & { BYTES_PER_ELEMENT: number }, bands, nodata, photometric, outW, outH, maskData, gate)
       const partial = await sharp(raw, { raw: { width: outW, height: outH, channels: 4 } }).png({ compressionLevel: 1 }).toBuffer()
 
       if (outW === 256 && outH === 256) {
@@ -543,13 +607,26 @@ function merc2lat(y: number): number {
   return (360 / Math.PI) * Math.atan(Math.exp((y / EARTH_HALF) * Math.PI)) - 90
 }
 
+/** Bump when tile rendering changes so browsers do not reuse tiles rendered by an older algorithm. */
+const TILE_RENDER_VERSION = 'r2'
+
+/** YCbCr JPEG: max per-channel distance from the nodata colour that still counts as "empty" (JPEG ringing). */
+const YCC_NODATA_TOL = 8
+/** After the border flood fill, dark pixels touching it up to this level are fringe and also become transparent. */
+const YCC_FRINGE_MAX = 48
+
 function toRGBA(
   data: ArrayLike<number> & { BYTES_PER_ELEMENT: number },
   bands: number,
   nodata: number | null,
   photometric: number = 2,
+  w: number = 256,
+  h: number = 256,
+  mask: ArrayLike<number> | null = null,
+  gate: BorderGate | null = null,
+  tol: number = YCC_NODATA_TOL,
 ): Buffer {
-  const pixels = 256 * 256
+  const pixels = w * h
   const scale  = data.BYTES_PER_ELEMENT === 2 ? 256 : 1  // 16-bit → 8-bit
   const rgba   = Buffer.alloc(pixels * 4)
   // gdalwarp fills OOB pixels with 0 even without explicit -dstnodata
@@ -580,13 +657,14 @@ function toRGBA(
         rgba[i*4]   = clamp(y + 1.402   * (cr - 128))
         rgba[i*4+1] = clamp(y - 0.34414 * (cb - 128) - 0.71414 * (cr - 128))
         rgba[i*4+2] = clamp(y + 1.772   * (cb - 128))
+        rgba[i*4+3] = 255   // empty borders are resolved below, after the RGB conversion
       } else {
         rgba[i*4]   = data[b]   / scale
         rgba[i*4+1] = data[b+1] / scale
         rgba[i*4+2] = data[b+2] / scale
+        // All-zero pixels at tile edges are gdalwarp fill (OOB), not valid black pixels
+        rgba[i*4+3] = (data[b] === nd && data[b+1] === nd && data[b+2] === nd) ? 0 : 255
       }
-      // All-zero pixels at tile edges are gdalwarp fill (OOB), not valid black pixels
-      rgba[i*4+3] = (data[b] === nd && data[b+1] === nd && data[b+2] === nd) ? 0 : 255
     } else {
       rgba[i*4]   = data[b]   / scale
       rgba[i*4+1] = data[b+1] / scale
@@ -595,7 +673,114 @@ function toRGBA(
     }
   }
 
+  if (mask) {
+    // The file's own transparency mask is authoritative (0 = empty).
+    for (let i = 0; i < pixels; i++) rgba[i*4+3] = mask[i] ? 255 : 0
+  } else if (isYCbCr) {
+    clearYcbcrBorder(rgba, w, h, nd, gate, tol)
+  }
   return rgba
+}
+
+/**
+ * JPEG (YCbCr) COGs cannot store a nodata sample: black is (0,128,128), not (0,0,0), so the raw-sample test used for
+ * other files never fires, and the lossy blocks leave the empty border slightly off nodata. Instead, after RGB
+ * conversion, a pixel within `tol` of the nodata colour is empty when
+ *  - `gate` is given: the coarse border map (flood-filled once per COG from the image edge) says it lies in the border,
+ *    so genuine black inside the picture stays opaque however large it is;
+ *  - otherwise (no overview small enough): it is connected to the tile edge (4-neighbour flood fill).
+ * Dark fringe 8-adjacent to the cleared area (JPEG ringing) is cleared too. One pass over at most 65k pixels.
+ */
+function clearYcbcrBorder(rgba: Buffer, w: number, h: number, nd: number, gate: BorderGate | null, tol: number): void {
+  const n = w * h
+  const near = (i: number) => {
+    const o = i * 4
+    return Math.abs(rgba[o] - nd) <= tol && Math.abs(rgba[o+1] - nd) <= tol && Math.abs(rgba[o+2] - nd) <= tol
+  }
+  const empty = new Uint8Array(n)
+  let any = false
+  if (gate) {
+    const { mask, u0, du, v0, dv } = gate
+    const cxs = new Int32Array(w)
+    for (let x = 0; x < w; x++) cxs[x] = Math.min(mask.w - 1, Math.max(0, Math.floor((u0 + (x + 0.5) * du) * mask.w)))
+    for (let y = 0; y < h; y++) {
+      const row = Math.min(mask.h - 1, Math.max(0, Math.floor((v0 + (y + 0.5) * dv) * mask.h))) * mask.w
+      for (let x = 0; x < w; x++) {
+        if (mask.empty[row + cxs[x]]) {
+          const i = y * w + x
+          if (near(i)) { empty[i] = 1; any = true }
+        }
+      }
+    }
+  } else {
+    const stack = new Int32Array(n)
+    let sp = 0
+    const push = (k: number) => { if (!empty[k] && near(k)) { empty[k] = 1; stack[sp++] = k } }
+    for (let x = 0; x < w; x++) { push(x); push((h - 1) * w + x) }
+    for (let y = 1; y < h - 1; y++) { push(y * w); push(y * w + w - 1) }
+    any = sp > 0
+    while (sp > 0) {
+      const i = stack[--sp]
+      const x = i % w
+      if (x > 0)     push(i - 1)
+      if (x < w - 1) push(i + 1)
+      if (i >= w)    push(i - w)
+      if (i < n - w) push(i + w)
+    }
+  }
+  if (!any) return
+  // Fringe: dark pixels 8-adjacent to the cleared area (decided on a snapshot so it grows exactly one pixel).
+  const fringe: number[] = []
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x
+      if (empty[i]) continue
+      const o = i * 4
+      if (rgba[o] > YCC_FRINGE_MAX || rgba[o+1] > YCC_FRINGE_MAX || rgba[o+2] > YCC_FRINGE_MAX) continue
+      let touches = false
+      for (let dy = -1; dy <= 1 && !touches; dy++) {
+        const yy = y + dy
+        if (yy < 0 || yy >= h) continue
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx
+          if (xx < 0 || xx >= w) continue
+          if (empty[yy * w + xx]) { touches = true; break }
+        }
+      }
+      if (touches) fringe.push(i)
+    }
+  }
+  for (const i of fringe) empty[i] = 1
+  for (let i = 0; i < n; i++) if (empty[i]) rgba[i*4+3] = 0
+}
+
+/**
+ * Finds where a JPEG COG's empty border is, once per COG, from its coarsest overview (when that is small, <= 2048 px):
+ * dark pixels connected to the raster edge, dilated by one cell so tile-level pixel tests can decide the exact edge.
+ */
+async function buildBorderMask(ovs: OverviewLevel[], nodata: number | null): Promise<BorderMask | null> {
+  const coarse = ovs[ovs.length - 1]
+  const w = coarse.width, h = coarse.height
+  if (Math.max(w, h) > 2048) return null
+  const data = await coarse.image.readRasters({ interleave: true }) as unknown as ArrayLike<number> & { BYTES_PER_ELEMENT: number }
+  const rgba = toRGBA(data, 3, nodata, 6, w, h, null, null, 24)
+  const empty = new Uint8Array(w * h)
+  let any = false
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (rgba[(y * w + x) * 4 + 3] !== 0) continue
+      any = true
+      for (let dy = -1; dy <= 1; dy++) {
+        const yy = y + dy
+        if (yy < 0 || yy >= h) continue
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx
+          if (xx >= 0 && xx < w) empty[yy * w + xx] = 1
+        }
+      }
+    }
+  }
+  return any ? { w, h, empty } : { w: 1, h: 1, empty: new Uint8Array(1) }
 }
 
 function runProcess(cmd: string, args: string[], env?: NodeJS.ProcessEnv): Promise<string> {

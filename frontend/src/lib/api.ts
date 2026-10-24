@@ -318,6 +318,7 @@ export interface Orthophoto {
   error_message: string | null
   show_watermark: number   // 1 = show, 0 = hide
   watermark_text: string   // empty = no watermark
+  sort_order?: number      // stacking order within the asset, higher = drawn on top
   created_at: string
   updated_at: string
 }
@@ -330,6 +331,10 @@ export const getOrthophoto = (id: string) =>
 
 export const updateOrthophoto = (id: string, payload: { visible?: boolean; opacity?: number }) =>
   apiFetch<Orthophoto>(`/orthophotos/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+
+/** Persist the stacking order of one asset's orthophotos. `ids` = the asset's orthophotos, topmost first. */
+export const reorderOrthophotos = (ids: string[]) =>
+  apiFetch<{ ok: true }>('/orthophotos/order', { method: 'PUT', body: JSON.stringify({ ids }) })
 
 export const deleteOrthophoto = (id: string) =>
   apiFetch<void>(`/orthophotos/${id}`, { method: 'DELETE' })

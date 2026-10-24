@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Eye, EyeOff, X, Loader2, AlertCircle } from 'lucide-react'
+import { Eye, EyeOff, X, Loader2, AlertCircle, ArrowUp, ArrowDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Model } from '@/lib/api'
 import { WheelSlider } from '@/components/WheelSlider'
@@ -18,6 +18,8 @@ interface Props {
   orthophotos: ResolvedOrthophoto[]
   onOrthoDelete: (id: string) => void
   onOrthoToggleVisible: (id: string) => void
+  /** Raise / lower one orthophoto in its asset's stacking order. */
+  onOrthoMove: (id: string, dir: 'up' | 'down') => void
   onOrthoSetOpacity: (id: string, v: number) => void
   onOrthoFlyTo: (id: string) => void
   onOrthoShare: (photo: ResolvedOrthophoto) => void
@@ -36,7 +38,7 @@ function formatBytes(bytes: number | null): string {
 export function ModelSidebar({
   models, loading, error, selectedId, onSelect, onDelete, onShare,
   orthophotos, onOrthoDelete,
-  onOrthoToggleVisible, onOrthoSetOpacity, onOrthoFlyTo, onOrthoShare,
+  onOrthoToggleVisible, onOrthoMove, onOrthoSetOpacity, onOrthoFlyTo, onOrthoShare,
 }: Props) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null)
@@ -147,10 +149,12 @@ export function ModelSidebar({
               <span className="text-xs text-muted-foreground/60">Upload via the Admin panel.</span>
             </div>
           ) : (
-            assetMap[selectedAsset].orthos.map((photo) => (
+            assetMap[selectedAsset].orthos.map((photo, idx, all) => (
               <OrthoRow
                 key={photo.id}
                 photo={photo}
+                position={all.length > 1 ? { index: idx, count: all.length } : null}
+                onMove={(dir) => onOrthoMove(photo.id, dir)}
                 onToggleVisible={() => onOrthoToggleVisible(photo.id)}
                 onDelete={() => onOrthoDelete(photo.id)}
                 onSetOpacity={(v) => onOrthoSetOpacity(photo.id, v)}
@@ -270,9 +274,12 @@ function ModelRow({
 }
 
 function OrthoRow({
-  photo, onToggleVisible, onDelete, onSetOpacity, onFlyTo, onShare,
+  photo, position, onMove, onToggleVisible, onDelete, onSetOpacity, onFlyTo, onShare,
 }: {
   photo: ResolvedOrthophoto
+  /** Place in the stack (0 = topmost); null when the asset has a single orthophoto. */
+  position: { index: number; count: number } | null
+  onMove: (dir: 'up' | 'down') => void
   onToggleVisible: () => void
   onDelete: () => void
   onSetOpacity: (v: number) => void
@@ -382,6 +389,36 @@ function OrthoRow({
           <span className="text-[11px] font-mono text-muted-foreground w-8 text-right shrink-0">
             {Math.round(photo.opacity * 100)}%
           </span>
+        </div>
+      )}
+
+      {/* Stacking order: raise / lower (44 px touch targets, always visible) */}
+      {photo.status === 'ready' && position && (
+        <div className="px-3 pb-1.5 flex items-center gap-2 bg-muted/20" data-testid="ortho-order">
+          <span className="text-[10px] text-muted-foreground flex-1" data-testid="ortho-position">
+            Layer {position.count - position.index} of {position.count}
+            {position.index === 0 ? ' · top' : position.index === position.count - 1 ? ' · bottom' : ''}
+          </span>
+          <button
+            onClick={() => onMove('up')}
+            disabled={position.index === 0}
+            title="Raise (move up)" aria-label={`Raise ${photo.name}`}
+            data-testid="ortho-raise"
+            className="w-11 h-11 flex items-center justify-center rounded-lg border border-border text-foreground
+                       hover:bg-accent disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+          >
+            <ArrowUp size={16} />
+          </button>
+          <button
+            onClick={() => onMove('down')}
+            disabled={position.index === position.count - 1}
+            title="Lower (move down)" aria-label={`Lower ${photo.name}`}
+            data-testid="ortho-lower"
+            className="w-11 h-11 flex items-center justify-center rounded-lg border border-border text-foreground
+                       hover:bg-accent disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+          >
+            <ArrowDown size={16} />
+          </button>
         </div>
       )}
     </div>

@@ -22,6 +22,20 @@ export interface ResolvedOrthophoto {
   zoom_max: number
   show_watermark: number   // 1 = show, 0 = hide
   watermark_text: string
+  /** Stacking order within the asset (higher = on top) and upload time, used to order layers deterministically. */
+  sort_order?: number
+  created_at?: string
+}
+
+/**
+ * Stable stacking order, topmost first: explicit sort_order, then newest upload, then id. The same order is used for
+ * the sidebar list and for Cesium (which draws the list bottom-up), so it is identical after every reload.
+ */
+export function sortOrthosTopFirst<T extends { id: string; sort_order?: number; created_at?: string }>(list: T[]): T[] {
+  return [...list].sort((a, b) =>
+    (b.sort_order ?? 0) - (a.sort_order ?? 0)
+    || (b.created_at ?? '').localeCompare(a.created_at ?? '')
+    || a.id.localeCompare(b.id))
 }
 
 interface OrthoState extends ResolvedOrthophoto {}
@@ -49,6 +63,8 @@ function toState(o: Orthophoto): OrthoState {
     zoom_max:     o.zoom_max ?? 22,
     show_watermark: typeof o.show_watermark === 'number' ? o.show_watermark : 1,
     watermark_text: o.watermark_text ?? '',
+    sort_order:   o.sort_order ?? 0,
+    created_at:   o.created_at,
   }
 }
 

@@ -191,6 +191,20 @@ sqlite.exec(`
         AND (l2.created_at < layers.created_at OR (l2.created_at = layers.created_at AND l2.rowid < layers.rowid)))`)
   }
 }
+// ── Orthophotos: stacking order (additive; safe to run on every start) ──
+// sort_order = position in the stack within an asset, higher = drawn on top. Backfilled once from the upload
+// order (oldest 0, newest highest) so existing assets keep "newest on top", now stable across reloads.
+{
+  const orthoCols = new Set((sqlite.prepare(`PRAGMA table_info(orthophotos)`).all() as Array<{ name: string }>).map((c) => c.name))
+  if (!orthoCols.has('sort_order')) {
+    sqlite.transaction(() => {
+      sqlite.exec(`ALTER TABLE orthophotos ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`)
+      sqlite.exec(`UPDATE orthophotos SET sort_order = (
+        SELECT COUNT(*) FROM orthophotos o2 WHERE o2.asset_name = orthophotos.asset_name
+          AND (o2.created_at < orthophotos.created_at OR (o2.created_at = orthophotos.created_at AND o2.rowid < orthophotos.rowid)))`)
+    })()
+  }
+}
 // Links created before expiry existed become valid until one year after they were created.
 sqlite.exec(`UPDATE share_links SET expires_at = strftime('%Y-%m-%dT%H:%M:%SZ', created_at, '+365 days') WHERE expires_at IS NULL`)
 sqlite.exec(`UPDATE client_pages SET expires_at = strftime('%Y-%m-%dT%H:%M:%SZ', created_at, '+365 days') WHERE expires_at IS NULL`)

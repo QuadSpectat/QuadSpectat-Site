@@ -38,6 +38,8 @@ function orthoToResolved(o: Orthophoto): ResolvedOrthophoto {
     zoom_max:     o.zoom_max ?? 22,
     show_watermark: typeof o.show_watermark === 'number' ? o.show_watermark : 1,
     watermark_text: o.watermark_text ?? '',
+    sort_order:   o.sort_order ?? 0,
+    created_at:   o.created_at,
   }
 }
 

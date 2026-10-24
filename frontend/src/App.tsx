@@ -15,7 +15,7 @@ import { PhonePanels } from '@/components/PhonePanels'
 import { usePhoneLayout } from '@/hooks/usePhoneLayout'
 import type { ViewApi } from '@/lib/views'
 import { useModels } from '@/hooks/useModels'
-import { getDownloadUrl, updateModel, listOrthophotos, deleteOrthophoto } from '@/lib/api'
+import { getDownloadUrl, updateModel, listOrthophotos, deleteOrthophoto, reorderOrthophotos } from '@/lib/api'
 import type { GeoPoint } from '@/lib/geopoints'
 import { DEFAULT_VISUAL } from '@/lib/visualControls'
 import type { Model, Orthophoto } from '@/lib/api'
@@ -23,6 +23,7 @@ import type { MeasureMode } from '@/lib/measure'
 import type { VisualSettings } from '@/lib/visualControls'
 import type { BaseMap } from '@/components/MapSwitcher'
 import type { ResolvedOrthophoto } from '@/components/OrthophotoPanel'
+import { sortOrthosTopFirst } from '@/components/OrthophotoPanel'
 import type { OrthoCompare } from '@/components/ComparePanel'
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? '/api'
@@ -44,6 +45,8 @@ function toOrthoState(o: Orthophoto): ResolvedOrthophoto {
     zoom_max:     o.zoom_max ?? 22,
     show_watermark: typeof o.show_watermark === 'number' ? o.show_watermark : 1,
     watermark_text: o.watermark_text ?? '',
+    sort_order:   o.sort_order ?? 0,
+    created_at:   o.created_at,
   }
 }
 
@@ -88,7 +91,7 @@ export default function App() {
 
   // Load orthophotos on mount
   useEffect(() => {
-    listOrthophotos().then((list) => setOrthoPhotos(list.map(toOrthoState))).catch(console.error)
+    listOrthophotos().then((list) => setOrthoPhotos(sortOrthosTopFirst(list.map(toOrthoState)))).catch(console.error)
   }, [])
 
   // Poll while any orthophoto is still processing
@@ -150,6 +153,23 @@ export default function App() {
   async function handleOrthoDelete(id: string) {
     await deleteOrthophoto(id)
     setOrthoPhotos((prev) => prev.filter((p) => p.id !== id))
+  }
+
+  /** Raise ('up') or lower ('down') one orthophoto within its asset, then persist the asset's order. */
+  function handleOrthoMove(id: string, dir: 'up' | 'down') {
+    const photo = orthoPhotos.find((p) => p.id === id)
+    if (!photo) return
+    const group = orthoPhotos.filter((p) => p.asset_name === photo.asset_name)   // topmost first
+    const i = group.findIndex((p) => p.id === id)
+    const j = dir === 'up' ? i - 1 : i + 1
+    if (i < 0 || j < 0 || j >= group.length) return
+    const swapped = [...group]
+    ;[swapped[i], swapped[j]] = [swapped[j], swapped[i]]
+    const n = swapped.length
+    const rank = new Map(swapped.map((p, k) => [p.id, n - 1 - k]))
+    setOrthoPhotos((prev) => sortOrthosTopFirst(prev.map((p) => rank.has(p.id) ? { ...p, sort_order: rank.get(p.id)! } : p)))
+    reorderOrthophotos(swapped.map((p) => p.id))
+      .catch((err) => console.error('[ortho] could not save layer order (kept for this session only):', err))
   }
 
   function handleOrthoToggleVisible(id: string) {
@@ -242,6 +262,7 @@ export default function App() {
           orthophotos={orthoPhotos}
           onOrthoDelete={(id) => void handleOrthoDelete(id)}
           onOrthoToggleVisible={handleOrthoToggleVisible}
+          onOrthoMove={handleOrthoMove}
           onOrthoSetOpacity={handleOrthoSetOpacity}
           onOrthoFlyTo={(id) => {
             const photo = orthoPhotos.find((p) => p.id === id)

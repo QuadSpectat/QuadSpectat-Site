@@ -755,6 +755,12 @@ function CesiumViewerInner({
       }
     }
 
+    // `orthophotos` is topmost-first. Cross-fade two opaque layers exactly: the lower of the pair stays fully opaque and
+    // the upper one carries the fade weight, whichever order the user has stacked them in.
+    const cmp = orthoCompare?.beforeId && orthoCompare.afterId ? orthoCompare : null
+    const idxOf = (id: string) => orthophotos.findIndex((q) => q.id === id)
+    const upperIsAfter = cmp ? idxOf(cmp.afterId) < idxOf(cmp.beforeId) : false
+
     for (const photo of orthophotos) {
       if (photo.status !== 'ready') continue
 
@@ -763,10 +769,10 @@ function CesiumViewerInner({
         const layer = orthoMap.get(photo.id)!
         layer.show  = photo.visible
         // Ortho compare overrides opacity for the two selected photos
-        if (orthoCompare?.beforeId === photo.id && orthoCompare.afterId) {
-          layer.alpha = (1 - orthoCompare.blend)
-        } else if (orthoCompare?.afterId === photo.id && orthoCompare.beforeId) {
-          layer.alpha = orthoCompare.blend
+        if (cmp && cmp.beforeId === photo.id) {
+          layer.alpha = upperIsAfter ? 1 : 1 - cmp.blend
+        } else if (cmp && cmp.afterId === photo.id) {
+          layer.alpha = upperIsAfter ? cmp.blend : 1
         } else {
           layer.alpha = photo.opacity
         }
@@ -808,6 +814,17 @@ function CesiumViewerInner({
         orthoMap.set(photo.id, layer)
       }
     }
+
+    // Deterministic stacking: draw bottom-up in list order (list = topmost first). New layers are added on top by
+    // Cesium and reload order no longer matters. Only touch Cesium when the relative order actually differs.
+    const bottomUp = [...orthophotos].reverse()
+      .map((p) => orthoMap.get(p.id))
+      .filter((l): l is Cesium.ImageryLayer => !!l)
+    let ordered = true
+    for (let k = 1; k < bottomUp.length; k++) {
+      if (v.imageryLayers.indexOf(bottomUp[k - 1]) > v.imageryLayers.indexOf(bottomUp[k])) { ordered = false; break }
+    }
+    if (!ordered) for (const l of bottomUp) v.imageryLayers.raiseToTop(l)
   }, [orthophotos, orthoCompare, shareToken])
 
   // Track camera lat/lon so we can check if it's over an orthophoto's bounds.
