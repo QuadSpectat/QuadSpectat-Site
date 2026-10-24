@@ -112,7 +112,7 @@ export function LayerPanel({ modelId, onLayersChange }: Props) {
       <button
         onClick={() => setOpen((o) => !o)}
         className={cn(
-          'flex items-center gap-2 h-8 px-3 rounded-xl text-xs font-medium select-none',
+          'flex items-center gap-2 h-8 coarse:h-11 px-3 rounded-xl text-xs font-medium select-none',
           'bg-[#090d0b]/80 backdrop-blur-md border shadow-lg transition-all duration-200',
           open
             ? 'border-[#9ACD3C]/50 text-[#b8e05c] shadow-[#9ACD3C]/10'
@@ -131,7 +131,7 @@ export function LayerPanel({ modelId, onLayersChange }: Props) {
 
       {/* Panel */}
       {open && (
-        <div className="absolute bottom-full mb-2 right-0 w-72 rounded-2xl border border-white/[0.15]
+        <div className="absolute bottom-full mb-2 right-0 w-72 max-w-[calc(100vw-2rem)] rounded-2xl border border-white/[0.15]
                         bg-[#0b100d]/[0.97] backdrop-blur-xl shadow-2xl shadow-black/80 flex flex-col
                         overflow-hidden max-h-96">
           {/* Header */}
@@ -264,7 +264,7 @@ export function LayerPanel({ modelId, onLayersChange }: Props) {
                           min={-200} max={200} step={1}
                           value={heightOffset}
                           onChange={(v) => updateHeightOffset(layer.id, v)}
-                          className="absolute inset-x-0 opacity-0 h-4 w-full cursor-pointer"
+                          className="absolute inset-x-0 opacity-0 h-4 coarse:h-9 w-full cursor-pointer"
                         />
                       </div>
                       {heightOffset !== 0 && (

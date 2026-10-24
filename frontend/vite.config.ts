@@ -2,12 +2,16 @@ import path from 'node:path'
 import react from '@vitejs/plugin-react'
 import cesium from 'vite-plugin-cesium'
 import { defineConfig } from 'vite'
+import { cesiumDeferred, CESIUM_DIR } from './build/cesiumPlugin'
 
 export default defineConfig({
   plugins: [
     react(),
-    cesium(),
+    // Versioned directory (cesium-<x.y.z>/) so the unhashed engine files can be cached for a year without ever going stale.
+    cesium({ cesiumBaseUrl: CESIUM_DIR }),
+    cesiumDeferred(),
   ],
+  define: { __CESIUM_DIR__: JSON.stringify(CESIUM_DIR) },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

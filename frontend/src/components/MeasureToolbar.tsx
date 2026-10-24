@@ -1,9 +1,10 @@
 import { useRef, useEffect, useState } from 'react'
-import { Ruler, Hexagon, Box, Trash2, Home, MapPin, X, FileText, Download, Pencil, Undo2 } from 'lucide-react'
+import { Ruler, Hexagon, Box, Trash2, Home, MapPin, X, FileText, Download, Pencil, Undo2, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { MeasureMode } from '@/lib/measure'
 import type { GeoPoint, ExportCrs } from '@/lib/geopoints'
 import { exportCsv, exportKml, wgs84ToItm } from '@/lib/geopoints'
+import { useCoarsePointer } from '@/hooks/useCoarsePointer'
 
 interface Props {
   mode: MeasureMode
@@ -27,6 +28,8 @@ interface Props {
   history?: { id: string; text: string }[]
   /** Removes the last measurement point (for devices without a right mouse button). */
   onUndo?: () => void
+  /** Completes the current measurement (touch devices have no double-click). */
+  onFinish?: () => void
 }
 
 const TOOLS: { key: Exclude<MeasureMode, 'none'>; label: string; Icon: typeof Ruler }[] = [
@@ -41,6 +44,13 @@ const INSTRUCTIONS: Record<Exclude<MeasureMode, 'none'>, string> = {
   volume:   'Set base elevation · Click vertices · Double-click to close',
 }
 
+/** Touch wording: a finger taps; there is no right-click or double-click. */
+const TOUCH_INSTRUCTIONS: Record<Exclude<MeasureMode, 'none'>, string> = {
+  distance: 'Tap to add points. Tap Finish when done. Undo removes the last point.',
+  area:     'Tap to add corners. Tap Finish to close the area. Undo removes the last point.',
+  volume:   'Set the base height, then tap the corners. Tap Finish to close. Undo removes the last point.',
+}
+
 const PANEL = 'rounded-2xl border border-white/[0.15] bg-[#0b100d]/[0.97] backdrop-blur-xl shadow-2xl shadow-black/80'
 
 function fmt(n: number, d: number) { return n.toFixed(d) }
@@ -48,18 +58,19 @@ function fmt(n: number, d: number) { return n.toFixed(d) }
 export function MeasureToolbar({
   mode, onModeChange, baseElevation, onBaseElevationChange, result, onResetCamera,
   geopointActive, onGeopointToggle, geopoints, onGeopointDelete, onGeopointNote, onGeopointClear,
-  placement = 'top-right', part = 'all', history, onUndo,
+  placement = 'top-right', part = 'all', history, onUndo, onFinish,
 }: Props) {
+  const coarse = useCoarsePointer()
   const showTools  = part !== 'panels'
   const showPanels = part !== 'tools'
   const rootClass =
     part === 'panels'
       ? 'flex flex-col gap-3 w-full'
       : placement === 'top-center'
-        ? 'absolute top-3 left-1/2 -translate-x-1/2 z-10 flex flex-col gap-2 items-center pointer-events-none'
+        ? 'absolute top-[calc(0.75rem+env(safe-area-inset-top))] left-1/2 -translate-x-1/2 z-10 flex flex-col gap-2 items-center pointer-events-none'
         : placement === 'bottom-dock'
-          ? 'absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex flex-col-reverse gap-2 items-center pointer-events-none max-w-[calc(100%-1.5rem)]'
-          : 'absolute top-3 right-3 z-10 flex flex-col gap-2 items-end pointer-events-none'
+          ? 'absolute bottom-[calc(1.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-10 flex flex-col-reverse gap-2 items-center pointer-events-none max-w-[calc(100%-1.5rem)]'
+          : 'absolute top-[calc(3.5rem+env(safe-area-inset-top))] sm:top-3 right-[max(0.75rem,env(safe-area-inset-right))] z-10 flex flex-col gap-2 items-end pointer-events-none max-w-[calc(100%-1.5rem)]'
   const elevInputRef    = useRef<HTMLInputElement>(null)
   const elevRef         = useRef(baseElevation)
   elevRef.current       = baseElevation
@@ -126,7 +137,7 @@ export function MeasureToolbar({
             title={label}
             onClick={() => handleToolClick(key)}
             className={cn(
-              'flex items-center gap-1.5 h-8 px-2.5 rounded-xl text-xs font-medium transition-all duration-150 select-none',
+              'flex items-center justify-center gap-1.5 h-8 coarse:h-11 coarse:min-w-11 px-2.5 rounded-xl text-xs font-medium transition-all duration-150 select-none',
               mode === key
                 ? 'bg-[#9ACD3C]/25 text-[#b8e05c] border border-[#9ACD3C]/70 shadow-[0_0_10px_rgba(154,205,60,0.35)]'
                 : 'text-white/75 hover:text-white/95 hover:bg-white/[0.08] border border-transparent',
@@ -144,7 +155,7 @@ export function MeasureToolbar({
           title={geopointActive ? 'Stop collecting points' : 'Collect geo-points'}
           onClick={onGeopointToggle}
           className={cn(
-            'flex items-center gap-1.5 h-8 px-2.5 rounded-xl text-xs font-medium transition-all duration-150 select-none',
+            'flex items-center justify-center gap-1.5 h-8 coarse:h-11 coarse:min-w-11 px-2.5 rounded-xl text-xs font-medium transition-all duration-150 select-none',
             geopointActive
               ? 'bg-orange-500/25 text-orange-300 border border-orange-500/60 shadow-[0_0_10px_rgba(251,146,60,0.3)]'
               : 'text-white/75 hover:text-white/95 hover:bg-white/[0.08] border border-transparent',
@@ -159,7 +170,7 @@ export function MeasureToolbar({
           </span>
         </button>
 
-        {showUndo && (
+        {showUndo && !coarse && (
           <>
             <div className="w-px h-4 bg-white/[0.20] mx-1" />
             <button
@@ -181,7 +192,7 @@ export function MeasureToolbar({
           title="Clear measurement"
           onClick={handleClearMeasurement}
           disabled={mode === 'none' && !result}
-          className="flex items-center justify-center h-8 w-8 rounded-xl text-white/60
+          className="flex items-center justify-center h-8 w-8 coarse:h-11 coarse:w-11 rounded-xl text-white/60
                      hover:text-red-400 hover:bg-red-500/10 border border-transparent
                      transition-all duration-150 disabled:opacity-20 pointer-events-auto"
         >
@@ -194,7 +205,7 @@ export function MeasureToolbar({
             <button
               title="Reset view to model"
               onClick={onResetCamera}
-              className="flex items-center justify-center h-8 w-8 rounded-xl text-white/60
+              className="flex items-center justify-center h-8 w-8 coarse:h-11 coarse:w-11 rounded-xl text-white/60
                          hover:text-[#b8e05c] hover:bg-[#9ACD3C]/10 border border-transparent
                          transition-all duration-150 pointer-events-auto"
             >
@@ -224,8 +235,22 @@ export function MeasureToolbar({
 
       {/* Measure instruction */}
       {showTools && mode !== 'none' && !result && (
-        <div className={cn(PANEL, 'px-3 py-2 max-w-xs')}>
-          <p className="text-[11px] text-white/70 leading-snug">{INSTRUCTIONS[mode]}</p>
+        <div className={cn(PANEL, 'px-3 py-2 max-w-xs', coarse && 'pointer-events-auto')}>
+          <p className="text-[11px] text-white/70 leading-snug">{coarse ? TOUCH_INSTRUCTIONS[mode] : INSTRUCTIONS[mode]}</p>
+          {coarse && (
+            <div className="flex gap-2 mt-2">
+              <button type="button" onClick={handleUndo} aria-label="Undo last point"
+                className="flex-1 inline-flex items-center justify-center gap-1.5 h-11 rounded-xl text-xs font-semibold
+                           text-white/85 bg-white/[0.08] border border-white/[0.15] active:bg-white/[0.16] select-none">
+                <Undo2 size={16} strokeWidth={1.8} />Undo
+              </button>
+              <button type="button" onClick={() => onFinish?.()}
+                className="flex-1 inline-flex items-center justify-center gap-1.5 h-11 rounded-xl text-xs font-bold
+                           bg-[#9ACD3C] text-[#17220a] active:brightness-90 select-none">
+                <Check size={16} strokeWidth={2.4} />Finish
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -233,7 +258,7 @@ export function MeasureToolbar({
       {showPanels && result && (
         <div className={cn(PANEL, 'px-4 py-2.5 pointer-events-auto', part === 'panels' && 'border-[#9ACD3C]/60')}>
           <p className={cn('font-semibold text-white/95 tabular-nums font-mono', part === 'panels' ? 'text-xl' : 'text-sm')}>{result}</p>
-          <p className="text-[11px] text-white/60 mt-0.5">Indicative · click a tool to measure again</p>
+          <p className="text-[11px] text-white/60 mt-0.5">Indicative · {coarse ? 'tap' : 'click'} a tool to measure again</p>
         </div>
       )}
       {showPanels && part === 'panels' && !result && !(history && history.length) && geopoints.length === 0 && (
@@ -258,9 +283,16 @@ export function MeasureToolbar({
       {showTools && geopointActive && (
         <div className={cn(PANEL, 'px-3 py-2 max-w-xs border-orange-500/30 pointer-events-auto')}>
           <p className="text-[11px] text-orange-300/90 leading-snug">
-            Click anywhere on the globe or model to pin a point.
-            Click <strong>Stop</strong> when done.
+            {coarse ? 'Tap' : 'Click'} anywhere on the globe or model to pin a point.
+            {coarse ? ' Tap ' : ' Click '}<strong>Stop</strong> when done.
           </p>
+          {coarse && geopoints.length > 0 && (
+            <button type="button" onClick={handleUndo} aria-label="Undo last point"
+              className="mt-2 w-full inline-flex items-center justify-center gap-1.5 h-11 rounded-xl text-xs font-semibold
+                         text-white/85 bg-white/[0.08] border border-white/[0.15] active:bg-white/[0.16] select-none">
+              <Undo2 size={16} strokeWidth={1.8} />Undo last point
+            </button>
+          )}
         </div>
       )}
 

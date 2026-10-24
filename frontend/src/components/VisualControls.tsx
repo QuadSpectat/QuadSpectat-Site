@@ -45,13 +45,13 @@ export function VisualControls({ settings, onChange, onSnapToGround, crsLabel }:
 
   return (
     // flex-col-reverse: first child (button) sits at physical bottom, second child (panel) grows upward
-    <div className="absolute bottom-10 left-4 z-10 flex flex-col-reverse items-start gap-2">
+    <div className="absolute bottom-[calc(2.5rem+env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] z-10 flex flex-col-reverse items-start gap-2">
       {/* Toggle button - rendered FIRST so it sits at the bottom */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          'flex items-center gap-2 h-8 px-3 rounded-xl text-xs font-medium select-none',
+          'flex items-center gap-2 h-8 coarse:h-11 px-3 rounded-xl text-xs font-medium select-none',
           'bg-[#090d0b]/80 backdrop-blur-md border shadow-lg transition-all duration-200',
           open
             ? 'border-[#9ACD3C]/50 text-[#b8e05c] shadow-[#9ACD3C]/10'
@@ -65,7 +65,7 @@ export function VisualControls({ settings, onChange, onSnapToGround, crsLabel }:
 
       {/* Panel - rendered SECOND so it appears above the button */}
       {open && (
-        <div className="w-64 rounded-2xl border border-white/[0.15] bg-[#0b100d]/[0.97] backdrop-blur-xl shadow-2xl shadow-black/80 p-4 flex flex-col gap-4">
+        <div className="w-64 max-h-[calc(100dvh-12rem)] overflow-y-auto rounded-2xl border border-white/[0.15] bg-[#0b100d]/[0.97] backdrop-blur-xl shadow-2xl shadow-black/80 p-4 flex flex-col gap-4">
           {SLIDERS.map(({ key, label, min, max, step, format }) => {
             const val = settings[key]
             const pct = ((val - min) / (max - min)) * 100
@@ -93,7 +93,7 @@ export function VisualControls({ settings, onChange, onSnapToGround, crsLabel }:
                   <WheelSlider
                     min={min} max={max} step={step} value={val}
                     onChange={(v) => set(key, v)}
-                    className="absolute inset-x-0 opacity-0 h-4 w-full cursor-pointer"
+                    className="absolute inset-x-0 opacity-0 h-4 coarse:h-9 w-full cursor-pointer"
                   />
                 </div>
                 {key === 'heightOffset' && (crsLabel || onSnapToGround) && (

@@ -8,7 +8,23 @@
     <link rel="icon" type="image/svg+xml" href="/logo.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600&family=JetBrains+Mono:wght@400;500&family=Rubik:wght@300;400;500;600&display=swap" />
+    <!-- Fonts must not block first paint: load as print, switch to all on arrival (display=swap keeps text visible) -->
+    <link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600&family=JetBrains+Mono:wght@400;500&family=Rubik:wght@300;400;500;600&display=swap" />
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600&family=JetBrains+Mono:wght@400;500&family=Rubik:wght@300;400;500;600&display=swap" /></noscript>
+    <style>
+      /* App shell: painted from the HTML itself, before any script or CSS bundle arrives (also used by the React loading state). */
+      html,body{background:#0d110f}
+      .qs-shell{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.75rem;background:#0d110f;color:#e9efe7;font-family:Assistant,Heebo,system-ui,sans-serif;padding:1rem;padding-bottom:calc(1rem + env(safe-area-inset-bottom))}
+      .qs-shell-name{font-weight:700;letter-spacing:-.01em;font-size:1.125rem}
+      .qs-shell-label{font-size:.875rem;color:#8e9a92}
+      .qs-shell-bar{width:9rem;height:3px;border-radius:3px;background:#1d2620;overflow:hidden;margin-top:.25rem}
+      .qs-shell-bar i{display:block;height:100%;width:40%;border-radius:3px;background:#9acd3c;animation:qs-slide 1.2s ease-in-out infinite}
+      @keyframes qs-slide{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}
+      .qs-shell-btn{margin-top:.5rem;min-height:44px;padding:0 1.25rem;border-radius:.75rem;border:0;background:#9acd3c;color:#17220a;font-weight:700;font-size:.9rem}
+      #qs-static .qs-shell-label:before{content:"Loading\2026"}
+      html[data-viewer] #qs-static .qs-shell-label:before{content:"Loading 3D\2026"}
+      @media (prefers-reduced-motion:reduce){.qs-shell-bar i{animation:none;width:100%;opacity:.6}}
+    </style>
     <script>
       // GitHub Pages SPA redirect: restore path from query string
       (function() {
@@ -22,7 +38,10 @@
     </script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div class="qs-shell" id="qs-static" role="status">
+      <svg width="56" height="56" viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="12.5" fill="none" stroke="#9acd3c" stroke-width="1.5"/><path d="M4 17 Q10 9 14 14 T24 11" fill="none" stroke="#9acd3c" stroke-width="1.4"/><path d="M5 21 Q11 14 15 18 T23 16" fill="none" stroke="#9acd3c" stroke-opacity=".6" stroke-width="1.2"/><circle cx="14" cy="14" r="2" fill="#9acd3c"/></svg>
+      <div class="qs-shell-name">QuadSpectat</div><div class="qs-shell-label"></div><div class="qs-shell-bar"><i></i></div>
+    </div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

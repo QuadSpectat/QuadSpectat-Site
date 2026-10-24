@@ -197,6 +197,8 @@ interface Props {
   viewApiRef?: React.MutableRefObject<ViewApi | null>
   /** Parent passes a ref; CesiumViewer's measure tool writes its undo function into it */
   undoRef?: React.MutableRefObject<(() => void) | null>
+  /** Same, for the touch "Finish" button (completes the measurement without a double-click) */
+  finishRef?: React.MutableRefObject<(() => void) | null>
 }
 
 export function CesiumViewer({
@@ -222,6 +224,7 @@ export function CesiumViewer({
   onGeopointAdd,
   viewApiRef,
   undoRef,
+  finishRef,
 }: Props) {
   // Never show Google tiles unless the page explicitly allows it (share/client links don't)
   const baseMap: BaseMap = requestedBaseMap === 'google3d' && !allowGoogle3d ? 'osm' : requestedBaseMap
@@ -793,7 +796,7 @@ export function CesiumViewer({
     if (googleShown && toolWanted) onNotice('Measuring is turned off while Google 3D is shown')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [googleShown, toolWanted])
-  useMeasure(viewer, googleShown ? 'none' : measureMode, baseElevation, measureKey, onMeasureResult, heightRef, { undoRef, onNotice })
+  useMeasure(viewer, googleShown ? 'none' : measureMode, baseElevation, measureKey, onMeasureResult, heightRef, { undoRef, finishRef, onNotice })
   useGeopoints(viewer, geopointActive && !googleShown, geopoints, onGeopointAdd ?? (() => {}), heightRef, { onNotice })
 
   // Sync KML/overlay layers

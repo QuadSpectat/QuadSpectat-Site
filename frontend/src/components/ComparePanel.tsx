@@ -42,7 +42,7 @@ function BlendSlider({ value, onChange }: { value: number; onChange: (v: number)
         min={0} max={1} step={0.01}
         value={value}
         onChange={onChange}
-        className="absolute inset-x-0 opacity-0 h-4 w-full cursor-pointer"
+        className="absolute inset-x-0 opacity-0 h-4 coarse:h-9 w-full cursor-pointer"
       />
     </div>
   )
@@ -91,7 +91,7 @@ export function ComparePanel({
       <button
         onClick={() => setOpen((o) => !o)}
         className={cn(
-          'flex items-center gap-2 h-8 px-3 rounded-xl text-xs font-medium select-none',
+          'flex items-center gap-2 h-8 coarse:h-11 px-3 rounded-xl text-xs font-medium select-none',
           'bg-[#090d0b]/80 backdrop-blur-md border shadow-lg transition-all duration-200',
           isActive
             ? 'border-sky-400/50 text-sky-300 shadow-sky-400/10'
@@ -106,7 +106,9 @@ export function ComparePanel({
       </button>
 
       {open && (
-        <div className={cn(PANEL, 'absolute bottom-full mb-2 right-0 w-80 flex flex-col overflow-hidden')}>
+        <div className={cn(PANEL, 'absolute bottom-full mb-2 right-0 w-80 flex flex-col overflow-hidden',
+          // Phones: pin the panel to the viewport (it used to hang 54 px off the left edge at 390 px)
+          'max-sm:fixed max-sm:left-3 max-sm:right-3 max-sm:w-auto max-sm:mb-0 max-sm:bottom-[calc(6.5rem+env(safe-area-inset-bottom))] max-sm:max-h-[calc(100dvh-10rem)] max-sm:overflow-y-auto')}>
 
           {/* ── Models ── */}
           <div className="px-4 py-3 border-b border-white/[0.08]">

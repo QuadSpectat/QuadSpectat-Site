@@ -174,7 +174,7 @@ export function ModelSidebar({
       {/* Mobile: hamburger button */}
       <button
         onClick={() => setMobileOpen(true)}
-        className="md:hidden absolute top-14 left-3 z-30 h-9 flex items-center justify-center gap-1.5
+        className="md:hidden absolute top-[calc(3.5rem+env(safe-area-inset-top))] left-[max(0.75rem,env(safe-area-inset-left))] z-30 h-11 flex items-center justify-center gap-1.5
                    rounded-lg border border-input bg-background/95 backdrop-blur shadow-md
                    px-3 text-sm font-medium text-foreground hover:bg-accent transition-colors"
         style={{ position: 'fixed' }}
@@ -187,7 +187,7 @@ export function ModelSidebar({
       {mobileOpen && (
         <div className="md:hidden fixed inset-0 z-40 flex">
           <div className="absolute inset-0 bg-black/50" onClick={() => setMobileOpen(false)} />
-          <aside className="relative z-10 flex flex-col w-72 max-w-[85vw] h-full border-r
+          <aside className="relative z-10 flex flex-col w-72 max-w-[85vw] h-full pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] border-r
                              border-border bg-background overflow-hidden shadow-xl">
             {assetPanel}
           </aside>

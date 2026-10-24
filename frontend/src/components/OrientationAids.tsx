@@ -137,7 +137,7 @@ export function OrientationAids({ viewer, onHome }: Props) {
 
   return (
     <>
-      <div className="absolute right-3 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-2">
+      <div className="absolute right-[max(0.75rem,env(safe-area-inset-right))] top-1/2 -translate-y-1/2 z-10 flex flex-col gap-2">
         <button type="button" onClick={resetNorth} aria-label="Reset to north" title="Reset to north" className={BTN}>
           <svg ref={arrowRef} width="24" height="24" viewBox="0 0 24 24" style={{ transition: 'transform 80ms linear' }}>
             <path d="M12 2 L17 13 L12 11 L7 13 Z" fill="#ef4444" />
@@ -164,7 +164,7 @@ export function OrientationAids({ viewer, onHome }: Props) {
       </div>
 
       {scale && (
-        <div className="absolute left-4 bottom-[5.5rem] z-10 pointer-events-none rounded-lg border border-white/[0.15]
+        <div className="absolute left-[max(1rem,env(safe-area-inset-left))] bottom-[calc(5.5rem+env(safe-area-inset-bottom))] max-sm:bottom-[calc(6.5rem+env(safe-area-inset-bottom))] z-10 pointer-events-none rounded-lg border border-white/[0.15]
                         bg-[#0b100d]/[0.97] backdrop-blur-xl shadow-2xl shadow-black/80 px-2.5 pt-1.5 pb-2">
           <div className="font-mono text-[11px] leading-none text-white/80 mb-1"
                style={{ fontVariantNumeric: 'tabular-nums' }}>

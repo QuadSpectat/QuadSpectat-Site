@@ -59,7 +59,7 @@ function ShowcaseChrome({ title, expires, extra }: { title: string; expires?: st
   const until = fmtDate(expires)
   return (
     <>
-      <div className="absolute top-3 left-3 z-20 flex items-center gap-3 pl-2.5 pr-4 py-2 rounded-2xl showcase-card max-w-[calc(100%-1.5rem)] sm:max-w-md">
+      <div className="absolute top-[calc(0.75rem+env(safe-area-inset-top))] left-[max(0.75rem,env(safe-area-inset-left))] z-20 flex items-center gap-3 pl-2.5 pr-4 py-2 rounded-2xl showcase-card max-w-[calc(100%-1.5rem)] sm:max-w-md">
         <LogoMark size={36} filled className="shrink-0" />
         <div className="min-w-0 leading-tight">
           <h1 className="text-[15px] font-bold truncate">{title}</h1>
@@ -67,7 +67,7 @@ function ShowcaseChrome({ title, expires, extra }: { title: string; expires?: st
         </div>
         <BackLink />
       </div>
-      <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+      <div className="absolute top-[calc(0.75rem+env(safe-area-inset-top))] right-[max(0.75rem,env(safe-area-inset-right))] z-20 flex items-center gap-2">
         {until && (
           <div className="hidden sm:block px-4 py-2.5 rounded-xl showcase-card text-xs text-muted-foreground">
             Link valid until <strong className="text-foreground font-semibold">{until}</strong>
@@ -154,6 +154,7 @@ function ModelSharedView({
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const viewApiRef = useRef<ViewApi | null>(null)
   const undoRef = useRef<(() => void) | null>(null)
+  const finishRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     if (model.external_url) { setModelUrl(model.external_url); return }
@@ -226,6 +227,7 @@ function ModelSharedView({
           baseMap={baseMap}
           viewApiRef={viewApiRef}
           undoRef={undoRef}
+          finishRef={finishRef}
           geopointActive={geopointActive}
           geopoints={geopoints}
           onGeopointAdd={(pt) => setGeopoints((prev) => [...prev, pt])}
@@ -233,6 +235,7 @@ function ModelSharedView({
         <MeasureToolbar
           placement="bottom-dock"
           onUndo={() => undoRef.current?.()}
+          onFinish={() => finishRef.current?.()}
           mode={measureMode}
           onModeChange={handleModeChange}
           baseElevation={baseElevation}
@@ -248,12 +251,12 @@ function ModelSharedView({
         <VisualControls settings={visualSettings} onChange={setVisualSettings} />
         <MapSwitcher value={baseMap} onChange={setBaseMap} />
 
-        <div className="absolute left-3 top-20 z-20 w-64 max-w-[calc(100%-1.5rem)]">
+        <div className="absolute left-[max(0.75rem,env(safe-area-inset-left))] top-[calc(5rem+env(safe-area-inset-top))] z-20 w-64 max-w-[calc(100%-1.5rem)]">
           <ViewsPanel editable={false} modelId={model.id} shareToken={token} viewApiRef={viewApiRef} />
         </div>
 
         {canEdit && (
-          <div className="absolute top-44 left-4 z-20 flex flex-col items-start gap-1">
+          <div className="absolute top-[calc(11rem+env(safe-area-inset-top))] left-[max(1rem,env(safe-area-inset-left))] z-20 flex flex-col items-start gap-1">
             <button
               onClick={() => setEditOpen((o) => !o)}
               className="h-8 px-3 rounded-xl text-xs font-medium
@@ -317,6 +320,7 @@ function OrthoSharedView({ orthophoto, token, expires }: { orthophoto: Orthophot
   const flyToOrthoRef = useRef<((p: ResolvedOrthophoto) => void) | null>(null)
   const viewApiRef = useRef<ViewApi | null>(null)
   const undoRef = useRef<(() => void) | null>(null)
+  const finishRef = useRef<(() => void) | null>(null)
 
   // Fly to the orthophoto once the viewer wires up its ref
   useEffect(() => {
@@ -353,6 +357,7 @@ function OrthoSharedView({ orthophoto, token, expires }: { orthophoto: Orthophot
           flyToOrthoRef={flyToOrthoRef}
           viewApiRef={viewApiRef}
           undoRef={undoRef}
+          finishRef={finishRef}
           geopointActive={geopointActive}
           geopoints={geopoints}
           onGeopointAdd={(pt) => setGeopoints((prev) => [...prev, pt])}
@@ -360,6 +365,7 @@ function OrthoSharedView({ orthophoto, token, expires }: { orthophoto: Orthophot
         <MeasureToolbar
           placement="bottom-dock"
           onUndo={() => undoRef.current?.()}
+          onFinish={() => finishRef.current?.()}
           mode={measureMode}
           onModeChange={handleModeChange}
           baseElevation={baseElevation}
@@ -377,7 +383,7 @@ function OrthoSharedView({ orthophoto, token, expires }: { orthophoto: Orthophot
 
         {photo.show_watermark !== 0 && photo.watermark_text && (
           <div
-            className="absolute bottom-2 left-4 z-30 pointer-events-none select-none"
+            className="absolute bottom-[calc(0.5rem+env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] z-30 pointer-events-none select-none"
             style={{ direction: 'rtl' }}
           >
             <span

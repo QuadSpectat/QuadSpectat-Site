@@ -82,6 +82,7 @@ export default function App() {
   const flyToOrthoRef  = useRef<((photo: ResolvedOrthophoto) => void) | null>(null)
   const viewApiRef     = useRef<ViewApi | null>(null)
   const undoRef        = useRef<(() => void) | null>(null)
+  const finishRef      = useRef<(() => void) | null>(null)
 
   // Load orthophotos on mount
   useEffect(() => {
@@ -192,17 +193,20 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-svh bg-background text-foreground">
-      <header className="flex items-center px-4 border-b border-border shrink-0 gap-3 bg-card" style={{ height: '56px' }}>
+      <header
+        className="flex items-center border-b border-border shrink-0 gap-2 min-[430px]:gap-3 bg-card pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] min-[430px]:pl-[max(1rem,env(safe-area-inset-left))] min-[430px]:pr-[max(1rem,env(safe-area-inset-right))]"
+        style={{ height: 'calc(56px + env(safe-area-inset-top))', paddingTop: 'env(safe-area-inset-top)' }}
+      >
         <button
           onClick={() => navigate('/')}
-          className="flex items-center gap-2 hover:opacity-80 transition-opacity shrink-0"
+          className="flex items-center gap-2 hover:opacity-80 transition-opacity shrink-0 -m-2 p-2" aria-label="Back to home"
           title="Back to home"
         >
           <LogoMark size={28} />
           <span className="font-bold tracking-tight hidden sm:inline">QuadSpectat</span>
         </button>
-        <div className="w-px h-5 bg-border mx-1 shrink-0" />
-        <span className="text-[11px] font-semibold tracking-[0.14em] uppercase text-muted-foreground shrink-0">3D Viewer</span>
+        <div className="w-px h-5 bg-border mx-1 shrink-0 hidden min-[430px]:block" />
+        <span className="text-[11px] font-semibold tracking-[0.14em] uppercase text-muted-foreground shrink-0 hidden min-[430px]:inline">3D Viewer</span>
         {selectedModel && (
           <>
             <div className="w-px h-5 bg-border mx-1 shrink-0 hidden sm:block" />
@@ -215,11 +219,11 @@ export default function App() {
           type="button"
           disabled={!selectedModel}
           onClick={() => selectedModel && setShareModel(selectedModel)}
-          className="inline-flex items-center gap-2 h-10 px-4 rounded-xl text-[13px] font-bold bg-primary text-primary-foreground
+          className="inline-flex items-center justify-center gap-2 h-11 w-11 sm:w-auto sm:h-10 sm:px-4 rounded-xl text-[13px] font-bold bg-primary text-primary-foreground
                      hover:brightness-110 transition disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
           title={selectedModel ? 'Create a share link for this model' : 'Select a model to share it'}
         >
-          <Share2 size={15} strokeWidth={2} />
+          <Share2 size={16} strokeWidth={2} />
           <span className="hidden sm:inline">{selectedModel ? 'Share link' : 'Select a model to share'}</span>
         </button>
       </header>
@@ -269,6 +273,7 @@ export default function App() {
             flyToOrthoRef={flyToOrthoRef}
             viewApiRef={viewApiRef}
             undoRef={undoRef}
+            finishRef={finishRef}
             geopointActive={geopointActive}
             geopoints={geopoints}
             onGeopointAdd={(pt) => setGeopoints((prev) => [...prev, pt])}
@@ -277,6 +282,7 @@ export default function App() {
             <MeasureToolbar
               part="tools" placement="top-center"
             onUndo={() => undoRef.current?.()}
+            onFinish={() => finishRef.current?.()}
             mode={measureMode}
             onModeChange={handleModeChange}
             baseElevation={baseElevation}
@@ -295,6 +301,7 @@ export default function App() {
             <MeasureToolbar
               part="all" placement="top-right"
             onUndo={() => undoRef.current?.()}
+            onFinish={() => finishRef.current?.()}
             mode={measureMode}
             onModeChange={handleModeChange}
             baseElevation={baseElevation}
@@ -316,7 +323,7 @@ export default function App() {
             crsLabel={crsLabel()}
           />
           {/* Bottom-right overlay controls: LayerPanel + ComparePanel */}
-          <div className="absolute bottom-14 right-4 z-20 flex flex-row-reverse items-end gap-2">
+          <div className="absolute bottom-[calc(3.5rem+env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] z-20 flex flex-row-reverse items-end gap-2">
             {selectedModel && (
               <LayerPanel modelId={selectedModel.id} onLayersChange={setLayers} />
             )}
@@ -348,7 +355,7 @@ export default function App() {
             if (!txt) return null
             return (
               <div
-                className="absolute bottom-2 left-4 z-30 pointer-events-none select-none"
+                className="absolute bottom-[calc(0.5rem+env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] z-30 pointer-events-none select-none"
                 style={{ direction: 'rtl' }}
               >
                 <span

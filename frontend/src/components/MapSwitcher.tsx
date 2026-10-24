@@ -26,7 +26,7 @@ export function MapSwitcher({ value, onChange, inline = false, allowGoogle3d = f
       className={cn(
         inline
           ? 'flex rounded-xl border border-border bg-background p-[3px] gap-0.5 shrink-0'
-          : 'absolute bottom-4 right-4 z-10 flex rounded-xl overflow-hidden border border-white/[0.07] bg-[#090d0b]/80 backdrop-blur-md shadow-lg',
+          : 'map-switcher-float absolute bottom-[calc(1rem+env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] z-10 flex rounded-xl overflow-hidden border border-white/[0.07] bg-[#090d0b]/80 backdrop-blur-md shadow-lg',
       )}
     >
       {OPTIONS.filter((o) => allowGoogle3d || o.value !== 'google3d').map(({ value: v, label, shortLabel }) => (
@@ -36,7 +36,7 @@ export function MapSwitcher({ value, onChange, inline = false, allowGoogle3d = f
           aria-pressed={v === value}
           onClick={() => onChange(v)}
           className={cn(
-            'h-8 px-3 text-xs font-medium transition-all duration-200 select-none',
+            'h-8 coarse:h-11 px-2.5 min-[430px]:px-3 coarse:min-w-11 text-xs font-medium transition-all duration-200 select-none',
             inline && 'rounded-lg',
             v === value
               ? inline

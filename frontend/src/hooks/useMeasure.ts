@@ -45,6 +45,8 @@ export function useMeasure(
   heightRef?: { current: HeightRef },
   extras?: {
     undoRef?: React.MutableRefObject<(() => void) | null>
+    /** Written with a function that completes the measurement (the touch "Finish" button). */
+    finishRef?: React.MutableRefObject<(() => void) | null>
     onNotice?: (msg: string) => void
   },
 ): void {
@@ -292,10 +294,21 @@ export function useMeasure(
 
     const undoRef = extrasRef.current?.undoRef
     if (undoRef) undoRef.current = undoLast
+    const finishRef = extrasRef.current?.finishRef
+    if (finishRef) finishRef.current = () => {
+      if (finished) return
+      if (points.length < (mode === 'distance' ? 2 : 3)) {
+        extrasRef.current?.onNotice?.(mode === 'distance' ? 'Tap at least two points first.' : 'Tap at least three points first.')
+        return
+      }
+      finish()
+    }
+    const finishFn = finishRef?.current
 
     // ── Cleanup ───────────────────────────────────────────────────────────
     return () => {
       if (undoRef && undoRef.current === undoLast) undoRef.current = null
+      if (finishRef && finishRef.current === finishFn) finishRef.current = null
       handler.destroy()
       if (!v.isDestroyed()) {
         for (const e of allEntities) v.entities.remove(e)

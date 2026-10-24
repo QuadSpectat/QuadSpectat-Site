@@ -1,4 +1,5 @@
 import tailwindcssAnimate from 'tailwindcss-animate'
+import plugin from 'tailwindcss/plugin'
 
 /** @type {import('tailwindcss').Config} */
 export default {
@@ -75,5 +76,9 @@ export default {
       },
     },
   },
-  plugins: [tailwindcssAnimate],
+  plugins: [
+    tailwindcssAnimate,
+    // coarse: = primary pointer is a finger (phones, tablets); used for 44 px targets and touch wording
+    plugin(({ addVariant }) => { addVariant('coarse', '@media (pointer: coarse)') }),
+  ],
 }
