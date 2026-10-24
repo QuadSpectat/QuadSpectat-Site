@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import * as Cesium from 'cesium'
+import { prepareGlb } from '@/lib/glbNormalize'
 import 'cesium/Build/Cesium/Widgets/widgets.css'
 
 // Disable Ion so Cesium doesn't attempt Ion network calls without a token
@@ -469,72 +470,84 @@ export function CesiumViewer({
       '$1.fra1.digitaloceanspaces.com',
     )
 
-    const entity = v.entities.add({
-      name: selectedModel.name,
-      position,
-      orientation: new Cesium.ConstantProperty(
-        Cesium.Transforms.headingPitchRollQuaternion(position, hpr),
-      ),
-      model: {
-        uri: directUrl,
-        scale,
-        minimumPixelSize: 64,
-        maximumScale: 200_000,
-        shadows: Cesium.ShadowMode.ENABLED,
-      },
-    })
-
-    entityRef.current = entity
     let cancelled = false
+    let timerRef: number | undefined
+    let revoke: (() => void) | undefined
+    const build = (uri: string) => {
+      const entity = v.entities.add({
+        name: selectedModel.name,
+        position,
+        orientation: new Cesium.ConstantProperty(
+          Cesium.Transforms.headingPitchRollQuaternion(position, hpr),
+        ),
+        model: {
+          uri,
+          scale,
+          minimumPixelSize: 64,
+          maximumScale: 200_000,
+          shadows: Cesium.ShadowMode.ENABLED,
+        },
+      })
 
-    // Frame the real geometry once the model is ready (entity.flyTo can wait forever on a model that
-    // never becomes ready, and frames a 2 m view for tiny models). Before it is ready (or if it never
-    // is) Home still flies to the placement point instead of doing nothing.
-    const bs = new Cesium.BoundingSphere()
-    const modelReady = (): boolean => {
-      const vv = viewerRef.current
-      if (!vv || vv.isDestroyed() || !vv.dataSourceDisplay.ready) return false
-      try {
-        return (vv.dataSourceDisplay as unknown as {
-          getBoundingSphere: (e: Cesium.Entity, allowPartial: boolean, r: Cesium.BoundingSphere) => number
-        }).getBoundingSphere(entity, false, bs) === 0 && Number.isFinite(bs.radius)  // 0 = BoundingSphereState.DONE (not in the public typings)
-      } catch { return false }  // visualizers not created yet on the first frames
-    }
-    const fly = () => {
-      const vv = viewerRef.current
-      if (!vv || vv.isDestroyed()) return
-      if (modelReady()) {
-        vv.camera.flyToBoundingSphere(
-          new Cesium.BoundingSphere(bs.center.clone(), bs.radius),
-          { duration: 1.5, offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-35), Math.max(bs.radius * 3, 5)) },
-        )
-      } else {
-        vv.camera.flyToBoundingSphere(
-          new Cesium.BoundingSphere(position, 1),
-          { duration: 1.5, offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-35), 60) },
-        )
+      entityRef.current = entity
+
+      // Frame the real geometry once the model is ready (entity.flyTo can wait forever on a model that
+      // never becomes ready, and frames a 2 m view for tiny models). Before it is ready (or if it never
+      // is) Home still flies to the placement point instead of doing nothing.
+      const bs = new Cesium.BoundingSphere()
+      const modelReady = (): boolean => {
+        const vv = viewerRef.current
+        if (!vv || vv.isDestroyed() || !vv.dataSourceDisplay.ready) return false
+        try {
+          return (vv.dataSourceDisplay as unknown as {
+            getBoundingSphere: (e: Cesium.Entity, allowPartial: boolean, r: Cesium.BoundingSphere) => number
+          }).getBoundingSphere(entity, false, bs) === 0 && Number.isFinite(bs.radius)  // 0 = BoundingSphereState.DONE (not in the public typings)
+        } catch { return false }  // visualizers not created yet on the first frames
       }
-    }
-    fly()
-    if (resetCameraRef) resetCameraRef.current = fly
-    homeRef.current = fly
-
-    const started = Date.now()
-    const timer = window.setInterval(() => {
-      if (cancelled) { window.clearInterval(timer); return }
-      if (modelReady()) {
-        window.clearInterval(timer)
-        const far = Cesium.Cartesian3.distance(bs.center, position)
-        if (far > 5000) {
-          setTileError(`The model's geometry is ${(far / 1000).toFixed(0)} km away from its placement point (the file is not centred on its origin), so it is not drawn where you placed it. Re-export it centred, or use Edit to move the placement point.`)
+      const fly = () => {
+        const vv = viewerRef.current
+        if (!vv || vv.isDestroyed()) return
+        if (modelReady()) {
+          vv.camera.flyToBoundingSphere(
+            new Cesium.BoundingSphere(bs.center.clone(), bs.radius),
+            { duration: 1.5, offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-35), Math.max(bs.radius * 3, 5)) },
+          )
+        } else {
+          vv.camera.flyToBoundingSphere(
+            new Cesium.BoundingSphere(position, 1),
+            { duration: 1.5, offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-35), 60) },
+          )
         }
-        fly()
-      } else if (Date.now() - started > 25_000) {
-        window.clearInterval(timer)
-        setTileError('The model file was fetched but could not be displayed (still not ready after 25 s). Possible causes: the download was blocked (check the browser console / Spaces CORS), a texture or extension in the file is unsupported, or the geometry is invalid.')
       }
-    }, 300)
-    return () => { cancelled = true; window.clearInterval(timer) }
+      fly()
+      if (resetCameraRef) resetCameraRef.current = fly
+      homeRef.current = fly
+
+      const started = Date.now()
+      const timer = window.setInterval(() => {
+        if (cancelled) { window.clearInterval(timer); return }
+        if (modelReady()) {
+          window.clearInterval(timer)
+          const far = Cesium.Cartesian3.distance(bs.center, position)
+          if (far > 5000) {
+            setTileError(`The model's geometry is ${(far / 1000).toFixed(0)} km away from its placement point (the file is not centred on its origin), so it is not drawn where you placed it. Re-export it centred, or use Edit to move the placement point.`)
+          }
+          fly()
+        } else if (Date.now() - started > 25_000) {
+          window.clearInterval(timer)
+          setTileError('The model file was fetched but could not be displayed (still not ready after 25 s). Possible causes: the download was blocked (check the browser console / Spaces CORS), a texture or extension in the file is unsupported, or the geometry is invalid.')
+        }
+      }, 300)
+      timerRef = timer
+    }
+    // Normalise photogrammetry GLBs that carry a projected CESIUM_RTC centre (see glbNormalize.ts); others load as-is
+    void prepareGlb(directUrl).then((r) => {
+      if (cancelled) { r.revoke?.(); return }
+      revoke = r.revoke
+      if (r.note) onNotice(r.note)
+      build(r.url)
+    })
+    return () => { cancelled = true; if (timerRef) window.clearInterval(timerRef); revoke?.() }
   }, [selectedModel?.id, modelUrl])
 
   const googleFailed = (msg: string) => {
