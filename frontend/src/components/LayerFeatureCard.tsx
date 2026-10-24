@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useItm } from '@/lib/itm'
+import { wgs84ToItm } from '@/lib/itm'
 import type { FeatureInfo } from '@/lib/layerRender'
 
 export interface FeaturePick {
@@ -19,7 +19,6 @@ const readCrs = (): Crs => { try { return localStorage.getItem('qs-layer-coord-c
 /** Small read-only card for a clicked layer feature: name, attributes, and its coordinates in WGS84 or ITM. */
 export function LayerFeatureCard({ pick, onClose }: { pick: FeaturePick; onClose: () => void }) {
   const [crs, setCrs] = useState<Crs>(readCrs)
-  const toItm = useItm(crs === 'itm')
   const choose = (c: Crs) => { setCrs(c); try { localStorage.setItem('qs-layer-coord-crs', c) } catch { /* private mode */ } }
   const at = pick.info.anchor ?? pick.click
   const label = pick.info.kind === 'point' ? 'Point' : 'Clicked at'
@@ -65,10 +64,10 @@ export function LayerFeatureCard({ pick, onClose }: { pick: FeaturePick; onClose
         {!at ? (
           <p className="text-[10px] font-mono text-white/40 mt-1">No position</p>
         ) : crs === 'itm' ? (
-          toItm ? (() => {
-            const { easting, northing } = toItm(at.lon, at.lat)
+          (() => {
+            const { easting, northing } = wgs84ToItm(at.lat, at.lon)
             return <p data-testid="coord-itm" className="text-[11px] font-mono text-white/85 mt-1" title="Israeli TM Grid (EPSG:2039)">E&nbsp;{fmt(easting, 2)}&nbsp;&nbsp;N&nbsp;{fmt(northing, 2)}</p>
-          })() : <p className="text-[10px] font-mono text-white/40 mt-1">Loading…</p>
+          })()
         ) : (
           <p data-testid="coord-wgs84" className="text-[11px] font-mono text-white/85 mt-1" title="WGS84">{fmt(at.lat, 6)}°&nbsp;{fmt(at.lon, 6)}°</p>
         )}
