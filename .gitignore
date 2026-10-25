@@ -5,3 +5,12 @@ dist
 *.tsbuildinfo
 .venv
 __pycache__/
+
+# local databases / scratch (never commit)
+backend/data/*.db
+backend/data/*.db-*
+*.pyc
+probe*.png
+.env.*
+!.env.example
+!.env.local.example
