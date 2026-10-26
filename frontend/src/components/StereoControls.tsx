@@ -130,7 +130,7 @@ export function StereoPanelBody() {
       <div className={cn('flex flex-col gap-4', off && 'opacity-40 pointer-events-none')}>
         <SliderRow label="depth" value={st.sep} min={SEP_MIN} max={SEP_MAX} step={0.1}
           text={st.sep === 0 ? 'flat' : st.sep.toFixed(1)} onChange={(v) => setStereo({ sep: v })} />
-        <SliderRow label="pop" value={st.pop} min={0} max={2} step={0.05}
+        <SliderRow label="pop" value={st.pop} min={0} max={4} step={0.05}
           text={`${Math.round(st.pop * 100)}%`} onChange={(v) => setStereo({ pop: v })} />
         <div className="flex gap-2">
           <button
