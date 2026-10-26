@@ -14,7 +14,7 @@ export interface StereoSettings {
    * and far parallax are always held under MAX_PARALLAX, so a high value cannot strain the eyes beyond that limit.
    */
   sep: number
-  /** 0 to 1: how far the zero-parallax plane sits behind the model. 0 = model behind the screen, 1 = the whole model pops out in front of it */
+  /** 0 to 2: how far the zero-parallax plane sits behind the model. 0 = model mostly behind the screen, 1 = the whole model in front of it, 2 = far in front */
   pop: number
   /** Exchange which eye feeds the red and the cyan channel (glasses worn the other way round) */
   swap: boolean
@@ -34,7 +34,7 @@ export interface StereoState extends StereoSettings {
   boost: number
 }
 
-export const DEFAULT_STEREO: StereoSettings = { sep: 1, pop: 0.6, swap: false, comfort: false }
+export const DEFAULT_STEREO: StereoSettings = { sep: 1, pop: 1, swap: false, comfort: false }
 export const SEP_MIN = 0, SEP_MAX = 3   // percent of viewing distance; the owner's eyes fused at 0.5 % and saw double above about 1 %
 
 const KEY = 'qs.stereo'
@@ -45,7 +45,7 @@ function readStored(): StereoSettings {
     const num = (v: unknown, lo: number, hi: number, d: number) => (typeof v === 'number' && v >= lo && v <= hi ? v : d)
     return {
       sep: num(j.sep, SEP_MIN, SEP_MAX, DEFAULT_STEREO.sep),
-      pop: num(j.pop, 0, 1, DEFAULT_STEREO.pop),
+      pop: num(j.pop, 0, 2, DEFAULT_STEREO.pop),
       swap: j.swap === true,
       comfort: j.comfort === true,
     }
