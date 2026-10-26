@@ -1,9 +1,11 @@
-import { Ruler, Eye, SlidersHorizontal, Layers } from 'lucide-react'
+import { Ruler, Eye, SlidersHorizontal, Layers, Glasses } from 'lucide-react'
 import { BottomSheet } from '@/components/BottomSheet'
 import type { SheetTab } from '@/components/BottomSheet'
 import { MeasureToolbar } from '@/components/MeasureToolbar'
 import { VisualPanelBody } from '@/components/VisualControls'
 import { ViewsPanel } from '@/components/ViewsPanel'
+import { StereoPanelBody } from '@/components/StereoControls'
+import { useStereoState } from '@/lib/anaglyph'
 import type { ViewApi } from '@/lib/views'
 import type { VisualSettings } from '@/lib/visualControls'
 
@@ -20,6 +22,7 @@ interface Props {
 
 /** The Visual / Views / Measurements panels as one bottom sheet (phones). Desktop keeps its floating panels. */
 export function PhonePanels({ measure, visual, views, layers }: Props) {
+  const stereo = useStereoState()
   const short = measure.result ? measure.result.replace(/^[^0-9-]*/, '').slice(0, 14) : undefined
   const tabs: SheetTab[] = [
     {
@@ -46,6 +49,10 @@ export function PhonePanels({ measure, visual, views, layers }: Props) {
   tabs.push({
     id: 'visual', label: 'Visual', icon: <SlidersHorizontal size={14} strokeWidth={1.9} />,
     content: <div className="flex flex-col gap-4"><VisualPanelBody {...visual} /></div>,
+  })
+  tabs.push({
+    id: 'stereo', label: '3D', icon: <Glasses size={14} strokeWidth={1.9} />, badge: stereo.on && !stereo.blocked ? (stereo.paused ? '||' : 'ON') : undefined,
+    content: <div className="flex flex-col gap-4"><StereoPanelBody /></div>,
   })
   return <BottomSheet tabs={tabs} label="Viewer panels" />
 }

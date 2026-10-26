@@ -6,6 +6,7 @@ import { DEFAULT_VISUAL } from '@/lib/visualControls'
 import { WheelSlider } from '@/components/WheelSlider'
 import { useQualityMode } from '@/lib/deviceProfile'
 import { usePhoneLayout } from '@/hooks/usePhoneLayout'
+import { StereoPill, StereoPanelBody } from '@/components/StereoControls'
 
 interface Props {
   settings: VisualSettings
@@ -144,17 +145,20 @@ export function VisualPanelBody({ settings, onChange, onSnapToGround, crsLabel }
 }
 
 export function VisualControls({ settings, onChange, onSnapToGround, crsLabel }: Props) {
-  const [open, setOpen] = useState(false)
+  const [panel, setPanel] = useState<'visual' | 'stereo' | null>(null)   // one popover at a time
+  const open = panel === 'visual'
   const phone = usePhoneLayout()
   if (phone) return null   // phones get these controls in the bottom sheet
 
   return (
     // flex-col-reverse: first child (button) sits at physical bottom, second child (panel) grows upward
     <div className="absolute bottom-[calc(2.5rem+env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] z-10 flex flex-col-reverse items-start gap-2">
-      {/* Toggle button - rendered FIRST so it sits at the bottom */}
+      {/* Toggle buttons - rendered FIRST so they sit at the bottom */}
+      {/* side by side; stacked on mid-size screens so the 3D button never covers the measuring dock */}
+      <div className="flex items-center gap-2 max-[959px]:flex-col-reverse max-[959px]:items-start">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setPanel(open ? null : 'visual')}
         className={cn(
           'flex items-center gap-2 h-8 coarse:h-11 px-3 rounded-xl text-xs font-medium select-none',
           'bg-[#090d0b]/80 backdrop-blur-md border shadow-lg transition-all duration-200',
@@ -167,11 +171,18 @@ export function VisualControls({ settings, onChange, onSnapToGround, crsLabel }:
         <span>Visual</span>
         {open ? <ChevronDown className="w-3 h-3 opacity-60" /> : <ChevronUp className="w-3 h-3 opacity-40" />}
       </button>
+      <StereoPill open={panel === 'stereo'} onToggleOpen={() => setPanel(panel === 'stereo' ? null : 'stereo')} />
+      </div>
 
       {/* Panel - rendered SECOND so it appears above the button */}
       {open && (
         <div className="w-64 max-h-[calc(100dvh-12rem)] overflow-y-auto rounded-2xl border border-white/[0.15] bg-[#0b100d]/[0.97] backdrop-blur-xl shadow-2xl shadow-black/80 p-4 flex flex-col gap-4">
           <VisualPanelBody settings={settings} onChange={onChange} onSnapToGround={onSnapToGround} crsLabel={crsLabel} />
+        </div>
+      )}
+      {panel === 'stereo' && (
+        <div className="w-64 max-h-[calc(100dvh-12rem)] overflow-y-auto rounded-2xl border border-white/[0.15] bg-[#0b100d]/[0.97] backdrop-blur-xl shadow-2xl shadow-black/80 p-4 flex flex-col gap-4">
+          <StereoPanelBody />
         </div>
       )}
     </div>
