@@ -175,6 +175,13 @@ def _external_env(gdal_bin: str) -> dict:
     env["PATH"] = gdal_bin + os.pathsep + env.get("PATH", "")
     for k in ("GDAL_DATA", "PROJ_DATA", "PROJ_LIB", "GDAL_DRIVER_PATH"):  # do not leak the conda env's data
         env.pop(k, None)
+    # QGIS keeps its drivers (ECW) and data outside bin\; its own launchers set these, so do the same
+    root = Path(gdal_bin).parent
+    for key, sub in (("GDAL_DRIVER_PATH", r"apps\gdal\lib\gdalplugins"), ("GDAL_DATA", r"apps\gdal\share\gdal"),
+                     ("PROJ_DATA", r"share\proj")):
+        d = root / sub
+        if d.is_dir():
+            env[key] = str(d)
     return env
 
 
