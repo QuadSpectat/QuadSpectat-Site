@@ -11,7 +11,7 @@
     "build:shared": "vite build && node scripts/postbuild-prefix.mjs"
   },
   "dependencies": {
-    "cesium": "^1.125.0",
+    "cesium": "1.141.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "fflate": "^0.8.3",

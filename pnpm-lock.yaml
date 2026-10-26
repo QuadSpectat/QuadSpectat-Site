@@ -84,7 +84,7 @@ importers:
   frontend:
     dependencies:
       cesium:
-        specifier: ^1.125.0
+        specifier: 1.141.0
         version: 1.141.0
       class-variance-authority:
         specifier: ^0.7.1
