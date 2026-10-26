@@ -514,20 +514,24 @@ function CesiumViewerInner({
       if (resetCameraRef) resetCameraRef.current = fly
       homeRef.current = fly
 
-      const started = Date.now()
+      // The 25 s are counted only while the tab is visible (a background tab draws no frames, so the model cannot get ready),
+      // and the timer keeps running after the message: if the model does become ready, the message is taken back.
+      const notReadyMsg = 'The model file was fetched but could not be displayed (still not ready after 25 s). Possible causes: the download was blocked (check the browser console / Spaces CORS), a texture or extension in the file is unsupported, or the geometry is invalid.'
+      let visibleMs = 0
       const timer = window.setInterval(() => {
         if (cancelled) { window.clearInterval(timer); return }
         if (modelReady()) {
           window.clearInterval(timer)
+          setTileError((cur) => (cur === notReadyMsg ? null : cur))
           stereoSphereRef.current = new Cesium.BoundingSphere(bs.center.clone(), bs.radius)
           const far = Cesium.Cartesian3.distance(bs.center, position)
           if (far > 5000) {
             setTileError(`The model's geometry is ${(far / 1000).toFixed(0)} km away from its placement point (the file is not centred on its origin), so it is not drawn where you placed it. Re-export it centred, or use Edit to move the placement point.`)
           }
           fly()
-        } else if (Date.now() - started > 25_000) {
-          window.clearInterval(timer)
-          setTileError('The model file was fetched but could not be displayed (still not ready after 25 s). Possible causes: the download was blocked (check the browser console / Spaces CORS), a texture or extension in the file is unsupported, or the geometry is invalid.')
+        } else if (!document.hidden) {
+          visibleMs += 300
+          if (visibleMs > 25_000 && visibleMs <= 25_300) setTileError(notReadyMsg)
         }
       }, 300)
       timerRef = timer
