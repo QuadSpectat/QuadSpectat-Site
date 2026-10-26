@@ -132,6 +132,8 @@ export function StereoPanelBody() {
           text={st.sep === 0 ? 'flat' : st.sep.toFixed(1)} onChange={(v) => setStereo({ sep: v })} />
         <SliderRow label="pop" value={st.pop} min={0} max={4} step={0.05}
           text={`${Math.round(st.pop * 100)}%`} onChange={(v) => setStereo({ pop: v })} />
+        <SliderRow label="ghost" value={st.ghost} min={0} max={1} step={0.05}
+          text={`${Math.round(st.ghost * 100)}%`} onChange={(v) => setStereo({ ghost: v })} />
         <div className="flex gap-2">
           <button
             type="button" aria-pressed={st.swap} onClick={() => setStereo({ swap: !st.swap })}

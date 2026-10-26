@@ -16,6 +16,8 @@ export interface StereoSettings {
   sep: number
   /** 0 to 4: how far the zero-parallax plane sits behind the model. 0 = model mostly behind the screen, 1 = the whole model in front of it, up to 4 = far in front */
   pop: number
+  /** 0 to 1: ghost reduction for glasses that leak (e.g. red/blue): takes this fraction of the blue away from red */
+  ghost: number
   /** Exchange which eye feeds the red and the cyan channel (glasses worn the other way round) */
   swap: boolean
   /** false = Colour (Dubois matrices), true = Comfort (half-colour, less rivalry) */
@@ -34,8 +36,8 @@ export interface StereoState extends StereoSettings {
   boost: number
 }
 
-export const DEFAULT_STEREO: StereoSettings = { sep: 1, pop: 1, swap: false, comfort: false }
-export const SEP_MIN = 0, SEP_MAX = 3   // percent of viewing distance; the owner's eyes fused at 0.5 % and saw double above about 1 %
+export const DEFAULT_STEREO: StereoSettings = { sep: 3, pop: 2.5, ghost: 0, swap: false, comfort: false }
+export const SEP_MIN = 0, SEP_MAX = 6   // percent of viewing distance; the owner's eyes fused at 0.5 % and saw double above about 1 %
 
 const KEY = 'qs.stereo'
 
@@ -46,6 +48,7 @@ function readStored(): StereoSettings {
     return {
       sep: num(j.sep, SEP_MIN, SEP_MAX, DEFAULT_STEREO.sep),
       pop: num(j.pop, 0, 4, DEFAULT_STEREO.pop),
+      ghost: num(j.ghost, 0, 1, DEFAULT_STEREO.ghost),
       swap: j.swap === true,
       comfort: j.comfort === true,
     }
@@ -60,7 +63,7 @@ export function getStereo(): StereoState { return state }
 export function setStereo(patch: Partial<StereoState>): void {
   state = { ...state, ...patch }
   if ('boost' in patch) setSseBoost(state.boost)
-  const keep: (keyof StereoSettings)[] = ['sep', 'pop', 'swap', 'comfort']
+  const keep: (keyof StereoSettings)[] = ['sep', 'pop', 'ghost', 'swap', 'comfort']
   if (keep.some((k) => k in patch)) {
     try { localStorage.setItem(KEY, JSON.stringify(Object.fromEntries(keep.map((k) => [k, state[k]])))) } catch { /* private mode */ }
   }
@@ -79,6 +82,7 @@ export const T = {
   paused: { he: 'מושהה', en: 'Paused' },
   depth: { he: 'עומק', en: 'Depth' },
   pop: { he: 'בליטה החוצה', en: 'Pop out' },
+  ghost: { he: 'הפחתת רפאים', en: 'Ghost reduction' },
   swap: { he: 'החלף עיניים', en: 'Swap eyes' },
   test: { he: 'תמונת בדיקה', en: 'Test image' },
   look: { he: 'מראה', en: 'Look' },
@@ -177,6 +181,7 @@ uniform vec2 u_px;
 uniform float u_shift;
 uniform float u_swap;
 uniform float u_comfort;
+uniform float u_ghost;
 const mat3 ML = mat3(0.456100, -0.0400822, -0.0152161, 0.500484, -0.0378246, -0.0205971, 0.176381, -0.0157589, -0.00546856);
 const mat3 MR = mat3(-0.0434706, 0.378476, -0.0721527, -0.0879388, 0.73364, -0.112961, -0.00155529, -0.0184503, 1.2264);
 void main() {
@@ -187,6 +192,9 @@ void main() {
     vec3 L = mix(b, a, u_swap);
     vec3 R = mix(a, b, u_swap);
     vec3 o = u_comfort > 0.5 ? vec3(dot(L, vec3(0.299, 0.587, 0.114)), R.g, R.b) : ML * L + MR * R;
-    out_FragColor = vec4(clamp(o * 1.15, 0.0, 1.0), 1.0);
+    o = clamp(o * 1.15, 0.0, 1.0);
+    // glasses whose red lens lets blue through (red/blue film): take that part away from the red channel before it reaches the eye
+    o.r = max(o.r - u_ghost * o.b, 0.0);
+    out_FragColor = vec4(o, 1.0);
 }
 `
