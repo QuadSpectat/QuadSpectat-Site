@@ -6,6 +6,8 @@ import 'cesium/Build/Cesium/Widgets/widgets.css'
 // Disable Ion so Cesium doesn't attempt Ion network calls without a token
 Cesium.Ion.defaultAccessToken = ''
 import { useMeasure } from '@/hooks/useMeasure'
+import { useStereo } from '@/hooks/useStereo'
+import { useStereoState } from '@/lib/anaglyph'
 import { useGeopoints } from '@/hooks/useGeopoints'
 import { ProfilePanel } from '@/components/ProfilePanel'
 import type { Profile } from '@/lib/profile'
@@ -210,6 +212,8 @@ function CesiumViewerInner({
   // Overlay model for time-comparison
   const overlayEntityRef  = useRef<Cesium.Entity | null>(null)
   const overlayTilesetRef = useRef<Cesium.Cesium3DTileset | null>(null)
+  // Bounding sphere of the open model: red/cyan 3D takes its focus distance and eye separation from it
+  const stereoSphereRef = useRef<Cesium.BoundingSphere | null>(null)
 
   // Keep a ref so shader uniform getters always read the latest values
   const visualRef = useRef<VisualSettings>(visualSettings)
@@ -371,6 +375,7 @@ function CesiumViewerInner({
     const v = viewerRef.current
     if (!v) return
 
+    stereoSphereRef.current = null
     // Remove previous glTF entity
     if (entityRef.current) {
       v.entities.remove(entityRef.current)
@@ -415,6 +420,7 @@ function CesiumViewerInner({
         applyHeightOffset(tileset, geoidOffset + visualRef.current.heightOffset)
         const shift = Cesium.Cartesian3.subtract(tileset.boundingSphere.center, rootBefore, new Cesium.Cartesian3())
         const focus = contentSphere(tileset, shift)
+        stereoSphereRef.current = focus
         // First view: set the camera immediately (no flight over a half-loaded scene); Home flies back to the same framing.
         vv.camera.viewBoundingSphere(focus, frameOffset(vv, focus))
         vv.camera.lookAtTransform(Cesium.Matrix4.IDENTITY)   // viewBoundingSphere leaves the camera in the sphere's local frame
@@ -513,6 +519,7 @@ function CesiumViewerInner({
         if (cancelled) { window.clearInterval(timer); return }
         if (modelReady()) {
           window.clearInterval(timer)
+          stereoSphereRef.current = new Cesium.BoundingSphere(bs.center.clone(), bs.radius)
           const far = Cesium.Cartesian3.distance(bs.center, position)
           if (far > 5000) {
             setTileError(`The model's geometry is ${(far / 1000).toFixed(0)} km away from its placement point (the file is not centred on its origin), so it is not drawn where you placed it. Re-export it centred, or use Edit to move the placement point.`)
@@ -613,6 +620,7 @@ function CesiumViewerInner({
 
   // Performance profile (phone Light mode / High quality): canvas resolution, MSAA, fog, globe budget
   const perf = usePerformanceProfile(viewer)
+  const stereoBoost = useStereoState().boost   // phones: coarser tiles while 3D glasses are on
   // Sync LOD + memory budget to the tilesets whenever quality or the profile changes
   useEffect(() => {
     const sse = effectiveSse(qualityToSSE(visualSettings.quality), perf)
@@ -627,7 +635,7 @@ function CesiumViewerInner({
     const vs = visualSettings
     const neutral = vs.exposure === 0 && vs.brightness === 0 && vs.contrast === 0 && vs.temperature === 0 && vs.saturation === 0
     if (ccStageRef.current) ccStageRef.current.enabled = perf.postProcessWhenNeutral || !neutral
-  }, [visualSettings, perf.mode, viewer])
+  }, [visualSettings, perf.mode, viewer, stereoBoost])
 
   // Re-apply height offset whenever the slider or model changes
   useEffect(() => {
@@ -894,6 +902,11 @@ function CesiumViewerInner({
   const gpu = useContextLoss(viewer, recover)
   useMeasure(viewer, googleShown ? 'none' : measureMode, baseElevation, measureKey, onMeasureResult, heightRef, { undoRef, finishRef, onNotice, onProfile: setProfile })
   useGeopoints(viewer, geopointActive && !googleShown, geopoints, onGeopointAdd ?? (() => {}), heightRef, { onNotice })
+  // Red/cyan 3D glasses (waits while a tool is active; off for Google 3D and for pages without a 3D model)
+  useStereo(viewer, {
+    sphereRef: stereoSphereRef, toolActive: toolWanted, googleShown, hasModel: !!selectedModel, onNotice,
+    flatMap: baseMap !== 'none' || orthophotos.some((p) => p.status === 'ready' && p.visible),
+  })
 
   // Sync KML/overlay layers.
   // Each layer is loaded once per key (file + placement mode + retry counter). Afterwards ONLY what changed is touched:
