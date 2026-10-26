@@ -123,8 +123,12 @@ export function currentProfile(): PerfProfile { return buildProfile(mode, detect
 
 /** Cesium maximumScreenSpaceError for the Detail slider value under the current profile. */
 export function effectiveSse(baseSse: number, profile: PerfProfile = currentProfile()): number {
-  return Math.min(128, Math.max(1, Math.round(baseSse * profile.sseFactor)))
+  return Math.min(128, Math.max(1, Math.round(baseSse * profile.sseFactor * sseBoost)))
 }
+
+/** Extra screen-space-error multiplier while red/cyan 3D is on (phones: the tilesets are drawn twice). 1 = none. */
+let sseBoost = 1
+export function setSseBoost(f: number): void { sseBoost = f }
 
 /** Constructor options for a Cesium3DTileset that carry the memory budget. */
 export function tilesetMemoryOptions(profile: PerfProfile = currentProfile()): { cacheBytes?: number; maximumCacheOverflowBytes?: number } {
