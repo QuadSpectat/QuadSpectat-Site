@@ -14,6 +14,8 @@ export interface StereoSettings {
    * and far parallax are always held under MAX_PARALLAX, so a high value cannot strain the eyes beyond that limit.
    */
   sep: number
+  /** 0 to 1: how far the zero-parallax plane sits behind the model. 0 = model behind the screen, 1 = the whole model pops out in front of it */
+  pop: number
   /** Exchange which eye feeds the red and the cyan channel (glasses worn the other way round) */
   swap: boolean
   /** false = Colour (Dubois matrices), true = Comfort (half-colour, less rivalry) */
@@ -32,7 +34,7 @@ export interface StereoState extends StereoSettings {
   boost: number
 }
 
-export const DEFAULT_STEREO: StereoSettings = { sep: 1, swap: false, comfort: false }
+export const DEFAULT_STEREO: StereoSettings = { sep: 1, pop: 0.6, swap: false, comfort: false }
 export const SEP_MIN = 0, SEP_MAX = 3   // percent of viewing distance; the owner's eyes fused at 0.5 % and saw double above about 1 %
 
 const KEY = 'qs.stereo'
@@ -43,6 +45,7 @@ function readStored(): StereoSettings {
     const num = (v: unknown, lo: number, hi: number, d: number) => (typeof v === 'number' && v >= lo && v <= hi ? v : d)
     return {
       sep: num(j.sep, SEP_MIN, SEP_MAX, DEFAULT_STEREO.sep),
+      pop: num(j.pop, 0, 1, DEFAULT_STEREO.pop),
       swap: j.swap === true,
       comfort: j.comfort === true,
     }
@@ -57,7 +60,7 @@ export function getStereo(): StereoState { return state }
 export function setStereo(patch: Partial<StereoState>): void {
   state = { ...state, ...patch }
   if ('boost' in patch) setSseBoost(state.boost)
-  const keep: (keyof StereoSettings)[] = ['sep', 'swap', 'comfort']
+  const keep: (keyof StereoSettings)[] = ['sep', 'pop', 'swap', 'comfort']
   if (keep.some((k) => k in patch)) {
     try { localStorage.setItem(KEY, JSON.stringify(Object.fromEntries(keep.map((k) => [k, state[k]])))) } catch { /* private mode */ }
   }
@@ -75,6 +78,7 @@ export const T = {
   off: { he: 'כבוי', en: 'Off' },
   paused: { he: 'מושהה', en: 'Paused' },
   depth: { he: 'עומק', en: 'Depth' },
+  pop: { he: 'בליטה החוצה', en: 'Pop out' },
   swap: { he: 'החלף עיניים', en: 'Swap eyes' },
   test: { he: 'תמונת בדיקה', en: 'Test image' },
   look: { he: 'מראה', en: 'Look' },
@@ -115,19 +119,23 @@ export const bi = (k: TextKey): string => `${T[k].he} / ${T[k].en}`
 // ── Depth maths (pure) ───────────────────────────────────────────────────────
 const MAX_PARALLAX = 0.014     // 0.8 degrees in radians: the model's own near-to-far parallax is held under this (1.5 degrees looked double to the owner)
 
-/** Zero-parallax distance (m): a little in front of the model centre so most of the model sits at or behind the screen. */
-export function focusDistance(cameraToCentre: number, radius: number): number {
-  return Math.max(cameraToCentre - 0.5 * radius, 2)
+/**
+ * Zero-parallax distance (m), i.e. where the model meets the screen plane. pop 0: half a radius in front of the model centre
+ * (most of the model behind the screen); pop 1: one radius behind the centre, so the whole model floats in front of the screen.
+ */
+export function focusDistance(cameraToCentre: number, radius: number, pop: number): number {
+  return Math.max(cameraToCentre + (1.5 * pop - 0.5) * radius, 2)
 }
 
 /**
- * Eye separation (m) for focus distance D and a model of the given radius: `sep` percent of D, then reduced so the
- * model's near and far parallax stay under MAX_PARALLAX (the ground and horizon beyond the model are ignored on purpose).
+ * Eye separation (m) for focus distance D, a model of the given radius at `centreDist` from the camera: `sep` percent of D,
+ * then reduced so the model's near and far parallax stay under MAX_PARALLAX (the ground and horizon beyond the model are
+ * ignored on purpose).
  */
-export function eyeSeparation(D: number, radius: number, s: Pick<StereoSettings, 'sep'>): number {
+export function eyeSeparation(D: number, centreDist: number, radius: number, s: Pick<StereoSettings, 'sep'>): number {
   const e = (D * s.sep) / 100
-  const near = Math.max(D - radius, 0.3 * D), far = D + radius
-  const theta = e * Math.max(1 / near - 1 / D, 1 / D - 1 / far)
+  const near = Math.max(centreDist - radius, 0.3 * Math.min(D, centreDist)), far = centreDist + radius
+  const theta = e * Math.max(Math.abs(1 / near - 1 / D), Math.abs(1 / D - 1 / far))
   return theta > MAX_PARALLAX ? (e * MAX_PARALLAX) / theta : e
 }
 

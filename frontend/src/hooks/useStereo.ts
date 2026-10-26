@@ -92,8 +92,9 @@ function startStereo(v: Cesium.Viewer, sphereRef: Options['sphereRef'], phone: b
     last = now
     const sph = sphereRef.current
     if (!sph) return
-    const D = focusDistance(Cesium.Cartesian3.distance(camera.positionWC, sph.center), sph.radius)
-    const e = eyeSeparation(D, sph.radius, getStereo())
+    const dist = Cesium.Cartesian3.distance(camera.positionWC, sph.center)
+    const D = focusDistance(dist, sph.radius, getStereo().pop)
+    const e = eyeSeparation(D, dist, sph.radius, getStereo())
     if (!cur || sph !== lastSphere) cur = { D, e }   // first frame or a new model: no easing
     else {
       const k = 1 - Math.exp(-dt / 150)
