@@ -4,7 +4,7 @@ import { Glasses, ChevronUp, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { WheelSlider } from '@/components/WheelSlider'
 import { detectDevice } from '@/lib/deviceProfile'
-import { EYE_MAX, EYE_MIN, T, bi, setStereo, useStereoState } from '@/lib/anaglyph'
+import { SEP_MAX, SEP_MIN, T, bi, setStereo, useStereoState } from '@/lib/anaglyph'
 import type { TextKey } from '@/lib/anaglyph'
 
 /** Label with both languages, Hebrew first. bdi keeps the two scripts from reordering each other. */
@@ -23,12 +23,12 @@ function Note({ he, en, className }: { he: string; en: string; className?: strin
 }
 
 /** Same look as the Visual sliders; always left-to-right so the thumb moves the way the number grows. */
-function SliderRow({ label, value, min, max, step, text, onChange, dim }: {
-  label: TextKey; value: number; min: number; max: number; step: number; text: string; onChange: (v: number) => void; dim?: boolean
+function SliderRow({ label, value, min, max, step, text, onChange, }: {
+  label: TextKey; value: number; min: number; max: number; step: number; text: string; onChange: (v: number) => void
 }) {
   const pct = ((value - min) / (max - min)) * 100
   return (
-    <div dir="ltr" className={cn('flex flex-col gap-1.5', dim && 'opacity-40')}>
+    <div dir="ltr" className={'flex flex-col gap-1.5'}>
       <div className="flex justify-between items-center">
         <span className="text-[10px] font-semibold tracking-widest uppercase text-white/60"><Bi k={label} /></span>
         <span className="text-[11px] font-mono text-[#b8e05c]">{text}</span>
@@ -128,16 +128,8 @@ export function StereoPanelBody() {
       </button>
       {reason && <Note he={T[reason].he} en={T[reason].en} className="text-amber-200/80" />}
       <div className={cn('flex flex-col gap-4', off && 'opacity-40 pointer-events-none')}>
-        <SliderRow label="depth" value={st.depth} min={0} max={1.5} step={0.05} dim={!st.auto}
-          text={`${Math.round(st.depth * 100)}%`} onChange={(v) => setStereo({ depth: v })} />
-        <div className="flex flex-col gap-1.5">
-          <SliderRow label="eye" value={st.eye} min={EYE_MIN} max={EYE_MAX} step={0.1} dim={st.auto}
-            text={st.auto ? 'auto' : `${st.eye.toFixed(1)}% ${T.ofDistance.en}`} onChange={(v) => setStereo({ eye: v, auto: false })} />
-          <button
-            type="button" aria-pressed={st.auto} onClick={() => setStereo({ auto: !st.auto })}
-            className={cn('h-7 coarse:h-11 rounded-lg text-[11px] border select-none', st.auto ? 'border-[#9ACD3C]/50 text-[#b8e05c] bg-[#9ACD3C]/15' : 'border-white/[0.15] text-white/60')}
-          ><Bi k="auto" /></button>
-        </div>
+        <SliderRow label="depth" value={st.sep} min={SEP_MIN} max={SEP_MAX} step={0.1}
+          text={st.sep === 0 ? 'flat' : st.sep.toFixed(1)} onChange={(v) => setStereo({ sep: v })} />
         <div className="flex gap-2">
           <button
             type="button" aria-pressed={st.swap} onClick={() => setStereo({ swap: !st.swap })}

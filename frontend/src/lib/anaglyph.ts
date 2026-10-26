@@ -2,22 +2,18 @@
  * Red/cyan anaglyph 3D: settings store, texts, shader and the depth maths. A presentation aid only (INDICATIVE):
  * nothing here is for measuring. The Cesium side lives in hooks/useStereo.ts.
  *
- * "On" is never saved (every visit starts flat); depth, eye distance, swap and look are remembered in `qs.stereo`.
+ * "On" is never saved (every visit starts flat); depth, swap and look are remembered in `qs.stereo`.
  */
 import { useSyncExternalStore } from 'react'
 import { setSseBoost } from '@/lib/deviceProfile'
 
 export interface StereoSettings {
-  /** Multiplier of the automatic eye separation, 0 (flat) to 1.5 */
-  depth: number
-  /** true = separation is automatic (focus distance / 30 x depth); false = `eye` is used directly */
-  auto: boolean
   /**
-   * Manual eye separation as PERCENT OF THE VIEWING DISTANCE (distance to the zero-parallax plane). Chosen over
-   * millimetres or % of model size because it keeps the depth feel the same while zooming and orbiting, and the
-   * automatic value is then simply "3.3 %" (1/30), so the owner can compare the two directly.
+   * Eye separation as PERCENT OF THE VIEWING DISTANCE (distance to the zero-parallax plane). Chosen over millimetres or
+   * % of model size because it keeps the depth feel the same while zooming and orbiting. 0 = flat. The model's own near
+   * and far parallax are always held under MAX_PARALLAX, so a high value cannot strain the eyes beyond that limit.
    */
-  eye: number
+  sep: number
   /** Exchange which eye feeds the red and the cyan channel (glasses worn the other way round) */
   swap: boolean
   /** false = Colour (Dubois matrices), true = Comfort (half-colour, less rivalry) */
@@ -36,8 +32,8 @@ export interface StereoState extends StereoSettings {
   boost: number
 }
 
-export const DEFAULT_STEREO: StereoSettings = { depth: 1, auto: true, eye: 100 / 30, swap: false, comfort: false }
-export const EYE_MIN = 0.5, EYE_MAX = 6   // percent of viewing distance (Bourke: 1/30 = 3.3 %, upper limit 1/20 = 5 %)
+export const DEFAULT_STEREO: StereoSettings = { sep: 1, swap: false, comfort: false }
+export const SEP_MIN = 0, SEP_MAX = 3   // percent of viewing distance; the owner's eyes fused at 0.5 % and saw double above about 1 %
 
 const KEY = 'qs.stereo'
 
@@ -46,9 +42,7 @@ function readStored(): StereoSettings {
     const j = JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<StereoSettings>
     const num = (v: unknown, lo: number, hi: number, d: number) => (typeof v === 'number' && v >= lo && v <= hi ? v : d)
     return {
-      depth: num(j.depth, 0, 1.5, DEFAULT_STEREO.depth),
-      auto: typeof j.auto === 'boolean' ? j.auto : DEFAULT_STEREO.auto,
-      eye: num(j.eye, EYE_MIN, EYE_MAX, DEFAULT_STEREO.eye),
+      sep: num(j.sep, SEP_MIN, SEP_MAX, DEFAULT_STEREO.sep),
       swap: j.swap === true,
       comfort: j.comfort === true,
     }
@@ -63,7 +57,7 @@ export function getStereo(): StereoState { return state }
 export function setStereo(patch: Partial<StereoState>): void {
   state = { ...state, ...patch }
   if ('boost' in patch) setSseBoost(state.boost)
-  const keep: (keyof StereoSettings)[] = ['depth', 'auto', 'eye', 'swap', 'comfort']
+  const keep: (keyof StereoSettings)[] = ['sep', 'swap', 'comfort']
   if (keep.some((k) => k in patch)) {
     try { localStorage.setItem(KEY, JSON.stringify(Object.fromEntries(keep.map((k) => [k, state[k]])))) } catch { /* private mode */ }
   }
@@ -81,9 +75,6 @@ export const T = {
   off: { he: 'כבוי', en: 'Off' },
   paused: { he: 'מושהה', en: 'Paused' },
   depth: { he: 'עומק', en: 'Depth' },
-  eye: { he: 'מרחק עיניים', en: 'Eye distance' },
-  auto: { he: 'אוטומטי', en: 'Auto' },
-  ofDistance: { he: 'מהמרחק', en: 'of distance' },
   swap: { he: 'החלף עיניים', en: 'Swap eyes' },
   test: { he: 'תמונת בדיקה', en: 'Test image' },
   look: { he: 'מראה', en: 'Look' },
@@ -122,8 +113,7 @@ export type TextKey = keyof typeof T
 export const bi = (k: TextKey): string => `${T[k].he} / ${T[k].en}`
 
 // ── Depth maths (pure) ───────────────────────────────────────────────────────
-const AUTO_EYE = 1 / 30        // Bourke's rule of thumb: eye separation = zero-parallax distance / 30
-const MAX_PARALLAX = 0.0262    // 1.5 degrees in radians: keep the model's own depth range under this
+const MAX_PARALLAX = 0.014     // 0.8 degrees in radians: the model's own near-to-far parallax is held under this (1.5 degrees looked double to the owner)
 
 /** Zero-parallax distance (m): a little in front of the model centre so most of the model sits at or behind the screen. */
 export function focusDistance(cameraToCentre: number, radius: number): number {
@@ -131,13 +121,11 @@ export function focusDistance(cameraToCentre: number, radius: number): number {
 }
 
 /**
- * Eye separation (m) for focus distance D and a model of the given radius. Automatic: D/30 x depth, then reduced so the
- * model's near and far parallax stay under 1.5 degrees (the ground and horizon beyond the model are ignored on purpose).
- * Manual: exactly `eye` percent of D; the owner chose it, so it is not clamped.
+ * Eye separation (m) for focus distance D and a model of the given radius: `sep` percent of D, then reduced so the
+ * model's near and far parallax stay under MAX_PARALLAX (the ground and horizon beyond the model are ignored on purpose).
  */
-export function eyeSeparation(D: number, radius: number, s: Pick<StereoSettings, 'depth' | 'auto' | 'eye'>): number {
-  if (!s.auto) return (D * s.eye) / 100
-  const e = D * AUTO_EYE * s.depth
+export function eyeSeparation(D: number, radius: number, s: Pick<StereoSettings, 'sep'>): number {
+  const e = (D * s.sep) / 100
   const near = Math.max(D - radius, 0.3 * D), far = D + radius
   const theta = e * Math.max(1 / near - 1 / D, 1 / D - 1 / far)
   return theta > MAX_PARALLAX ? (e * MAX_PARALLAX) / theta : e
