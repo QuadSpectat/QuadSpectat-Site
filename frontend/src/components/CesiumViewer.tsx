@@ -21,7 +21,8 @@ import type { BaseMap } from '@/components/MapSwitcher'
 import type { GeoPoint } from '@/lib/geopoints'
 import type { HeightRef } from '@/lib/heights'
 import { modelGeoidShift, modelCoordinateSystem } from '@/lib/heights'
-import { alignToGoogleSurface } from '@/lib/googleAlign'
+import { alignToGoogleSurface, alignAtPoints } from '@/lib/googleAlign'
+import { pickModelPosition } from '@/lib/pickModel'
 import type { GoogleAlignResult } from '@/lib/googleAlign'
 import type { ViewApi } from '@/lib/views'
 import { OrientationAids } from '@/components/OrientationAids'
@@ -145,6 +146,13 @@ interface Props {
   snapRef?: React.MutableRefObject<(() => void) | null>
   /** Parent passes a ref; CesiumViewer writes the Align to Google 3D measurement into it (owner only) */
   googleAlignRef?: React.MutableRefObject<(() => Promise<GoogleAlignResult>) | null>
+  /** Same, for Align at point(s): measures around the given ground spots */
+  googleAlignPointsRef?: React.MutableRefObject<((pts: Cesium.Cartographic[]) => Promise<GoogleAlignResult>) | null>
+  /** Owner is choosing ground spots for Align at point(s): a click on the model reports its position */
+  googlePickMode?: boolean
+  onGooglePick?: (c: Cesium.Cartographic) => void
+  /** Spots already chosen (drawn as markers) */
+  googlePickPoints?: Cesium.Cartographic[]
   /** Parent passes a ref; CesiumViewer writes the reset-camera function into it */
   resetCameraRef?: React.MutableRefObject<(() => void) | null>
   /** Parent passes a ref; CesiumViewer writes the fly-to-orthophoto function into it */
@@ -172,6 +180,8 @@ interface LayerRuntime {
   origins: Map<string, EntityOrigin>
 }
 
+const NO_POINTS: Cesium.Cartographic[] = []
+
 function CesiumViewerInner({
   onRecover,
   selectedModel, modelUrl,
@@ -194,6 +204,10 @@ function CesiumViewerInner({
   onSnapToGround,
   snapRef,
   googleAlignRef,
+  googleAlignPointsRef,
+  googlePickMode = false,
+  onGooglePick,
+  googlePickPoints = NO_POINTS,
   resetCameraRef,
   flyToOrthoRef,
   geopointActive = false,
@@ -1079,9 +1093,47 @@ function CesiumViewerInner({
       const sph = stereoSphereRef.current
       if (!v || v.isDestroyed() || !g || !m) throw new Error('Google 3D is not loaded yet: wait until it is drawn, then try again.')
       if (!sph) throw new Error('The model is not ready yet.')
-      return alignToGoogleSurface(v, g, sph, m.google_offset ?? 0)
+      return alignToGoogleSurface(v, g, sph, m.google_offset ?? 0, tilesetRef.current ? [tilesetRef.current] : [])
     }
   }
+  if (googleAlignPointsRef) {
+    googleAlignPointsRef.current = async (pts) => {
+      const v = viewerRef.current
+      const g = google3dRef.current
+      const m = selectedModelRef.current
+      const sph = stereoSphereRef.current
+      if (!v || v.isDestroyed() || !g || !m) throw new Error('Google 3D is not loaded yet: wait until it is drawn, then try again.')
+      if (!sph) throw new Error('The model is not ready yet.')
+      return alignAtPoints(v, g, sph, pts, m.google_offset ?? 0, tilesetRef.current ? [tilesetRef.current] : [])
+    }
+  }
+  // Align at point(s): while chosen, a click on the model (Google ignored) reports the ground spot; markers show the spots
+  const onGooglePickRef = useRef(onGooglePick)
+  onGooglePickRef.current = onGooglePick
+  const pickOn = googlePickMode && googleShown && measureMode === 'none' && !geopointActive
+  useEffect(() => {
+    if (!viewer || viewer.isDestroyed() || !pickOn) return
+    const handler = new Cesium.ScreenSpaceEventHandler(viewer.canvas)
+    handler.setInputAction((click: { position: Cesium.Cartesian2 }) => {
+      const pos = pickModelPosition(viewer, click.position, googleExcluded())
+      if (pos) onGooglePickRef.current?.(Cesium.Cartographic.fromCartesian(pos))
+      else onNotice('Click on the model itself (not on Google 3D only).')
+    }, Cesium.ScreenSpaceEventType.LEFT_CLICK)
+    const prev = viewer.canvas.style.cursor
+    viewer.canvas.style.cursor = 'crosshair'
+    return () => { handler.destroy(); if (!viewer.isDestroyed()) viewer.canvas.style.cursor = prev }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewer, pickOn])
+  useEffect(() => {
+    if (!viewer || viewer.isDestroyed()) return
+    const ents = googlePickPoints.map((c, i) => viewer.entities.add({
+      position: Cesium.Cartesian3.fromRadians(c.longitude, c.latitude, c.height),
+      point: { pixelSize: 11, color: Cesium.Color.CYAN, outlineColor: Cesium.Color.BLACK, outlineWidth: 2, disableDepthTestDistance: Number.POSITIVE_INFINITY },
+      label: { text: `A${i + 1}`, font: '12px sans-serif', pixelOffset: new Cesium.Cartesian2(0, -16), fillColor: Cesium.Color.WHITE, showBackground: true, disableDepthTestDistance: Number.POSITIVE_INFINITY },
+    }))
+    viewer.scene.requestRender()
+    return () => { if (!viewer.isDestroyed()) ents.forEach((e) => viewer.entities.remove(e)) }
+  }, [viewer, googlePickPoints])
   // Render only on change: gestures, hover while a tool is active, scene collections, every React commit
   useRenderOnDemand(viewer, toolWanted)
   useRenderAfterCommit(viewer)

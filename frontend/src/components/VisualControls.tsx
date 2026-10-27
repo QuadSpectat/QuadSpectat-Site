@@ -45,7 +45,16 @@ export interface GoogleAlignUi {
   offset: number
   /** one line about the last measurement, or an error text */
   info: string | null
+  /** the honest residual report of the last alignment, one item per line */
+  lines: string[]
   busy: boolean
+  /** Align at point(s): the owner is choosing ground spots, how many so far */
+  pickMode: boolean
+  pickCount: number
+  onTogglePick: () => void
+  /** extra metres that lift the model above Google on ~90 % of the ground points (0 = none / not measured) */
+  clearDelta: number
+  onClear: () => void
   onAlign: () => void
   onNudge: (deltaMetres: number) => void
   onReset: () => void
@@ -60,14 +69,37 @@ function GoogleAlignBlock({ ui }: { ui: GoogleAlignUi }) {
         <span dir="rtl">יישור ל-Google 3D</span> / Align to Google 3D
       </span>
       <p className="text-[10px] leading-snug text-white/55">
-        <span dir="rtl" className="block">מודד את גובה הקרקע של Google ושל המודל באתר ומזיז את המודל עד שהוא יושב על Google. התיקון נשמר למודל ופועל רק כש-Google 3D פעיל; התצוגה הרגילה לא משתנה.</span>
-        Measures Google&apos;s ground and the model&apos;s ground at the site and moves the model until it sits on Google. The correction is saved with the model and applies only while Google 3D is on; the normal view does not change.
+        <span dir="rtl" className="block">הגובה של המודל מותאם ל-Google רק כש-Google 3D פעיל (התצוגה הרגילה לא משתנה). המודל לא מוטה, רק מוגבה או מונמך.</span>
+        Moves the model up or down so it sits on Google. Saved with the model and applied only while Google 3D is on; the normal view does not change. The model is never tilted.
       </p>
+      <details className="text-[10px] leading-snug text-white/55" data-testid="google-align-help">
+        <summary className="cursor-pointer text-sky-200/90 select-none">Why it may not fit everywhere / למה זה לא מתאים בכל מקום</summary>
+        <p className="mt-1">
+          <span dir="rtl" className="block">המודל שלכם ו-Google הם שני מדידות שונות. הם נבדלים במקומות: גשרים, בניינים ועצים קיימים אצל Google, לשני המשטחים יש שגיאות גובה של מטרים, ולעיתים יש ביניהם הטיה קלה. גובה אחד לא יכול להתאים בכל מקום. לכן יישרו במקום שמודדים בו: &quot;יישור בנקודה&quot; מתאים בדיוק במקום שלחצתם, ו&quot;יישור כולל&quot; בוחר את הגובה הטוב ביותר לכל השטח ומציג כמה הוא שגוי בכל צד.</span>
+          The model and Google are two different surveys. They differ in places: bridges, buildings and trees are in Google, both surfaces have height errors of a few metres, and there can be a slight tilt between them. One height cannot fit everywhere. So align where you measure: &quot;Align at point&quot; fits exactly where you click, and &quot;Align overall&quot; picks the best single height for the whole area and tells you how far off it is on each side.
+        </p>
+      </details>
       <div className="flex items-center gap-2">
         <button type="button" disabled={ui.busy} onClick={ui.onAlign} data-testid="google-align-run" className={cn(btnCls, 'flex-1 border-sky-400/40 text-sky-200')}>
-          {ui.busy ? '…' : 'Align / יישר'}
+          {ui.busy ? '…' : 'Align overall / יישור כולל'}
         </button>
-        <button type="button" disabled={ui.busy} onClick={ui.onReset} data-testid="google-align-reset" className={btnCls}>Reset / איפוס</button>
+        <button type="button" disabled={ui.busy} onClick={ui.onTogglePick} aria-pressed={ui.pickMode} data-testid="google-align-point"
+          className={cn(btnCls, 'flex-1', ui.pickMode && 'border-cyan-300/60 text-cyan-200 bg-cyan-400/10')}>
+          {ui.pickMode ? `Done / סיום (${ui.pickCount})` : 'Align at point / יישור בנקודה'}
+        </button>
+      </div>
+      {ui.pickMode && (
+        <p className="text-[10px] leading-snug text-cyan-200/90" data-testid="google-align-point-help">
+          <span dir="rtl" className="block">לחצו על נקודת קרקע במודל (אפשר כמה נקודות: הגובה יהיה הממוצע שלהן).</span>
+          Click a ground spot on the model (you can add several: the offset is their average).
+        </p>
+      )}
+      <div className="flex items-center gap-2">
+        <button type="button" disabled={ui.busy} onClick={ui.onReset} data-testid="google-align-reset" className={cn(btnCls, 'flex-1')}>Reset / איפוס</button>
+        <button type="button" disabled={ui.busy || ui.clearDelta < 0.05} onClick={ui.onClear} data-testid="google-align-clear" className={cn(btnCls, 'flex-1')}
+          title="Raise the model until it is above Google on about 90 % of the ground points (never hidden under it) / הרם עד שהמודל מעל Google">
+          {ui.clearDelta >= 0.05 ? `Clear Google +${ui.clearDelta.toFixed(1)} m` : 'Clear Google / מעל'}
+        </button>
       </div>
       <div className="flex items-center justify-between gap-1">
         {nudge.map((d) => (
@@ -75,7 +107,12 @@ function GoogleAlignBlock({ ui }: { ui: GoogleAlignUi }) {
         ))}
       </div>
       <span className="text-[11px] font-mono text-sky-200" data-testid="google-align-offset">Google offset {ui.offset >= 0 ? '+' : ''}{ui.offset.toFixed(2)} m</span>
-      {ui.info && <span className="text-[10px] text-white/55 leading-snug" data-testid="google-align-info">{ui.info}</span>}
+      {ui.info && <span className="text-[10px] text-white/70 leading-snug" data-testid="google-align-info">{ui.info}</span>}
+      {ui.lines.length > 0 && (
+        <ul className="text-[10px] text-white/60 leading-snug list-disc pl-3.5" data-testid="google-align-report">
+          {ui.lines.map((l, i) => <li key={i}>{l}</li>)}
+        </ul>
+      )}
     </div>
   )
 }

@@ -25,6 +25,7 @@ import type { BaseMap } from '@/components/MapSwitcher'
 import type { ResolvedOrthophoto } from '@/components/OrthophotoPanel'
 import { sortOrthosTopFirst } from '@/components/OrthophotoPanel'
 import type { GoogleAlignResult } from '@/lib/googleAlign'
+import type * as Cesium from 'cesium'
 import type { GoogleAlignUi } from '@/components/VisualControls'
 import type { OrthoCompare } from '@/components/ComparePanel'
 
@@ -90,7 +91,12 @@ export default function App() {
   // Snap-to-ground ref, reset-camera ref, fly-to-ortho ref
   const snapRef        = useRef<(() => void) | null>(null)
   const googleAlignRef = useRef<(() => Promise<GoogleAlignResult>) | null>(null)
+  const googleAlignPointsRef = useRef<((pts: Cesium.Cartographic[]) => Promise<GoogleAlignResult>) | null>(null)
   const [alignInfo, setAlignInfo] = useState<string | null>(null)
+  const [alignLines, setAlignLines] = useState<string[]>([])
+  const [alignClear, setAlignClear] = useState(0)
+  const [alignPick, setAlignPick] = useState(false)
+  const [alignPts, setAlignPts] = useState<Cesium.Cartographic[]>([])
   const [alignBusy, setAlignBusy] = useState(false)
   const resetCameraRef = useRef<(() => void) | null>(null)
   const flyToOrthoRef  = useRef<((photo: ResolvedOrthophoto) => void) | null>(null)
@@ -227,23 +233,42 @@ export default function App() {
     setSelectedModel(updated)
     void refresh()
   }
+  const showAlignResult = (r: GoogleAlignResult, what: string) => {
+    setAlignInfo(`${what}: Google ground ${r.googleHeight.toFixed(2)} m, model ground ${r.modelHeight.toFixed(2)} m (ellipsoid), correction ${r.delta >= 0 ? '+' : ''}${r.delta.toFixed(2)} m from ${r.samples} point${r.samples === 1 ? '' : 's'}${r.loaded ? '' : ' (STILL LOADING: may be off)'}.`)
+    setAlignLines(r.lines); setAlignClear(r.clearDelta)
+  }
   const googleAlign: GoogleAlignUi | undefined = baseMap === 'google3d' && selectedModel ? {
     offset: selectedModel.google_offset ?? 0,
     info: alignInfo,
+    lines: alignLines,
     busy: alignBusy,
+    pickMode: alignPick,
+    pickCount: alignPts.length,
+    clearDelta: alignClear,
+    onTogglePick: () => { setAlignPick((v) => !v); setAlignPts([]) },
     onAlign: () => {
-      setAlignBusy(true); setAlignInfo('Measuring Google 3D and the model... / מודד...')
+      setAlignBusy(true); setAlignPick(false); setAlignPts([]); setAlignInfo('Measuring Google 3D and the model (waiting for the tiles to load)... / מודד...'); setAlignLines([])
       googleAlignRef.current?.()
-        .then(async (r) => {
-          await saveGoogleOffset(r.offset)
-          setAlignInfo(`Google ground ${r.googleHeight.toFixed(2)} m, model ground ${r.modelHeight.toFixed(2)} m (ellipsoid), correction ${r.delta >= 0 ? '+' : ''}${r.delta.toFixed(2)} m from ${r.samples} of 25 points, spread ${r.spread.toFixed(2)} m. Nudge it if the ground is sloped.`)
-        })
+        .then(async (r) => { await saveGoogleOffset(r.offset); showAlignResult(r, 'Align overall') })
         .catch((e: unknown) => setAlignInfo(e instanceof Error ? e.message : String(e)))
         .finally(() => setAlignBusy(false))
     },
-    onNudge: (d) => { void saveGoogleOffset((selectedModel.google_offset ?? 0) + d).then(() => setAlignInfo(null)).catch(console.error) },
-    onReset: () => { void saveGoogleOffset(0).then(() => setAlignInfo('Reset: the model is drawn as in the normal view.')).catch(console.error) },
+    onClear: () => {
+      const add = alignClear
+      void saveGoogleOffset((selectedModel.google_offset ?? 0) + add).then(() => { setAlignInfo(`Raised by ${add.toFixed(2)} m: the model is now above Google on about 90 % of the ground-like points.`); setAlignClear(0) }).catch(console.error)
+    },
+    onNudge: (d) => { void saveGoogleOffset((selectedModel.google_offset ?? 0) + d).then(() => { setAlignInfo(null); setAlignLines([]); setAlignClear(0) }).catch(console.error) },
+    onReset: () => { setAlignPick(false); setAlignPts([]); void saveGoogleOffset(0).then(() => { setAlignInfo('Reset: the model is drawn as in the normal view.'); setAlignLines([]); setAlignClear(0) }).catch(console.error) },
   } : undefined
+  // Align at point(s): every click adds a spot; the offset is recomputed from all spots chosen so far
+  function onGooglePick(c: Cesium.Cartographic) {
+    const pts = [...alignPts, c]
+    setAlignPts(pts); setAlignBusy(true); setAlignInfo('Measuring around the chosen spot(s)... / מודד...')
+    googleAlignPointsRef.current?.(pts)
+      .then(async (r) => { await saveGoogleOffset(r.offset); showAlignResult(r, 'Align at point') })
+      .catch((e: unknown) => { setAlignInfo(e instanceof Error ? e.message : String(e)); setAlignPts(alignPts) })
+      .finally(() => setAlignBusy(false))
+  }
 
   function crsLabel(): string | undefined {
     if (!selectedModel) return undefined
@@ -340,6 +365,10 @@ export default function App() {
             onSnapToGround={(offset) => void handleSnapToGround(offset)}
             snapRef={snapRef}
             googleAlignRef={googleAlignRef}
+            googleAlignPointsRef={googleAlignPointsRef}
+            googlePickMode={alignPick && !alignBusy}
+            onGooglePick={onGooglePick}
+            googlePickPoints={alignPts}
             resetCameraRef={resetCameraRef}
             flyToOrthoRef={flyToOrthoRef}
             viewApiRef={viewApiRef}
