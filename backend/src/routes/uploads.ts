@@ -108,12 +108,12 @@ router.post('/tileset/finalize', requireAuth, async (req: Request, res: Response
 router.get('/:id/download', optionalAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { rows } = await db.query(
-      'SELECT file_key, external_url, asset_name FROM models WHERE id = $1',
+      'SELECT file_key, external_url, is_public_demo FROM models WHERE id = $1',
       [req.params.id],
     )
     if (!rows[0]) { res.status(404).json({ error: 'Not found' }); return }
-    const isDemo = String(rows[0].asset_name ?? '').toLowerCase().includes(env.PUBLIC_ASSET_NAME.toLowerCase())
-    // Allowed: admin, a DEMO asset, or a valid (unexpired) share link for exactly this model (?share=<token>)
+    const isDemo = !!rows[0].is_public_demo
+    // Allowed: admin, a model flagged as the public demo, or a valid (unexpired) share link for exactly this model (?share=<token>)
     if (!req.isAdmin && !isDemo && !(await shareGrantsModel(req.query.share, req.params.id))) {
       res.status(404).json({ error: 'Not found' }); return
     }

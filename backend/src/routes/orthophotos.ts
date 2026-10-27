@@ -2,11 +2,10 @@ import { Router, Request, Response, NextFunction } from 'express'
 import express from 'express'
 import { db, randomUUID } from '../db'
 import { uploadObject, uploadFile, presignUpload, presignDownload } from '../s3'
-import { env } from '../env'
 import { optionalAuth } from '../middleware/optionalAuth'
 
-function isPublic(assetName: unknown): boolean {
-  return String(assetName ?? '').toLowerCase().includes(env.PUBLIC_ASSET_NAME.toLowerCase())
+function isPublic(row: { is_public_demo?: unknown }): boolean {
+  return !!row.is_public_demo
 }
 import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
@@ -134,8 +133,7 @@ router.get('/', optionalAuth, async (req, res, next) => {
       return
     }
     const { rows } = await db.query<OrthoRow>(
-      `SELECT * FROM orthophotos WHERE LOWER(asset_name) LIKE LOWER($1) ORDER BY sort_order DESC, created_at DESC, id`,
-      [`%${env.PUBLIC_ASSET_NAME}%`],
+      `SELECT * FROM orthophotos WHERE is_public_demo = 1 ORDER BY sort_order DESC, created_at DESC, id`,
     )
     res.json(rows)
   } catch (err) { next(err) }
@@ -146,7 +144,7 @@ router.get('/:id([0-9a-f-]{36})', optionalAuth, async (req, res, next) => {
   try {
     const { rows } = await db.query<OrthoRow>(`SELECT * FROM orthophotos WHERE id = $1`, [req.params.id])
     if (!rows[0]) return res.status(404).json({ error: 'Not found' })
-    if (!req.isAdmin && !isPublic(rows[0].asset_name)) return res.status(404).json({ error: 'Not found' })
+    if (!req.isAdmin && !isPublic(rows[0])) return res.status(404).json({ error: 'Not found' })
     res.json(rows[0])
   } catch (err) { next(err) }
 })
@@ -267,11 +265,12 @@ router.post('/upload', requireAuth,
 // ── Update opacity / visibility ───────────────────────────────────────────────
 router.patch('/:id', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { visible, opacity } = req.body as { visible?: boolean; opacity?: number }
+    const { visible, opacity, is_public_demo } = req.body as { visible?: boolean; opacity?: number; is_public_demo?: boolean }
     const fields: string[] = []
     const vals: unknown[] = []
     if (visible !== undefined) { fields.push(`visible = $${vals.length + 1}`); vals.push(visible ? 1 : 0) }
     if (opacity  !== undefined) { fields.push(`opacity  = $${vals.length + 1}`); vals.push(opacity) }
+    if (is_public_demo !== undefined) { fields.push(`is_public_demo = $${vals.length + 1}`); vals.push(is_public_demo ? 1 : 0) }
     if (!fields.length) return res.status(400).json({ error: 'nothing to update' })
     vals.push(req.params.id)
     const { rows } = await db.query<OrthoRow>(
@@ -435,7 +434,7 @@ router.get('/:id([0-9a-f-]{36})/tiles/:z/:x/:y', optionalAuth, async (req: Reque
     const { rows } = await db.query<OrthoRow>(`SELECT * FROM orthophotos WHERE id = $1`, [id])
     const photo = rows[0]
     if (!photo) return res.status(404).end()
-    if (!req.isAdmin && !isPublic(photo.asset_name) && !(await shareGrantsOrtho(req.query.share, id))) return res.status(404).end()
+    if (!req.isAdmin && !isPublic(photo) && !(await shareGrantsOrtho(req.query.share, id))) return res.status(404).end()
     if (photo.status !== 'ready' || !photo.cog_key) return res.status(202).end()
 
     // ETag keyed on cog_key + updated_at so adopt-cog / reprocess automatically
@@ -579,6 +578,7 @@ interface OrthoRow extends Record<string, unknown> {
   updated_at: string
   show_watermark: number
   watermark_text: string
+  is_public_demo?: number
 }
 
 let _emptyTile: Buffer | null = null

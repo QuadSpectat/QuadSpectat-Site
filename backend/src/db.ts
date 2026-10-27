@@ -11,6 +11,7 @@
 import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
+import { env } from './env'
 
 const DB_PATH = process.env.DATA_DIR
   ? require('node:path').join(process.env.DATA_DIR, 'viewer.db')
@@ -204,6 +205,29 @@ sqlite.exec(`
           AND (o2.created_at < orthophotos.created_at OR (o2.created_at = orthophotos.created_at AND o2.rowid < orthophotos.rowid)))`)
     })()
   }
+}
+// ── Models: GLB height convention + explicit public-demo flag (additive; safe to run on every start) ──
+// glb_geoid_applied: 0 = a GLB is drawn at its altitude as before (every existing model keeps its place); 1 = it is shifted by
+//   geoid_offset like 3D Tiles. Only new uploads and an explicit owner choice set it, so no live model moves by itself.
+// is_public_demo: replaces "asset name contains DEMO" as the rule for what anonymous visitors may list and open. The columns
+//   are added once, and in that same transaction every existing model / orthophoto whose asset name contains the old marker
+//   (PUBLIC_ASSET_NAME, default DEMO) is flagged, so the public demo keeps working. Later starts never re-flag anything.
+{
+  const cols = (t: string) => new Set((sqlite.prepare(`PRAGMA table_info(${t})`).all() as Array<{ name: string }>).map((c) => c.name))
+  const m = cols('models')
+  const o = cols('orthophotos')
+  sqlite.transaction(() => {
+    if (!m.has('glb_geoid_applied')) sqlite.exec(`ALTER TABLE models ADD COLUMN glb_geoid_applied INTEGER NOT NULL DEFAULT 0`)
+    const marker = env.PUBLIC_ASSET_NAME.trim()
+    if (!m.has('is_public_demo')) {
+      sqlite.exec(`ALTER TABLE models ADD COLUMN is_public_demo INTEGER NOT NULL DEFAULT 0`)
+      if (marker) sqlite.prepare(`UPDATE models SET is_public_demo = 1 WHERE LOWER(asset_name) LIKE '%' || LOWER(?) || '%'`).run(marker)
+    }
+    if (!o.has('is_public_demo')) {
+      sqlite.exec(`ALTER TABLE orthophotos ADD COLUMN is_public_demo INTEGER NOT NULL DEFAULT 0`)
+      if (marker) sqlite.prepare(`UPDATE orthophotos SET is_public_demo = 1 WHERE LOWER(asset_name) LIKE '%' || LOWER(?) || '%'`).run(marker)
+    }
+  })()
 }
 // Links created before expiry existed become valid until one year after they were created.
 sqlite.exec(`UPDATE share_links SET expires_at = strftime('%Y-%m-%dT%H:%M:%SZ', created_at, '+365 days') WHERE expires_at IS NULL`)
