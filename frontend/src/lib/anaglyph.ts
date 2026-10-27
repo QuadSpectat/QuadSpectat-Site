@@ -20,6 +20,8 @@ export interface StereoSettings {
   ghost: number
   /** Comfort limit in degrees: the model's own near-to-far parallax is held under this (higher = more pop and depth, more eye strain) */
   limit: number
+  /** 0 to 1: floating window. Each eye gets a black edge strip of a different width on the left and right, so the screen edge itself seems to float in front of the screen and no longer clips a model that pops out */
+  window: number
   /** Exchange which eye feeds the red and the cyan channel (glasses worn the other way round) */
   swap: boolean
   /** false = Colour (Dubois matrices), true = Comfort (half-colour, less rivalry) */
@@ -40,7 +42,7 @@ export interface StereoState extends StereoSettings {
   hideMenus: boolean
 }
 
-export const DEFAULT_STEREO: StereoSettings = { sep: 3, pop: 2.5, ghost: 0, limit: 0.8, swap: false, comfort: false }
+export const DEFAULT_STEREO: StereoSettings = { sep: 3, pop: 2.5, ghost: 0, limit: 0.8, window: 0, swap: false, comfort: false }
 export const GHOST_BLUE_CUT = 0.6   // at ghost = 1 the blue channel is multiplied by 1 - 0.6
 export const SEP_MIN = 0, SEP_MAX = 6   // percent of viewing distance; the owner's eyes fused at 0.5 % and saw double above about 1 %
 
@@ -54,7 +56,8 @@ function readStored(): StereoSettings {
       sep: num(j.sep, SEP_MIN, SEP_MAX, DEFAULT_STEREO.sep),
       pop: num(j.pop, 0, 4, DEFAULT_STEREO.pop),
       ghost: num(j.ghost, 0, 1, DEFAULT_STEREO.ghost),
-      limit: num(j.limit, 0.3, 3, DEFAULT_STEREO.limit),
+      limit: num(j.limit, 0.3, 6, DEFAULT_STEREO.limit),
+      window: num(j.window, 0, 1, DEFAULT_STEREO.window),
       swap: j.swap === true,
       comfort: j.comfort === true,
     }
@@ -70,7 +73,7 @@ export function setStereo(patch: Partial<StereoState>): void {
   state = { ...state, ...patch }
   if ('boost' in patch) setSseBoost(state.boost)
   if ('hideMenus' in patch) { try { document.documentElement.toggleAttribute('data-qs-hide-menus', state.hideMenus) } catch { /* no document */ } }
-  const keep: (keyof StereoSettings)[] = ['sep', 'pop', 'ghost', 'limit', 'swap', 'comfort']
+  const keep: (keyof StereoSettings)[] = ['sep', 'pop', 'ghost', 'limit', 'window', 'swap', 'comfort']
   if (keep.some((k) => k in patch)) {
     try { localStorage.setItem(KEY, JSON.stringify(Object.fromEntries(keep.map((k) => [k, state[k]])))) } catch { /* private mode */ }
   }
@@ -91,6 +94,7 @@ export const T = {
   pop: { he: 'בליטה החוצה', en: 'Pop out' },
   ghost: { he: 'הפחתת רפאים', en: 'Ghost reduction' },
   limit: { he: 'גבול נוחות', en: 'Comfort limit' },
+  window: { he: 'חלון צף', en: 'Floating window' },
   hideMenus: { he: 'הסתר תפריטים', en: 'Hide menus' },
   showMenus: { he: 'הצג תפריטים', en: 'Show menus' },
   hideMenusNote: { he: 'מסתיר את כל התפריטים כדי שדבר לא יסתיר מודל שבולט מהמסך. מקש H.', en: 'Hides every menu so nothing covers a model that pops out of the screen. Key H.' },
@@ -193,6 +197,7 @@ uniform float u_shift;
 uniform float u_swap;
 uniform float u_comfort;
 uniform float u_ghost;
+uniform float u_win;
 const mat3 ML = mat3(0.456100, -0.0400822, -0.0152161, 0.500484, -0.0378246, -0.0205971, 0.176381, -0.0157589, -0.00546856);
 const mat3 MR = mat3(-0.0434706, 0.378476, -0.0721527, -0.0879388, 0.73364, -0.112961, -0.00155529, -0.0184503, 1.2264);
 void main() {
@@ -202,6 +207,11 @@ void main() {
     vec3 b = texture(colorTexture, vec2(clamp(0.5 + (uv.x + u_shift) * 0.5, 0.5 + 0.5 * u_px.x, 1.0), uv.y)).rgb;   // left eye, moves left
     vec3 L = mix(b, a, u_swap);
     vec3 R = mix(a, b, u_swap);
+    // floating window: the left eye loses a strip at the left edge, the right eye one at the right edge (4 % of the width at u_win = 1);
+    // the edge of the picture then has crossed parallax and floats in front of the screen
+    float e = 0.02 * u_win;
+    L *= step(2.0 * e, uv.x);
+    R *= 1.0 - step(1.0 - 2.0 * e, uv.x) * step(0.0001, e);
     vec3 o = u_comfort > 0.5 ? vec3(dot(L, vec3(0.299, 0.587, 0.114)), R.g, R.b) : ML * L + MR * R;
     o = clamp(o * 1.15, 0.0, 1.0);
     // glasses whose red lens lets blue through (red/blue film): the less blue is drawn, the less of the right-eye image leaks into the left eye

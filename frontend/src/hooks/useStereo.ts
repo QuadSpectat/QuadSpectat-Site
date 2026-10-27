@@ -80,6 +80,7 @@ function startStereo(v: Cesium.Viewer, sphereRef: Options['sphereRef'], phone: b
       u_swap: () => (getStereo().swap ? 1 : 0),
       u_comfort: () => (getStereo().comfort ? 1 : 0),
       u_ghost: () => getStereo().ghost,
+      u_win: () => getStereo().window,
     },
   }))
 
