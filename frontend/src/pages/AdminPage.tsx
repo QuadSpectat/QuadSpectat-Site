@@ -971,6 +971,13 @@ function ModelsTab({
   onRefresh: () => void; onDelete: (id: string) => void; onUpload: () => void; onEdit: (m: Model) => void
   toast: (type: Toast['type'], msg: string) => void
 }) {
+  // The public-demo tick box of the list: asks first when turning ON (it opens the model, with all its layers, to everyone)
+  async function togglePublicDemo(m: Model, on: boolean) {
+    if (on && !confirmPublicDemo(m.name)) return
+    try { await updateModel(m.id, { is_public_demo: on }); onRefresh(); toast('success', `"${m.name}" is ${on ? 'now' : 'no longer'} a public demo`) }
+    catch (err) { toast('error', err instanceof Error ? err.message : 'Could not change the public demo setting') }
+  }
+
   async function handleDelete(m: Model) {
     if (!confirm(`Delete model "${m.name}"? This cannot be undone.`)) return
     try {
@@ -1030,6 +1037,7 @@ function ModelsTab({
                 <th className="text-left px-4 py-2.5 text-white/55 font-medium hidden md:table-cell">CRS</th>
                 <th className="text-left px-4 py-2.5 text-white/55 font-medium hidden sm:table-cell">Added</th>
                 <th className="text-left px-4 py-2.5 text-white/55 font-medium hidden sm:table-cell">Age</th>
+                <th className="text-left px-4 py-2.5 text-white/55 font-medium" title="Public demo: anyone with the link or the app can open the model without a token and sees ALL its layers / הדגמה ציבורית: פתוח לכל אחד ללא קוד גישה, עם כל השכבות">Public demo / הדגמה ציבורית</th>
                 <th className="text-right px-4 py-2.5 text-white/55 font-medium">Actions</th>
               </tr>
             </thead>
@@ -1058,6 +1066,15 @@ function ModelsTab({
                   </td>
                   <td className="px-4 py-2.5 text-white/50 hidden sm:table-cell">{fmtDate(m.created_at)}</td>
                   <td className="px-4 py-2.5 hidden sm:table-cell"><AgeBadge createdAt={m.created_at} /></td>
+                  <td className="px-4 py-2.5">
+                    <label className="flex items-center gap-1.5 text-[11px] cursor-pointer select-none whitespace-nowrap"
+                      title="Public demo: anyone with the link or the app can open this model without a token and sees ALL its layers / הדגמה ציבורית: פתוח לכל אחד ללא קוד גישה, עם כל השכבות">
+                      <input type="checkbox" data-testid="model-public-demo" checked={!!m.is_public_demo}
+                        onChange={(e) => { void togglePublicDemo(m, e.target.checked) }}
+                        className="h-4 w-4 rounded border-white/20 bg-white/5 accent-primary" />
+                      <span className={m.is_public_demo ? 'text-amber-300 font-semibold' : 'text-white/50'}>{m.is_public_demo ? 'PUBLIC / ציבורי' : 'private / פרטי'}</span>
+                    </label>
+                  </td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-1 justify-end">
                       <a
@@ -1113,6 +1130,7 @@ function OrthophotosTab({
   }, [processingIds.join(','), onRefresh])
 
   async function togglePublicDemo(o: Orthophoto, on: boolean) {
+    if (on && !confirmPublicDemo(o.name)) return
     try { await updateOrthophoto(o.id, { is_public_demo: on }); onRefresh(); toast('success', `"${o.name}" is ${on ? 'now' : 'no longer'} a public demo`) }
     catch (err) { toast('error', err instanceof Error ? err.message : 'Could not change the public demo setting') }
   }
