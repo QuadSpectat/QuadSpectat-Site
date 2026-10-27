@@ -887,7 +887,7 @@ function CesiumViewerInner({
     if (!ordered) for (const l of bottomUp) v.imageryLayers.raiseToTop(l)
     // The globe needs several frames to drop or repaint imagery after show / alpha / order change; with render-on-demand one
     // frame is not enough (a hidden orthophoto stayed painted until the camera moved)
-    requestRenderFor(v, 1500)
+    if (orthophotos.length) requestRenderFor(v, 1500)
   }, [orthophotos, orthoCompare, shareToken])
 
   // Track camera lat/lon so we can check if it's over an orthophoto's bounds.
