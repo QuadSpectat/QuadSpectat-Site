@@ -976,7 +976,7 @@ function ModelsTab({
           </button>
         </div>
       ) : (
-        <div className="rounded-xl border border-white/10 overflow-hidden">
+        <div className="rounded-xl border border-white/10 overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-white/10 bg-white/[0.02]">
@@ -1109,7 +1109,7 @@ function OrthophotosTab({
           </button>
         </div>
       ) : (
-        <div className="rounded-xl border border-white/10 overflow-hidden">
+        <div className="rounded-xl border border-white/10 overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-white/10 bg-white/[0.02]">
@@ -1650,22 +1650,22 @@ export function AdminPage() {
   return (
     <div className="min-h-svh bg-background text-white flex flex-col">
       {/* Top bar */}
-      <header className="shrink-0 flex items-center gap-4 px-6 border-b border-border bg-card" style={{ height: "56px" }}>
-        <div className="flex items-center gap-2.5">
+      <header className="shrink-0 flex flex-wrap items-center gap-x-4 gap-y-1 px-3 sm:px-6 py-2 min-h-14 border-b border-border bg-card">
+        <div className="flex items-center gap-2.5 min-w-0">
           <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center">
             <Globe size={14} className="text-primary-foreground" />
           </div>
           <span className="font-bold tracking-tight">QuadSpectat</span>
-          <span className="text-white/50 mx-1">/</span>
-          <span className="text-[11px] font-semibold tracking-[0.14em] uppercase text-muted-foreground">3D Viewer Admin</span>
+          <span className="text-white/50 mx-1 hidden sm:inline">/</span>
+          <span className="text-[11px] font-semibold tracking-[0.14em] uppercase text-muted-foreground hidden sm:inline">3D Viewer Admin</span>
         </div>
 
-        {/* Tab nav */}
-        <nav className="flex items-center gap-0.5 ml-4">
+        {/* Tab nav: on a phone or small tablet it takes its own row and scrolls sideways instead of widening the page */}
+        <nav className="flex items-center gap-0.5 order-last w-full overflow-x-auto pb-1 lg:order-none lg:w-auto lg:overflow-visible lg:pb-0 lg:ml-4">
           {NAV.map(({ tab, icon, label, dot }) => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className={cn(
-                'relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                'relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors shrink-0 whitespace-nowrap',
                 activeTab === tab ? 'bg-primary/15 text-primary' : 'text-white/55 hover:text-white hover:bg-white/5',
               )}>
               {icon}{label}
@@ -1687,7 +1687,7 @@ export function AdminPage() {
       </header>
 
       {/* Content */}
-      <main className="flex-1 overflow-y-auto p-6">
+      <main className="flex-1 overflow-y-auto p-3 sm:p-6">
         <div className="max-w-7xl mx-auto">
           {activeTab === 'dashboard' && (
             <>
