@@ -16,7 +16,7 @@ export interface StereoSettings {
   sep: number
   /** 0 to 4: how far the zero-parallax plane sits behind the model. 0 = model mostly behind the screen, 1 = the whole model in front of it, up to 4 = far in front */
   pop: number
-  /** 0 to 1: ghost reduction for glasses that leak (e.g. red/blue): takes this fraction of the blue away from red */
+  /** 0 to 1: ghost reduction for glasses that leak (e.g. red/blue film): dims the blue channel (what leaks through the red lens) by up to GHOST_BLUE_CUT */
   ghost: number
   /** Exchange which eye feeds the red and the cyan channel (glasses worn the other way round) */
   swap: boolean
@@ -37,6 +37,7 @@ export interface StereoState extends StereoSettings {
 }
 
 export const DEFAULT_STEREO: StereoSettings = { sep: 3, pop: 2.5, ghost: 0, swap: false, comfort: false }
+export const GHOST_BLUE_CUT = 0.6   // at ghost = 1 the blue channel is multiplied by 1 - 0.6
 export const SEP_MIN = 0, SEP_MAX = 6   // percent of viewing distance; the owner's eyes fused at 0.5 % and saw double above about 1 %
 
 const KEY = 'qs.stereo'
@@ -193,8 +194,8 @@ void main() {
     vec3 R = mix(a, b, u_swap);
     vec3 o = u_comfort > 0.5 ? vec3(dot(L, vec3(0.299, 0.587, 0.114)), R.g, R.b) : ML * L + MR * R;
     o = clamp(o * 1.15, 0.0, 1.0);
-    // glasses whose red lens lets blue through (red/blue film): take that part away from the red channel before it reaches the eye
-    o.r = max(o.r - u_ghost * o.b, 0.0);
+    // glasses whose red lens lets blue through (red/blue film): the less blue is drawn, the less of the right-eye image leaks into the left eye
+    o.b *= 1.0 - 0.6 * u_ghost;
     out_FragColor = vec4(o, 1.0);
 }
 `

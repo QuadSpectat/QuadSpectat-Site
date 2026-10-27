@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { Glasses, ChevronUp, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { WheelSlider } from '@/components/WheelSlider'
 import { detectDevice } from '@/lib/deviceProfile'
-import { SEP_MAX, SEP_MIN, T, bi, setStereo, useStereoState } from '@/lib/anaglyph'
+import { GHOST_BLUE_CUT, SEP_MAX, SEP_MIN, T, bi, setStereo, useStereoState } from '@/lib/anaglyph'
 import type { TextKey } from '@/lib/anaglyph'
 
 /** Label with both languages, Hebrew first. bdi keeps the two scripts from reordering each other. */
@@ -70,14 +69,16 @@ function Choice({ options, value, onPick, label }: { options: [string, TextKey][
  * lens (left by default). Top row: one red and one cyan patch (each must look bright through its own lens and dark through the
  * other). Bottom: a frame drawn red and cyan with crossed parallax, which must float in front of the page.
  */
-function TestImage({ swap, onClose }: { swap: boolean; onClose: () => void }) {
+function TestImage({ swap, ghost, onClose }: { swap: boolean; ghost: number; onClose: () => void }) {
   const ref = useRef<HTMLCanvasElement>(null)
   useEffect(() => {
     const c = ref.current?.getContext('2d')
     if (!c) return
+    // the 3D view dims blue by the Ghost reduction setting; the cyan here follows it so the sliders can be tuned on this picture
+    const cyan = `rgb(0,255,${Math.round(255 * (1 - GHOST_BLUE_CUT * ghost))})`
     c.fillStyle = '#000'; c.fillRect(0, 0, 480, 300)
     c.font = 'bold 20px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'
-    for (const [x, col, txt] of [[70, '#ff0000', swap ? 'R' : 'L'], [310, '#00ffff', swap ? 'L' : 'R']] as const) {
+    for (const [x, col, txt] of [[70, '#ff0000', swap ? 'R' : 'L'], [310, cyan, swap ? 'L' : 'R']] as const) {
       c.fillStyle = col; c.fillRect(x, 20, 100, 70)
       c.fillStyle = '#000'; c.fillText(txt, x + 50, 55)
     }
@@ -85,24 +86,22 @@ function TestImage({ swap, onClose }: { swap: boolean; onClose: () => void }) {
     c.lineWidth = 5
     const d = swap ? -7 : 7   // red image to the right of the cyan one = in front of the page (red lens on the left eye)
     c.strokeStyle = '#ff0000'; c.strokeRect(165 + d, 135, 150, 120)
-    c.strokeStyle = '#00ffff'; c.strokeRect(165 - d, 135, 150, 120)
+    c.strokeStyle = cyan; c.strokeRect(165 - d, 135, 150, 120)
     c.globalCompositeOperation = 'source-over'
     c.fillStyle = '#888'; c.font = '12px sans-serif'
     c.fillText('+', 240, 195)
-  }, [swap])
-  return createPortal(
-    <div role="dialog" aria-label={T.test.en} className="fixed inset-0 z-[70] bg-black/85 flex items-center justify-center p-3" onClick={onClose}>
-      <div className="max-w-[520px] w-full rounded-2xl border border-white/[0.15] bg-[#0b100d] p-4 flex flex-col gap-3" onClick={(e) => e.stopPropagation()}>
-        <div className="flex justify-between items-center text-xs font-semibold text-white/80">
-          <span><Bi k="test" /></span>
-          <button type="button" onClick={onClose} className="h-8 px-3 rounded-lg border border-white/20 text-white/70 hover:text-white"><Bi k="close" /></button>
-        </div>
-        <canvas ref={ref} width={480} height={300} className="w-full rounded-lg" />
-        <Note he={swap ? T.testPatchesSwapped.he : T.testPatches.he} en={swap ? T.testPatchesSwapped.en : T.testPatches.en} />
-        <Note he={T.testFloat.he} en={T.testFloat.en} />
+  }, [swap, ghost])
+  // Shown inside the settings panel (not a pop-up) so Depth, Pop out, Ghost reduction and Swap stay in reach while looking at it
+  return (
+    <div role="group" aria-label={T.test.en} className="rounded-xl border border-white/[0.15] bg-[#0b100d] p-2 flex flex-col gap-2">
+      <div className="flex justify-between items-center text-[11px] font-semibold text-white/80">
+        <span><Bi k="test" /></span>
+        <button type="button" onClick={onClose} className="h-7 px-2 rounded-lg border border-white/20 text-white/70 hover:text-white"><Bi k="close" /></button>
       </div>
-    </div>,
-    document.body,
+      <canvas ref={ref} width={480} height={300} className="w-full rounded-lg" />
+      <Note he={swap ? T.testPatchesSwapped.he : T.testPatches.he} en={swap ? T.testPatchesSwapped.en : T.testPatches.en} />
+      <Note he={T.testFloat.he} en={T.testFloat.en} />
+    </div>
   )
 }
 
@@ -144,6 +143,7 @@ export function StereoPanelBody() {
             className="flex-1 h-8 coarse:h-11 rounded-lg text-[11px] border border-white/[0.15] text-white/70 select-none"
           ><Bi k="test" /></button>
         </div>
+        {test && <TestImage swap={st.swap} ghost={st.ghost} onClose={() => setTest(false)} />}
         <div className="flex flex-col gap-1.5">
           <span className="text-[10px] font-semibold tracking-widest uppercase text-white/60"><Bi k="look" /></span>
           <Choice label="look" value={st.comfort ? 'comfort' : 'colour'} onPick={(v) => setStereo({ comfort: v === 'comfort' })}
@@ -153,7 +153,6 @@ export function StereoPanelBody() {
       <Note he={`${st.swap ? T.lensRight.he : T.lensLeft.he} ${T.safety.he}`} en={`${st.swap ? T.lensRight.en : T.lensLeft.en} ${T.safety.en}`} />
       {st.flatMap && <Note he={T.flat.he} en={T.flat.en} />}
       {phone && <Note he={T.phone.he} en={T.phone.en} />}
-      {test && <TestImage swap={st.swap} onClose={() => setTest(false)} />}
     </>
   )
 }
