@@ -145,6 +145,8 @@ interface Props {
   viewApiRef?: React.MutableRefObject<ViewApi | null>
   /** Parent passes a ref; CesiumViewer's measure tool writes its undo function into it */
   undoRef?: React.MutableRefObject<(() => void) | null>
+  /** Same, for Redo */
+  redoRef?: React.MutableRefObject<(() => void) | null>
   /** Same, for the touch "Finish" button (completes the measurement without a double-click) */
   finishRef?: React.MutableRefObject<(() => void) | null>
 }
@@ -184,6 +186,7 @@ function CesiumViewerInner({
   onGeopointAdd,
   viewApiRef,
   undoRef,
+  redoRef,
   finishRef,
 }: Props & { onRecover: () => void }) {
   // Never show Google tiles unless the page explicitly allows it (share/client links don't)
@@ -982,7 +985,7 @@ function CesiumViewerInner({
     onRecover()
   }
   const gpu = useContextLoss(viewer, recover)
-  useMeasure(viewer, googleShown ? 'none' : measureMode, baseElevation, measureKey, onMeasureResult, heightRef, { undoRef, finishRef, onNotice, onProfile: setProfile })
+  useMeasure(viewer, googleShown ? 'none' : measureMode, baseElevation, measureKey, onMeasureResult, heightRef, { undoRef, redoRef, finishRef, onNotice, onProfile: setProfile })
   useGeopoints(viewer, geopointActive && !googleShown, geopoints, onGeopointAdd ?? (() => {}), heightRef, { onNotice })
   // Red/cyan 3D glasses (waits while a tool is active; off for Google 3D and for pages without a 3D model)
   useStereo(viewer, {

@@ -225,6 +225,10 @@ sqlite.exec(`
       sqlite.exec(`ALTER TABLE models ADD COLUMN is_public_demo INTEGER NOT NULL DEFAULT 0`)
       if (marker) sqlite.prepare(`UPDATE models SET is_public_demo = 1 WHERE LOWER(asset_name) LIKE '%' || LOWER(?) || '%'`).run(marker)
     }
+    // allow_google3d: per client (share link / client page) switch for Google Photorealistic 3D; off for everyone by default
+    const cols2 = (t: string) => new Set((sqlite.prepare(`PRAGMA table_info(${t})`).all() as Array<{ name: string }>).map((c) => c.name))
+    if (!cols2('share_links').has('allow_google3d')) sqlite.exec(`ALTER TABLE share_links ADD COLUMN allow_google3d INTEGER NOT NULL DEFAULT 0`)
+    if (!cols2('client_pages').has('allow_google3d')) sqlite.exec(`ALTER TABLE client_pages ADD COLUMN allow_google3d INTEGER NOT NULL DEFAULT 0`)
     if (!o.has('is_public_demo')) {
       sqlite.exec(`ALTER TABLE orthophotos ADD COLUMN is_public_demo INTEGER NOT NULL DEFAULT 0`)
       if (marker) sqlite.prepare(`UPDATE orthophotos SET is_public_demo = 1 WHERE LOWER(asset_name) LIKE '%' || LOWER(?) || '%'`).run(marker)

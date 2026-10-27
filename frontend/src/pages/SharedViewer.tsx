@@ -133,16 +133,16 @@ export function SharedViewer() {
   }
 
   if (share.kind === 'orthophoto') {
-    return <OrthoSharedView orthophoto={share.orthophoto} token={token} expires={share.expires_at} />
+    return <OrthoSharedView orthophoto={share.orthophoto} token={token} expires={share.expires_at} google3d={!!share.allow_google3d} />
   }
-  return <ModelSharedView model={share.model} canEdit={share.can_edit} token={token} expires={share.expires_at} />
+  return <ModelSharedView model={share.model} canEdit={share.can_edit} token={token} expires={share.expires_at} google3d={!!share.allow_google3d} />
 }
 
 // ─── Model-shared view ────────────────────────────────────────────────────────
 
 function ModelSharedView({
-  model: initialModel, canEdit, token, expires,
-}: { model: Model; canEdit: boolean; token: string; expires?: string }) {
+  model: initialModel, canEdit, token, expires, google3d = false,
+}: { model: Model; canEdit: boolean; token: string; expires?: string; google3d?: boolean }) {
   const safeModel = {
     ...initialModel,
     name: initialModel.name ?? '',
@@ -173,6 +173,7 @@ function ModelSharedView({
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const viewApiRef = useRef<ViewApi | null>(null)
   const undoRef = useRef<(() => void) | null>(null)
+  const redoRef = useRef<(() => void) | null>(null)
   const finishRef = useRef<(() => void) | null>(null)
   // Read-only: only the layers the owner marked "visible to clients"; the link authorises just this model's layers
   const layerCtl = useLayers(model.id, { shareToken: token, canEdit: false })
@@ -251,8 +252,11 @@ function ModelSharedView({
           onMeasureResult={setMeasureResult}
           visualSettings={visualSettings}
           baseMap={baseMap}
+          allowGoogle3d={google3d}
+          onBaseMapFallback={() => setBaseMap('none')}
           viewApiRef={viewApiRef}
           undoRef={undoRef}
+          redoRef={redoRef}
           finishRef={finishRef}
           geopointActive={geopointActive}
           geopoints={geopoints}
@@ -262,6 +266,7 @@ function ModelSharedView({
           placement="bottom-dock"
           part={phone ? 'tools' : 'all'}
           onUndo={() => undoRef.current?.()}
+          onRedo={() => redoRef.current?.()}
           onFinish={() => finishRef.current?.()}
           mode={measureMode}
           onModeChange={handleModeChange}
@@ -276,7 +281,7 @@ function ModelSharedView({
           onGeopointClear={() => { setGeopoints([]); setGeopointActive(false) }}
         />
         <VisualControls settings={visualSettings} onChange={setVisualSettings} />
-        <MapSwitcher value={baseMap} onChange={setBaseMap} />
+        <MapSwitcher value={baseMap} onChange={setBaseMap} allowGoogle3d={google3d} />
 
         {phone ? (
           <PhonePanels
@@ -351,7 +356,7 @@ function ModelSharedView({
 
 // ─── Orthophoto-shared view ──────────────────────────────────────────────────
 
-function OrthoSharedView({ orthophoto, token, expires }: { orthophoto: Orthophoto; token: string; expires?: string }) {
+function OrthoSharedView({ orthophoto, token, expires, google3d = false }: { orthophoto: Orthophoto; token: string; expires?: string; google3d?: boolean }) {
   const photo = orthoToResolved(orthophoto)
   const phone = usePhoneLayout()
 
@@ -368,6 +373,7 @@ function OrthoSharedView({ orthophoto, token, expires }: { orthophoto: Orthophot
   const flyToOrthoRef = useRef<((p: ResolvedOrthophoto) => void) | null>(null)
   const viewApiRef = useRef<ViewApi | null>(null)
   const undoRef = useRef<(() => void) | null>(null)
+  const redoRef = useRef<(() => void) | null>(null)
   const finishRef = useRef<(() => void) | null>(null)
 
   // Fly to the orthophoto once the viewer wires up its ref
@@ -401,10 +407,13 @@ function OrthoSharedView({ orthophoto, token, expires }: { orthophoto: Orthophot
           onMeasureResult={setMeasureResult}
           visualSettings={visualSettings}
           baseMap={baseMap}
+          allowGoogle3d={google3d}
+          onBaseMapFallback={() => setBaseMap('none')}
           orthophotos={[photo]}
           flyToOrthoRef={flyToOrthoRef}
           viewApiRef={viewApiRef}
           undoRef={undoRef}
+          redoRef={redoRef}
           finishRef={finishRef}
           geopointActive={geopointActive}
           geopoints={geopoints}
@@ -414,6 +423,7 @@ function OrthoSharedView({ orthophoto, token, expires }: { orthophoto: Orthophot
           placement="bottom-dock"
           part={phone ? 'tools' : 'all'}
           onUndo={() => undoRef.current?.()}
+          onRedo={() => redoRef.current?.()}
           onFinish={() => finishRef.current?.()}
           mode={measureMode}
           onModeChange={handleModeChange}
@@ -428,7 +438,7 @@ function OrthoSharedView({ orthophoto, token, expires }: { orthophoto: Orthophot
           onGeopointClear={() => { setGeopoints([]); setGeopointActive(false) }}
         />
         <VisualControls settings={visualSettings} onChange={setVisualSettings} />
-        <MapSwitcher value={baseMap} onChange={setBaseMap} />
+        <MapSwitcher value={baseMap} onChange={setBaseMap} allowGoogle3d={google3d} />
         {phone && (
           <PhonePanels
             measure={{

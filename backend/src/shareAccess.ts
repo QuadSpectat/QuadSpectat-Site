@@ -8,6 +8,7 @@ export interface ShareRow {
   model_id: string | null
   orthophoto_id: string | null
   can_edit: number
+  allow_google3d?: number
   label: string | null
   created_at: string
   expires_at: string | null
@@ -37,7 +38,7 @@ export type ShareLookup =
 export async function findShare(token: unknown): Promise<ShareLookup> {
   if (typeof token !== 'string' || !/^[0-9a-f]{20,80}$/.test(token)) return { state: 'missing' }
   const { rows } = await db.query<ShareRow>(
-    'SELECT token, model_id, orthophoto_id, can_edit, label, created_at, expires_at FROM share_links WHERE token = $1',
+    'SELECT token, model_id, orthophoto_id, can_edit, allow_google3d, label, created_at, expires_at FROM share_links WHERE token = $1',
     [token],
   )
   const row = rows[0]

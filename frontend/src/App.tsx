@@ -89,6 +89,7 @@ export default function App() {
   const flyToOrthoRef  = useRef<((photo: ResolvedOrthophoto) => void) | null>(null)
   const viewApiRef     = useRef<ViewApi | null>(null)
   const undoRef        = useRef<(() => void) | null>(null)
+  const redoRef = useRef<(() => void) | null>(null)
   const finishRef      = useRef<(() => void) | null>(null)
 
   // Load orthophotos on mount
@@ -303,6 +304,7 @@ export default function App() {
             flyToOrthoRef={flyToOrthoRef}
             viewApiRef={viewApiRef}
             undoRef={undoRef}
+            redoRef={redoRef}
             finishRef={finishRef}
             geopointActive={geopointActive}
             geopoints={geopoints}
@@ -312,6 +314,7 @@ export default function App() {
             <MeasureToolbar
               part="tools" placement="top-center"
             onUndo={() => undoRef.current?.()}
+            onRedo={() => redoRef.current?.()}
             onFinish={() => finishRef.current?.()}
             mode={measureMode}
             onModeChange={handleModeChange}
@@ -331,6 +334,7 @@ export default function App() {
             <MeasureToolbar
               part={phone ? 'tools' : 'all'} placement="top-right"
             onUndo={() => undoRef.current?.()}
+            onRedo={() => redoRef.current?.()}
             onFinish={() => finishRef.current?.()}
             mode={measureMode}
             onModeChange={handleModeChange}

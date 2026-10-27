@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react'
 import {
   createShareLink, createOrthophotoShareLink,
   listShareLinks, listOrthophotoShareLinks,
-  deleteShareLink, getMe, login,
-} from '@/lib/api'
+  deleteShareLink, getMe, login, setShareGoogle3d } from '@/lib/api'
 import type { ShareLink } from '@/lib/api'
 
 type Target =
@@ -22,6 +21,10 @@ export function ShareDialog({ target, onClose }: Props) {
   const [label, setLabel]   = useState('')
   const [canEdit, setCanEdit] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
+  const toggleGoogle3d = async (token: string, on: boolean) => {
+    if (on && !window.confirm('לאפשר ללקוח זה גוגל 3D? השימוש נספר על חשבון מפתח המפות של QuadSpectat.\n\nAllow Google 3D for this client? Its use is billed to the QuadSpectat Google Maps key.')) return
+    try { await setShareGoogle3d(token, on); setLinks((ls) => ls.map((l) => l.token === token ? { ...l, allow_google3d: on } : l)) } catch (err) { console.error(err) }
+  }
   // Creating and listing links needs the admin sign-in (the same one /admin uses).
   const [authed, setAuthed]   = useState<boolean | null>(null)
   const [user, setUser]       = useState('')
@@ -217,6 +220,12 @@ export function ShareDialog({ target, onClose }: Props) {
                   {origin}/v/{link.token}
                 </p>
               </div>
+              <label className="shrink-0 flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer select-none"
+                title="Allow Google 3D for this client (default off) / אפשר גוגל 3D ללקוח זה (ברירת מחדל: כבוי)">
+                <input type="checkbox" data-testid="share-google3d" checked={!!link.allow_google3d}
+                  onChange={(e) => { void toggleGoogle3d(link.token, e.target.checked) }} className="h-3.5 w-3.5 rounded accent-primary" />
+                Google 3D
+              </label>
               {/* WhatsApp share */}
               <a
                 href={`https://wa.me/?text=${encodeURIComponent(`${origin}/v/${link.token}`)}`}

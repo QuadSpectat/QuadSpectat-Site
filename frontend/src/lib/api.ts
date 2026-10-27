@@ -180,6 +180,8 @@ export interface ShareLink {
   token: string
   label: string | null
   can_edit: boolean
+  /** Google Photorealistic 3D is allowed for the client who holds this link (owner switch, default off) */
+  allow_google3d?: boolean
   created_at: string
 }
 
@@ -201,13 +203,17 @@ export const listShareLinks = (model_id: string) =>
 export const listOrthophotoShareLinks = (orthophoto_id: string) =>
   apiFetch<ShareLink[]>(`/share?orthophoto_id=${encodeURIComponent(orthophoto_id)}`)
 
+/** Owner: allow / forbid Google 3D for the client who holds this share link. */
+export const setShareGoogle3d = (token: string, allow_google3d: boolean) =>
+  apiFetch<{ token: string; allow_google3d: boolean }>(`/share/${token}`, { method: 'PATCH', body: JSON.stringify({ allow_google3d }) })
+
 export const deleteShareLink = (token: string) =>
   apiFetch<void>(`/share/${token}`, { method: 'DELETE' })
 
 // Resolve a share token → discriminated union of model or orthophoto
 export type ResolvedShare =
-  | { kind: 'model';      model: Model;        can_edit: boolean; expires_at?: string }
-  | { kind: 'orthophoto'; orthophoto: Orthophoto; can_edit: boolean; expires_at?: string }
+  | { kind: 'model';      model: Model;        can_edit: boolean; allow_google3d?: boolean; expires_at?: string }
+  | { kind: 'orthophoto'; orthophoto: Orthophoto; can_edit: boolean; allow_google3d?: boolean; expires_at?: string }
 export const resolveShareToken = (token: string) =>
   apiFetch<ResolvedShare>(`/share/${token}`)
 
@@ -394,11 +400,16 @@ export interface ClientPageAdmin {
   expires_at: string
   expired: boolean
   path: string
+  allow_google3d?: boolean
   assets: ClientAsset[]
 }
 export const listClientPages = () => apiFetch<ClientPageAdmin[]>('/clients')
 export const createClientPage = (payload: { name: string; note?: string; assets?: { kind: 'model' | 'orthophoto'; id: string }[] }) =>
   apiFetch<ClientPageAdmin>('/clients', { method: 'POST', body: JSON.stringify(payload) })
+/** Owner: allow / forbid Google 3D for a client page and every link on it. */
+export const setClientGoogle3d = (token: string, allow_google3d: boolean) =>
+  apiFetch<ClientPageAdmin>(`/clients/${token}`, { method: 'PATCH', body: JSON.stringify({ allow_google3d }) })
+
 export const renewClientPage = (token: string) => apiFetch<ClientPageAdmin>(`/clients/${token}/renew`, { method: 'POST', body: '{}' })
 export const deleteClientPage = (token: string) => apiFetch<void>(`/clients/${token}`, { method: 'DELETE' })
 export const addClientAsset = (token: string, kind: 'model' | 'orthophoto', id: string) =>
