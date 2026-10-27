@@ -76,6 +76,11 @@ export function getAuthHeader(): { Authorization: string } | Record<string, neve
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
+/** apiFetch errors read "<status> <text>". A 5xx answer, or no answer at all (server down / network), is not a problem with the link. */
+export function isServerProblem(message: string): boolean {
+  return !/^[1-4]\d\d(\s|$)/.test(message)
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { 'Content-Type': 'application/json', ...getAuthHeader(), ...init?.headers },

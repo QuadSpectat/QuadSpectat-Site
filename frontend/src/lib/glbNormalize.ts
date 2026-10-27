@@ -9,7 +9,8 @@
  * lowest point at the entity altitude. Any other GLB is returned untouched (same URL, no extra download).
  */
 
-export interface PreparedGlb { url: string; note?: string; revoke?: () => void }
+/** `failed`: the file itself could not be fetched (HTTP status): the caller says so at once instead of waiting for a model that never comes. */
+export interface PreparedGlb { url: string; note?: string; revoke?: () => void; failed?: { status: number } }
 
 const MAGIC = 0x46546c67   // 'glTF'
 const CHUNK_JSON = 0x4e4f534a
@@ -54,7 +55,11 @@ export async function prepareGlb(url: string): Promise<PreparedGlb> {
   try {
     // Peek at the JSON chunk only (Range), so ordinary models are not downloaded twice.
     const head = await fetch(url, { headers: { Range: 'bytes=0-524287' } })
-    if (!head.ok) return { url }
+    if (!head.ok) {
+      // a missing / forbidden / broken file is reported now (416 = empty range on a tiny file: just let Cesium try)
+      return head.status === 404 || head.status === 410 || head.status === 401 || head.status === 403 || head.status >= 500
+        ? { url, failed: { status: head.status } } : { url }
+    }
     const peek = await head.arrayBuffer()
     const parsed = parseJsonChunk(peek)
     const c = parsed?.json.extensions?.CESIUM_RTC?.center

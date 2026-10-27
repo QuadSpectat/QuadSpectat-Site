@@ -229,6 +229,8 @@ function CesiumViewerInner({
   const [viewer, setViewer] = useState<Cesium.Viewer | null>(null)
   const [tileError, setTileError] = useState<string | null>(null)
   const [startError, setStartError] = useState<string | null>(null)
+  // "Loading 3D model..." while the model file is on its way (a blank globe looked like a failure on slow connections)
+  const [loadingModel, setLoadingModel] = useState(false)
   const ccStageRef = useRef<Cesium.PostProcessStage | Cesium.PostProcessStageComposite | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -387,9 +389,11 @@ function CesiumViewerInner({
       tilesetRef.current = null
     }
 
+    setLoadingModel(false)
     if (!selectedModel || !modelUrl) return
 
     setTileError(null)
+    setLoadingModel(true)
 
     // 3D Tiles path
     if (selectedModel.model_type === '3d-tiles') {
@@ -411,6 +415,7 @@ function CesiumViewerInner({
         ...tilesetMemoryOptions(),
       }).then((tileset) => {
         if (cancelled || !viewerRef.current) return
+        setLoadingModel(false)
         const vv = viewerRef.current
         vv.scene.primitives.add(tileset)
         tilesetRef.current = tileset
@@ -432,6 +437,7 @@ function CesiumViewerInner({
         if (!cancelled) {
           const msg = err instanceof Error ? err.message : String(err)
           console.error('[CesiumViewer] Failed to load 3D Tileset:', err)
+          setLoadingModel(false)
           setTileError(msg)
         }
       })
@@ -443,6 +449,7 @@ function CesiumViewerInner({
     if (![longitude, latitude, altitude].every((n) => typeof n === 'number' && Number.isFinite(n))
         || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
       const msg = 'This model has no valid position (longitude / latitude / altitude). Open Admin > Models > Edit and enter where it is.'
+      setLoadingModel(false)
       setTileError(msg)
       const noop = () => onNotice(msg)
       if (resetCameraRef) resetCameraRef.current = noop
@@ -531,7 +538,7 @@ function CesiumViewerInner({
           fly()
         } else if (!document.hidden) {
           visibleMs += 300
-          if (visibleMs > 25_000 && visibleMs <= 25_300) setTileError(notReadyMsg)
+          if (visibleMs > 25_000 && visibleMs <= 25_300) { setLoadingModel(false); setTileError(notReadyMsg) }
         }
       }, 300)
       timerRef = timer
@@ -539,6 +546,24 @@ function CesiumViewerInner({
     // Normalise photogrammetry GLBs that carry a projected CESIUM_RTC centre (see glbNormalize.ts); others load as-is
     void prepareGlb(directUrl).then((r) => {
       if (cancelled) { r.revoke?.(); return }
+      if (r.failed) {
+        // The file is not there (or not allowed): say so now, keep Home working (it flies to the placement point)
+        const st = r.failed.status
+        setLoadingModel(false)
+        setTileError(st === 404 || st === 410
+          ? `The model file was not found (HTTP ${st}). It may have been moved or deleted: please contact QuadSpectat.`
+          : st === 401 || st === 403
+            ? `The model file could not be opened: access was refused (HTTP ${st}). The link may have expired: please contact QuadSpectat.`
+            : `The model file could not be downloaded: the file server returned an error (HTTP ${st}). Please try again in a moment.`)
+        const goHome = () => {
+          const vv = viewerRef.current
+          if (vv && !vv.isDestroyed()) vv.camera.flyToBoundingSphere(new Cesium.BoundingSphere(position, 1), { duration: 1.5, offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-35), 60) })
+        }
+        if (resetCameraRef) resetCameraRef.current = goHome
+        homeRef.current = goHome
+        goHome()
+        return
+      }
       revoke = r.revoke
       if (r.note) onNotice(r.note)
       build(r.url)
@@ -1050,6 +1075,12 @@ function CesiumViewerInner({
       )}
       {(gpu !== 'ok' || startError) && (
         <GpuNoticeCard kind={startError ? 'start' : gpu === 'repeated' ? 'repeated' : 'lost'} onReload={recover} />
+      )}
+      {loadingModel && !tileError && (
+        <div role="status" className="absolute top-14 left-1/2 -translate-x-1/2 rounded-full border border-white/[0.15] bg-[#0b100d]/[0.92] text-white/80
+                        text-xs px-3 py-1.5 z-10 pointer-events-none">
+          Loading 3D model…
+        </div>
       )}
       {tileError && (
         <div className="absolute top-14 left-1/2 -translate-x-1/2 bg-red-900/90 text-red-100

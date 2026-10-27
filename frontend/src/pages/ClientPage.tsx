@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { getClientPage } from '@/lib/api'
+import { getClientPage, isServerProblem } from '@/lib/api'
 import { LogoMark } from '@/components/LogoMark'
 import type { ClientPageData } from '@/lib/api'
 
@@ -14,13 +14,13 @@ function fmtDate(iso: string) {
 export function ClientPage() {
   const { token } = useParams<{ token: string }>()
   const [data, setData] = useState<ClientPageData | null>(null)
-  const [state, setState] = useState<'loading' | 'ok' | 'expired' | 'missing'>('loading')
+  const [state, setState] = useState<'loading' | 'ok' | 'expired' | 'missing' | 'unavailable'>('loading')
 
   useEffect(() => {
     if (!token) { setState('missing'); return }
     getClientPage(token)
       .then((d) => { setData(d); setState('ok') })
-      .catch((e: Error) => setState(String(e.message).startsWith('410') ? 'expired' : 'missing'))
+      .catch((e: Error) => setState(String(e.message).startsWith('410') ? 'expired' : isServerProblem(String(e.message)) ? 'unavailable' : 'missing'))
   }, [token])
 
   const Shell = ({ children }: { children: React.ReactNode }) => (
@@ -47,12 +47,27 @@ export function ClientPage() {
     return (
       <Shell>
         <div className="max-w-md">
-          <h1 className="text-xl font-semibold mb-2">{state === 'expired' ? 'This page has expired' : 'We could not find this page'}</h1>
-          <p className="text-sm text-muted-foreground mb-5">
-            {state === 'expired'
-              ? 'Client pages are valid for one year. Contact us and we will renew it for you.'
-              : 'The link may be incomplete or has been removed. Please check it, or contact us.'}
-          </p>
+          {state === 'unavailable' ? (
+            <>
+              <h1 className="text-xl font-semibold mb-2" dir="rtl">השרת אינו זמין כרגע</h1>
+              <h1 className="text-xl font-semibold mb-2">The server is unavailable right now</h1>
+              <p className="text-sm text-muted-foreground mb-1" dir="rtl">הקישור תקין. נסו שוב בעוד מספר דקות, ואם זה נמשך צרו קשר.</p>
+              <p className="text-sm text-muted-foreground mb-5">The link is fine. Please try again in a few minutes, and contact us if it continues.</p>
+              <button type="button" onClick={() => window.location.reload()}
+                className="mr-3 mb-3 inline-flex h-10 px-5 items-center rounded-lg text-sm font-semibold border border-border hover:bg-muted transition-colors">
+                Try again / נסו שוב
+              </button>
+            </>
+          ) : (
+            <>
+              <h1 className="text-xl font-semibold mb-2">{state === 'expired' ? 'This page has expired' : 'We could not find this page'}</h1>
+              <p className="text-sm text-muted-foreground mb-5">
+                {state === 'expired'
+                  ? 'Client pages are valid for one year. Contact us and we will renew it for you.'
+                  : 'The link may be incomplete or has been removed. Please check it, or contact us.'}
+              </p>
+            </>
+          )}
           <a href={WHATSAPP} target="_blank" rel="noopener noreferrer"
             className="inline-flex h-10 px-5 items-center rounded-lg text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
             Contact QuadSpectat on WhatsApp

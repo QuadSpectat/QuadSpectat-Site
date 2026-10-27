@@ -1,7 +1,7 @@
 import { useParams } from 'react-router-dom'
 import { useSearchParams } from 'react-router-dom'
 import { useState, useEffect, useRef } from 'react'
-import { getDownloadUrl, updateModelViaToken } from '@/lib/api'
+import { getDownloadUrl, updateModelViaToken, isServerProblem } from '@/lib/api'
 import { earlyShare } from '@/lib/earlyModel'
 import type { Model, Orthophoto, ResolvedShare } from '@/lib/api'
 import { CesiumViewer } from '@/components/CesiumViewer'
@@ -85,6 +85,8 @@ function ShowcaseChrome({ title, expires, extra }: { title: string; expires?: st
   )
 }
 
+const SERVER_DOWN = 'server-unavailable'
+
 export function SharedViewer() {
   const { token } = useParams<{ token: string }>()
   const [share, setShare] = useState<ResolvedShare | null>(null)
@@ -95,9 +97,10 @@ export function SharedViewer() {
     earlyShare(token)
       .then(setShare)
       .catch((e) => {
-        setErr(String((e as Error).message).startsWith('410')
+        const msg = String((e as Error).message)
+        setErr(msg.startsWith('410')
           ? 'This link has expired. Please contact QuadSpectat and we will send you a new one.'
-          : 'This link is invalid or has been removed.')
+          : isServerProblem(msg) ? SERVER_DOWN : 'This link is invalid or has been removed.')
         console.error('[SharedViewer] Failed to resolve share token:', e)
       })
   }, [token])
@@ -106,7 +109,16 @@ export function SharedViewer() {
     return (
       <div className="flex items-center justify-center h-svh bg-background text-foreground">
         <div className="text-center max-w-sm">
-          <p className="text-sm text-muted-foreground">{err}</p>
+          {err === SERVER_DOWN ? (
+            <>
+              <p className="text-sm text-muted-foreground" dir="rtl">השרת אינו זמין כרגע. הקישור תקין, נסו שוב בעוד מספר דקות.</p>
+              <p className="text-sm text-muted-foreground mt-1">The server is unavailable right now. The link is fine: please try again in a few minutes.</p>
+              <button type="button" onClick={() => window.location.reload()}
+                className="mt-4 h-9 px-4 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:brightness-105 transition">
+                Try again / נסו שוב
+              </button>
+            </>
+          ) : <p className="text-sm text-muted-foreground">{err}</p>}
         </div>
       </div>
     )
