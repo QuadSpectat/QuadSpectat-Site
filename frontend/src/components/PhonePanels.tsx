@@ -3,6 +3,7 @@ import { BottomSheet } from '@/components/BottomSheet'
 import type { SheetTab } from '@/components/BottomSheet'
 import { MeasureToolbar } from '@/components/MeasureToolbar'
 import { VisualPanelBody } from '@/components/VisualControls'
+import type { GoogleAlignUi } from '@/components/VisualControls'
 import { ViewsPanel } from '@/components/ViewsPanel'
 import { StereoPanelBody } from '@/components/StereoControls'
 import { T, bi, setStereo, useStereoState } from '@/lib/anaglyph'
@@ -13,7 +14,7 @@ type MeasureProps = Omit<React.ComponentProps<typeof MeasureToolbar>, 'part' | '
 
 interface Props {
   measure: MeasureProps
-  visual: { settings: VisualSettings; onChange: (s: VisualSettings) => void; onSnapToGround?: () => void; crsLabel?: string }
+  visual: { settings: VisualSettings; onChange: (s: VisualSettings) => void; onSnapToGround?: () => void; crsLabel?: string; googleAlign?: GoogleAlignUi }
   /** Views tab only when a model is open */
   views?: { modelId: string | null; viewApiRef: React.MutableRefObject<ViewApi | null>; shareToken?: string; editable: boolean }
   /** Layers tab (the same body as the desktop popover); omitted when the model has no layers a visitor may see */

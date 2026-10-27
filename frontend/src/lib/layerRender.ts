@@ -197,7 +197,7 @@ export async function drapePoints(v: Cesium.Viewer, ds: Cesium.DataSource, alive
  * Heights come back as the model surface where there is one and as the globe (height 0) where the feature leaves the model.
  */
 export async function drapeOnModel(
-  v: Cesium.Viewer, ds: Cesium.DataSource, ready: () => Promise<boolean>, alive: () => boolean, skip: Cesium.Entity[],
+  v: Cesium.Viewer, ds: Cesium.DataSource, ready: () => Promise<boolean>, alive: () => boolean, skip: object[],
 ): Promise<void> {
   const now = Cesium.JulianDate.now()
   const NONE = Cesium.HeightReference.NONE

@@ -15,6 +15,8 @@ interface Props {
   onSnapToGround?: () => void
   /** Short label showing current model CRS, e.g. "ITM -17.5 m" */
   crsLabel?: string
+  /** Owner only: Align to Google 3D block (given while Google 3D is on and a model is open) */
+  googleAlign?: GoogleAlignUi
 }
 
 interface SliderDef {
@@ -35,6 +37,48 @@ const SLIDERS: SliderDef[] = [
   { key: 'saturation', label: 'Saturation', min: -1, max: 1, step: 0.05, format: (v) => (v >= 0 ? '+' : '') + v.toFixed(2) },
   { key: 'heightOffset', label: 'Height Offset', min: -500, max: 500, step: 1, format: (v) => (v >= 0 ? '+' : '') + v.toFixed(0) + ' m' },
 ]
+
+
+/** Owner-only "Align to Google 3D" block of the Visual panel (shown while Google 3D is on and a model is open). */
+export interface GoogleAlignUi {
+  /** saved google_offset of the open model, metres */
+  offset: number
+  /** one line about the last measurement, or an error text */
+  info: string | null
+  busy: boolean
+  onAlign: () => void
+  onNudge: (deltaMetres: number) => void
+  onReset: () => void
+}
+
+function GoogleAlignBlock({ ui }: { ui: GoogleAlignUi }) {
+  const nudge = [-1, -0.1, 0.1, 1]
+  const btnCls = 'h-7 coarse:h-11 px-2 rounded-lg text-[11px] font-medium border border-white/[0.15] text-white/75 hover:text-white hover:bg-white/[0.07] select-none disabled:opacity-40'
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-sky-400/30 bg-sky-400/[0.05] p-2.5" data-testid="google-align">
+      <span className="text-[10px] font-semibold tracking-widest uppercase text-sky-300/90">
+        <span dir="rtl">יישור ל-Google 3D</span> / Align to Google 3D
+      </span>
+      <p className="text-[10px] leading-snug text-white/55">
+        <span dir="rtl" className="block">מודד את גובה הקרקע של Google ושל המודל באתר ומזיז את המודל עד שהוא יושב על Google. התיקון נשמר למודל ופועל רק כש-Google 3D פעיל; התצוגה הרגילה לא משתנה.</span>
+        Measures Google&apos;s ground and the model&apos;s ground at the site and moves the model until it sits on Google. The correction is saved with the model and applies only while Google 3D is on; the normal view does not change.
+      </p>
+      <div className="flex items-center gap-2">
+        <button type="button" disabled={ui.busy} onClick={ui.onAlign} data-testid="google-align-run" className={cn(btnCls, 'flex-1 border-sky-400/40 text-sky-200')}>
+          {ui.busy ? '…' : 'Align / יישר'}
+        </button>
+        <button type="button" disabled={ui.busy} onClick={ui.onReset} data-testid="google-align-reset" className={btnCls}>Reset / איפוס</button>
+      </div>
+      <div className="flex items-center justify-between gap-1">
+        {nudge.map((d) => (
+          <button key={d} type="button" disabled={ui.busy} onClick={() => ui.onNudge(d)} data-testid={`google-nudge-${d}`} className={btnCls}>{d > 0 ? '+' : ''}{d}</button>
+        ))}
+      </div>
+      <span className="text-[11px] font-mono text-sky-200" data-testid="google-align-offset">Google offset {ui.offset >= 0 ? '+' : ''}{ui.offset.toFixed(2)} m</span>
+      {ui.info && <span className="text-[10px] text-white/55 leading-snug" data-testid="google-align-info">{ui.info}</span>}
+    </div>
+  )
+}
 
 /** Light mode / High quality switch. Phones start in Light mode; the choice is remembered on this device. */
 export function QualityModeToggle() {
@@ -68,7 +112,7 @@ export function QualityModeToggle() {
 }
 
 /** Performance switch + sliders. Rendered inside the floating panel on large screens and inside the bottom sheet on phones. */
-export function VisualPanelBody({ settings, onChange, onSnapToGround, crsLabel }: Props) {
+export function VisualPanelBody({ settings, onChange, onSnapToGround, crsLabel, googleAlign }: Props) {
   function set(key: keyof VisualSettings, value: number) {
     onChange({ ...settings, [key]: value })
   }
@@ -132,6 +176,7 @@ export function VisualPanelBody({ settings, onChange, onSnapToGround, crsLabel }
           </div>
         )
       })}
+      {googleAlign && <GoogleAlignBlock ui={googleAlign} />}
       {!isDefault && (
         <button
           type="button"
@@ -146,7 +191,7 @@ export function VisualPanelBody({ settings, onChange, onSnapToGround, crsLabel }
   )
 }
 
-export function VisualControls({ settings, onChange, onSnapToGround, crsLabel }: Props) {
+export function VisualControls({ settings, onChange, onSnapToGround, crsLabel, googleAlign }: Props) {
   const [panel, setPanel] = useState<'visual' | 'stereo' | null>(null)   // one popover at a time
   const open = panel === 'visual'
   const phone = usePhoneLayout()
@@ -179,7 +224,7 @@ export function VisualControls({ settings, onChange, onSnapToGround, crsLabel }:
       {/* Panel - rendered SECOND so it appears above the button */}
       {open && (
         <div className="qs-chrome w-64 max-h-[calc(100dvh-20rem)] min-h-[12rem] overflow-y-auto rounded-2xl border border-white/[0.15] bg-[#0b100d]/[0.97] backdrop-blur-xl shadow-2xl shadow-black/80 p-4 flex flex-col gap-4">
-          <VisualPanelBody settings={settings} onChange={onChange} onSnapToGround={onSnapToGround} crsLabel={crsLabel} />
+          <VisualPanelBody settings={settings} onChange={onChange} onSnapToGround={onSnapToGround} crsLabel={crsLabel} googleAlign={googleAlign} />
         </div>
       )}
       {panel === 'stereo' && (

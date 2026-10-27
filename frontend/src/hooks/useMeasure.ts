@@ -8,6 +8,7 @@ import {
   formatDistance, formatArea, formatVolume,
 } from '@/lib/measure'
 import { toMsl } from '@/lib/heights'
+import { pickModelPosition } from '@/lib/pickModel'
 import {
   type Profile, horizontalDistance, lineStations, profileStats, sampleCount,
 } from '@/lib/profile'
@@ -61,6 +62,8 @@ export function useMeasure(
     /** Written with a function that completes the measurement (the touch "Finish" button). */
     finishRef?: React.MutableRefObject<(() => void) | null>
     onNotice?: (msg: string) => void
+    /** Objects the picks must ignore (Google's tileset while Google 3D is shown) */
+    getExcluded?: () => object[]
     /** Profile mode: called with the sampled profile once ready, and with null when it is cleared. */
     onProfile?: (p: Profile | null) => void
   },
@@ -83,6 +86,7 @@ export function useMeasure(
     const points: Cesium.Cartesian3[] = []
     let hover: Cesium.Cartesian3 | null = null
     let finished = false
+    let lastHoverPick = 0
 
     // The base elevation the user types is a height ABOVE SEA LEVEL; the scene uses ellipsoidal heights.
     function baseEll(lat: number, lon: number): number {
@@ -117,11 +121,7 @@ export function useMeasure(
 
     // ── Pick helper ────────────────────────────────────────────────────────
     function pick(win: Cesium.Cartesian2): Cesium.Cartesian3 | undefined {
-      const pos = v.scene.pickPosition(win)
-      if (Cesium.defined(pos) && !isNaN(pos.x)) return pos
-      const ray = v.camera.getPickRay(win, new Cesium.Ray())
-      if (!ray) return undefined
-      return v.scene.globe.pick(ray, v.scene) ?? undefined
+      return pickModelPosition(v, win, extrasRef.current?.getExcluded?.() ?? [])
     }
 
     // ── Dynamic (CallbackProperty) entities ───────────────────────────────
@@ -269,7 +269,7 @@ export function useMeasure(
         const carts = stations.map((s) => Cesium.Cartographic.fromDegrees(s.lon, s.lat))
         // Only the model / ground may count as surface: pins, layer lines and measuring shapes of this page are left out
         // (a 100 m KML line used to be read as a 100 m wall), and so are the model-less globe hits below.
-        const skip = v.entities.values.filter((e) => !e.model)
+        const skip: object[] = [...(extrasRef.current?.getExcluded?.() ?? []), ...v.entities.values.filter((e) => !e.model)]
         for (let i = 0; i < v.dataSources.length; i++) skip.push(...v.dataSources.get(i).entities.values)
         const res = await v.scene.sampleHeightMostDetailed(carts, skip)
         // With a model open, a hit on the bare globe (ellipsoid height, no terrain) means "outside the model": a gap, not a
@@ -363,6 +363,8 @@ export function useMeasure(
 
     handler.setInputAction((e: Cesium.ScreenSpaceEventHandler.MotionEvent) => {
       if (finished) return
+      // with Google excluded every pick is two renders: look at the hover only every 80 ms
+      if ((extrasRef.current?.getExcluded?.().length ?? 0) > 0) { const t = performance.now(); if (t - lastHoverPick < 80) return; lastHoverPick = t }
       hover = pick(e.endPosition) ?? null
     }, Cesium.ScreenSpaceEventType.MOUSE_MOVE)
 

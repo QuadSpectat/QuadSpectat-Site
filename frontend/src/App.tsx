@@ -24,6 +24,8 @@ import type { VisualSettings } from '@/lib/visualControls'
 import type { BaseMap } from '@/components/MapSwitcher'
 import type { ResolvedOrthophoto } from '@/components/OrthophotoPanel'
 import { sortOrthosTopFirst } from '@/components/OrthophotoPanel'
+import type { GoogleAlignResult } from '@/lib/googleAlign'
+import type { GoogleAlignUi } from '@/components/VisualControls'
 import type { OrthoCompare } from '@/components/ComparePanel'
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? '/api'
@@ -87,6 +89,9 @@ export default function App() {
 
   // Snap-to-ground ref, reset-camera ref, fly-to-ortho ref
   const snapRef        = useRef<(() => void) | null>(null)
+  const googleAlignRef = useRef<(() => Promise<GoogleAlignResult>) | null>(null)
+  const [alignInfo, setAlignInfo] = useState<string | null>(null)
+  const [alignBusy, setAlignBusy] = useState(false)
   const resetCameraRef = useRef<(() => void) | null>(null)
   const flyToOrthoRef  = useRef<((photo: ResolvedOrthophoto) => void) | null>(null)
   const viewApiRef     = useRef<ViewApi | null>(null)
@@ -215,6 +220,31 @@ export default function App() {
   const selectedAsset = selectedModel?.asset_name?.trim()
   const orthoForMap = selectedAsset ? orthoPhotos.filter((p) => p.asset_name === selectedAsset) : orthoPhotos
 
+  // Align to Google 3D (owner): measure, save google_offset with the model, nudge, reset
+  async function saveGoogleOffset(value: number) {
+    if (!selectedModel) return
+    const updated = await updateModel(selectedModel.id, { google_offset: Math.round(value * 100) / 100 })
+    setSelectedModel(updated)
+    void refresh()
+  }
+  const googleAlign: GoogleAlignUi | undefined = baseMap === 'google3d' && selectedModel ? {
+    offset: selectedModel.google_offset ?? 0,
+    info: alignInfo,
+    busy: alignBusy,
+    onAlign: () => {
+      setAlignBusy(true); setAlignInfo('Measuring Google 3D and the model... / מודד...')
+      googleAlignRef.current?.()
+        .then(async (r) => {
+          await saveGoogleOffset(r.offset)
+          setAlignInfo(`Google ground ${r.googleHeight.toFixed(2)} m, model ground ${r.modelHeight.toFixed(2)} m (ellipsoid), correction ${r.delta >= 0 ? '+' : ''}${r.delta.toFixed(2)} m from ${r.samples} of 25 points, spread ${r.spread.toFixed(2)} m. Nudge it if the ground is sloped.`)
+        })
+        .catch((e: unknown) => setAlignInfo(e instanceof Error ? e.message : String(e)))
+        .finally(() => setAlignBusy(false))
+    },
+    onNudge: (d) => { void saveGoogleOffset((selectedModel.google_offset ?? 0) + d).then(() => setAlignInfo(null)).catch(console.error) },
+    onReset: () => { void saveGoogleOffset(0).then(() => setAlignInfo('Reset: the model is drawn as in the normal view.')).catch(console.error) },
+  } : undefined
+
   function crsLabel(): string | undefined {
     if (!selectedModel) return undefined
     const { coordinate_system, geoid_offset } = selectedModel
@@ -309,6 +339,7 @@ export default function App() {
             onSwipePosChange={setSwipePos}
             onSnapToGround={(offset) => void handleSnapToGround(offset)}
             snapRef={snapRef}
+            googleAlignRef={googleAlignRef}
             resetCameraRef={resetCameraRef}
             flyToOrthoRef={flyToOrthoRef}
             viewApiRef={viewApiRef}
@@ -364,6 +395,7 @@ export default function App() {
             onChange={setVisualSettings}
             onSnapToGround={selectedModel?.model_type === '3d-tiles' ? () => snapRef.current?.() : undefined}
             crsLabel={crsLabel()}
+            googleAlign={googleAlign}
           />
           {/* Bottom-right overlay controls: LayerPanel + ComparePanel */}
           <div className="absolute bottom-[calc(3.5rem+env(safe-area-inset-bottom)+var(--qs-dock-h,0px))] right-[max(1rem,env(safe-area-inset-right))] z-20 flex flex-row-reverse items-end gap-2">
@@ -450,7 +482,7 @@ export default function App() {
             onGeopointClear: () => { setGeopoints([]); setGeopointActive(false) },
           }}
           visual={{
-            settings: visualSettings, onChange: setVisualSettings, crsLabel: crsLabel(),
+            settings: visualSettings, onChange: setVisualSettings, crsLabel: crsLabel(), googleAlign,
             onSnapToGround: selectedModel?.model_type === '3d-tiles' ? () => snapRef.current?.() : undefined,
           }}
           views={selectedModel ? { modelId: selectedModel.id, viewApiRef, editable: true } : undefined}

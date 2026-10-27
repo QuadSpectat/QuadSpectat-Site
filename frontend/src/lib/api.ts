@@ -25,6 +25,8 @@ export interface Model {
   geoid_mode?: number
   /** 1 = listed and served to anyone without a login (the public demo); set by the owner */
   is_public_demo?: number
+  /** metres added to the model's height only while Google 3D is shown (owner's Align to Google 3D); 0 = none */
+  google_offset?: number
   show_watermark: number  // 1 = show, 0 = hide
   watermark_text: string  // text shown as watermark; empty = no watermark
   created_at: string
@@ -69,6 +71,7 @@ export interface UpdateModelPayload {
   geoid_offset?: number
   geoid_mode?: boolean
   is_public_demo?: boolean
+  google_offset?: number
 }
 
 export function getAuthHeader(): { Authorization: string } | Record<string, never> {
