@@ -9,6 +9,7 @@ import { useMeasure } from '@/hooks/useMeasure'
 import { Chrome } from '@/components/Chrome'
 import { useStereo } from '@/hooks/useStereo'
 import { useStereoState } from '@/lib/anaglyph'
+import { useGridFloor } from '@/hooks/useGridFloor'
 import { useGeopoints } from '@/hooks/useGeopoints'
 import { ProfilePanel } from '@/components/ProfilePanel'
 import type { Profile } from '@/lib/profile'
@@ -686,6 +687,7 @@ function CesiumViewerInner({
   // Performance profile (phone Light mode / High quality): canvas resolution, MSAA, fog, globe budget
   const perf = usePerformanceProfile(viewer)
   const stereoBoost = useStereoState().boost   // phones: coarser tiles while 3D glasses are on
+  useGridFloor(viewer, { sphereRef: stereoSphereRef, tilesetRef, entityRef, hasModel: !!selectedModel, modelId: selectedModel?.id, googleShown })
   // Sync LOD + memory budget to the tilesets whenever quality or the profile changes
   useEffect(() => {
     const sse = effectiveSse(qualityToSSE(visualSettings.quality), perf)

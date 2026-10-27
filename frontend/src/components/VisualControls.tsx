@@ -7,6 +7,7 @@ import { WheelSlider } from '@/components/WheelSlider'
 import { useQualityMode } from '@/lib/deviceProfile'
 import { usePhoneLayout } from '@/hooks/usePhoneLayout'
 import { StereoPill, StereoPanelBody } from '@/components/StereoControls'
+import { GridSwitch } from '@/components/GridControls'
 
 interface Props {
   settings: VisualSettings
@@ -79,6 +80,7 @@ export function VisualPanelBody({ settings, onChange, onSnapToGround, crsLabel }
   return (
     <>
       <QualityModeToggle />
+      <GridSwitch />
       {SLIDERS.map(({ key, label, min, max, step, format }) => {
         const val = settings[key]
         const pct = ((val - min) / (max - min)) * 100
