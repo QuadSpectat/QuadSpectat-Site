@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Glasses, ChevronUp, ChevronDown } from 'lucide-react'
+import { Glasses, ChevronUp, ChevronDown, EyeOff, Eye } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { WheelSlider } from '@/components/WheelSlider'
 import { detectDevice } from '@/lib/deviceProfile'
@@ -131,6 +131,8 @@ export function StereoPanelBody() {
           text={st.sep === 0 ? 'flat' : st.sep.toFixed(1)} onChange={(v) => setStereo({ sep: v })} />
         <SliderRow label="pop" value={st.pop} min={0} max={4} step={0.05}
           text={`${Math.round(st.pop * 100)}%`} onChange={(v) => setStereo({ pop: v })} />
+        <SliderRow label="limit" value={st.limit} min={0.3} max={3} step={0.1}
+          text={`${st.limit.toFixed(1)}°`} onChange={(v) => setStereo({ limit: v })} />
         <SliderRow label="ghost" value={st.ghost} min={0} max={1} step={0.05}
           text={`${Math.round(st.ghost * 100)}%`} onChange={(v) => setStereo({ ghost: v })} />
         <div className="flex gap-2">
@@ -150,6 +152,11 @@ export function StereoPanelBody() {
             options={[['colour', 'colour'], ['comfort', 'comfort']]} />
         </div>
       </div>
+      <button
+        type="button" aria-pressed={st.hideMenus} onClick={() => setStereo({ hideMenus: !st.hideMenus })}
+        className={cn('h-9 coarse:h-11 rounded-xl text-xs font-medium select-none border', st.hideMenus ? 'border-[#9ACD3C]/50 text-[#b8e05c] bg-[#9ACD3C]/15' : 'border-white/[0.15] text-white/75')}
+      ><Bi k={st.hideMenus ? 'showMenus' : 'hideMenus'} /></button>
+      <Note he={T.hideMenusNote.he} en={T.hideMenusNote.en} />
       <Note he={`${st.swap ? T.lensRight.he : T.lensLeft.he} ${T.safety.he}`} en={`${st.swap ? T.lensRight.en : T.lensLeft.en} ${T.safety.en}`} />
       {st.flatMap && <Note he={T.flat.he} en={T.flat.en} />}
       {phone && <Note he={T.phone.he} en={T.phone.en} />}
@@ -167,6 +174,7 @@ export function StereoPill({ open, onToggleOpen }: { open: boolean; onToggleOpen
       className={cn(
         'flex items-center h-8 coarse:h-11 rounded-xl text-xs font-medium select-none overflow-hidden',
         'bg-[#090d0b]/80 backdrop-blur-md border shadow-lg transition-all duration-200',
+        st.hideMenus && 'opacity-60 hover:opacity-100',
         open || showOn ? 'border-[#9ACD3C]/50 text-[#b8e05c] shadow-[#9ACD3C]/10' : 'border-white/15 text-white/75',
         blocked && 'opacity-50',
         st.paused && 'opacity-70',
@@ -184,6 +192,13 @@ export function StereoPill({ open, onToggleOpen }: { open: boolean; onToggleOpen
       </button>
       <button type="button" aria-label="3D settings" aria-expanded={open} onClick={onToggleOpen} className="h-full px-2 hover:text-white/95">
         {open ? <ChevronDown className="w-3 h-3 opacity-60" /> : <ChevronUp className="w-3 h-3 opacity-40" />}
+      </button>
+      <button
+        type="button" aria-pressed={st.hideMenus} onClick={() => setStereo({ hideMenus: !st.hideMenus })}
+        aria-label={bi(st.hideMenus ? 'showMenus' : 'hideMenus')} title={`${bi(st.hideMenus ? 'showMenus' : 'hideMenus')} (H)`}
+        className="h-full pl-1 pr-2.5 hover:text-white/95"
+      >
+        {st.hideMenus ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5 opacity-70" />}
       </button>
     </div>
   )

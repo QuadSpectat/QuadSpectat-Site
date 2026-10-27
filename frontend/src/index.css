@@ -68,3 +68,9 @@
 @media (max-width: 640px) {
   .skin-light .map-switcher-float { bottom: auto !important; top: calc(5rem + env(safe-area-inset-top)); }
 }
+
+/* Hide menus (red/cyan 3D): a menu in front of a model that floats out of the screen breaks the depth illusion, so while the
+   attribute is set everything marked qs-chrome, and every direct child of a qs-stage that is not qs-keep, is removed.
+   The viewer itself, the 3D pill (with the restore button) and watermarks stay. */
+html[data-qs-hide-menus] .qs-chrome,
+html[data-qs-hide-menus] .qs-stage > :not(.qs-keep) { display: none !important; }

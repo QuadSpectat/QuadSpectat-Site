@@ -171,7 +171,7 @@ export function ModelSidebar({
   return (
     <>
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex flex-col w-64 shrink-0 border-r border-border bg-background overflow-hidden">
+      <aside className="qs-chrome hidden md:flex flex-col w-64 shrink-0 border-r border-border bg-background overflow-hidden">
         {assetPanel}
       </aside>
 

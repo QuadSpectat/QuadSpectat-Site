@@ -11,13 +11,15 @@ export interface StereoSettings {
   /**
    * Eye separation as PERCENT OF THE VIEWING DISTANCE (distance to the zero-parallax plane). Chosen over millimetres or
    * % of model size because it keeps the depth feel the same while zooming and orbiting. 0 = flat. The model's own near
-   * and far parallax are always held under MAX_PARALLAX, so a high value cannot strain the eyes beyond that limit.
+   * and far parallax are always held under the Comfort limit (`limit`), so a high value cannot strain the eyes beyond it.
    */
   sep: number
   /** 0 to 4: how far the zero-parallax plane sits behind the model. 0 = model mostly behind the screen, 1 = the whole model in front of it, up to 4 = far in front */
   pop: number
   /** 0 to 1: ghost reduction for glasses that leak (e.g. red/blue film): dims the blue channel (what leaks through the red lens) by up to GHOST_BLUE_CUT */
   ghost: number
+  /** Comfort limit in degrees: the model's own near-to-far parallax is held under this (higher = more pop and depth, more eye strain) */
+  limit: number
   /** Exchange which eye feeds the red and the cyan channel (glasses worn the other way round) */
   swap: boolean
   /** false = Colour (Dubois matrices), true = Comfort (half-colour, less rivalry) */
@@ -34,9 +36,11 @@ export interface StereoState extends StereoSettings {
   flatMap: boolean
   /** Phones: multiplier on the tileset screen-space error while 3D is on */
   boost: number
+  /** Menus hidden so nothing sits in front of a model that floats out of the screen (never saved; see index.css) */
+  hideMenus: boolean
 }
 
-export const DEFAULT_STEREO: StereoSettings = { sep: 3, pop: 2.5, ghost: 0, swap: false, comfort: false }
+export const DEFAULT_STEREO: StereoSettings = { sep: 3, pop: 2.5, ghost: 0, limit: 0.8, swap: false, comfort: false }
 export const GHOST_BLUE_CUT = 0.6   // at ghost = 1 the blue channel is multiplied by 1 - 0.6
 export const SEP_MIN = 0, SEP_MAX = 6   // percent of viewing distance; the owner's eyes fused at 0.5 % and saw double above about 1 %
 
@@ -50,13 +54,14 @@ function readStored(): StereoSettings {
       sep: num(j.sep, SEP_MIN, SEP_MAX, DEFAULT_STEREO.sep),
       pop: num(j.pop, 0, 4, DEFAULT_STEREO.pop),
       ghost: num(j.ghost, 0, 1, DEFAULT_STEREO.ghost),
+      limit: num(j.limit, 0.3, 3, DEFAULT_STEREO.limit),
       swap: j.swap === true,
       comfort: j.comfort === true,
     }
   } catch { return { ...DEFAULT_STEREO } }
 }
 
-let state: StereoState = { ...readStored(), on: false, blocked: null, paused: false, flatMap: false, boost: 1 }
+let state: StereoState = { ...readStored(), on: false, blocked: null, paused: false, flatMap: false, boost: 1, hideMenus: false }
 const listeners = new Set<() => void>()
 
 export function getStereo(): StereoState { return state }
@@ -64,7 +69,8 @@ export function getStereo(): StereoState { return state }
 export function setStereo(patch: Partial<StereoState>): void {
   state = { ...state, ...patch }
   if ('boost' in patch) setSseBoost(state.boost)
-  const keep: (keyof StereoSettings)[] = ['sep', 'pop', 'ghost', 'swap', 'comfort']
+  if ('hideMenus' in patch) { try { document.documentElement.toggleAttribute('data-qs-hide-menus', state.hideMenus) } catch { /* no document */ } }
+  const keep: (keyof StereoSettings)[] = ['sep', 'pop', 'ghost', 'limit', 'swap', 'comfort']
   if (keep.some((k) => k in patch)) {
     try { localStorage.setItem(KEY, JSON.stringify(Object.fromEntries(keep.map((k) => [k, state[k]])))) } catch { /* private mode */ }
   }
@@ -84,6 +90,10 @@ export const T = {
   depth: { he: 'עומק', en: 'Depth' },
   pop: { he: 'בליטה החוצה', en: 'Pop out' },
   ghost: { he: 'הפחתת רפאים', en: 'Ghost reduction' },
+  limit: { he: 'גבול נוחות', en: 'Comfort limit' },
+  hideMenus: { he: 'הסתר תפריטים', en: 'Hide menus' },
+  showMenus: { he: 'הצג תפריטים', en: 'Show menus' },
+  hideMenusNote: { he: 'מסתיר את כל התפריטים כדי שדבר לא יסתיר מודל שבולט מהמסך. מקש H.', en: 'Hides every menu so nothing covers a model that pops out of the screen. Key H.' },
   swap: { he: 'החלף עיניים', en: 'Swap eyes' },
   test: { he: 'תמונת בדיקה', en: 'Test image' },
   look: { he: 'מראה', en: 'Look' },
@@ -122,7 +132,6 @@ export type TextKey = keyof typeof T
 export const bi = (k: TextKey): string => `${T[k].he} / ${T[k].en}`
 
 // ── Depth maths (pure) ───────────────────────────────────────────────────────
-const MAX_PARALLAX = 0.014     // 0.8 degrees in radians: the model's own near-to-far parallax is held under this (1.5 degrees looked double to the owner)
 
 /**
  * Zero-parallax distance (m), i.e. where the model meets the screen plane. pop 0: half a radius in front of the model centre
@@ -134,14 +143,15 @@ export function focusDistance(cameraToCentre: number, radius: number, pop: numbe
 
 /**
  * Eye separation (m) for focus distance D, a model of the given radius at `centreDist` from the camera: `sep` percent of D,
- * then reduced so the model's near and far parallax stay under MAX_PARALLAX (the ground and horizon beyond the model are
+ * then reduced so the model's near and far parallax stay under the Comfort limit (the ground and horizon beyond the model are
  * ignored on purpose).
  */
-export function eyeSeparation(D: number, centreDist: number, radius: number, s: Pick<StereoSettings, 'sep'>): number {
+export function eyeSeparation(D: number, centreDist: number, radius: number, s: Pick<StereoSettings, 'sep' | 'limit'>): number {
   const e = (D * s.sep) / 100
   const near = Math.max(centreDist - radius, 0.3 * Math.min(D, centreDist)), far = centreDist + radius
   const theta = e * Math.max(Math.abs(1 / near - 1 / D), Math.abs(1 / D - 1 / far))
-  return theta > MAX_PARALLAX ? (e * MAX_PARALLAX) / theta : e
+  const max = (s.limit * Math.PI) / 180
+  return theta > max ? (e * max) / theta : e
 }
 
 /**

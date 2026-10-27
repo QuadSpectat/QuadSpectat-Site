@@ -5,7 +5,7 @@ import { MeasureToolbar } from '@/components/MeasureToolbar'
 import { VisualPanelBody } from '@/components/VisualControls'
 import { ViewsPanel } from '@/components/ViewsPanel'
 import { StereoPanelBody } from '@/components/StereoControls'
-import { useStereoState } from '@/lib/anaglyph'
+import { T, bi, setStereo, useStereoState } from '@/lib/anaglyph'
 import type { ViewApi } from '@/lib/views'
 import type { VisualSettings } from '@/lib/visualControls'
 
@@ -54,5 +54,15 @@ export function PhonePanels({ measure, visual, views, layers }: Props) {
     id: 'stereo', label: '3D', icon: <Glasses size={14} strokeWidth={1.9} />, badge: stereo.on && !stereo.blocked ? (stereo.paused ? '||' : 'ON') : undefined,
     content: <div className="flex flex-col gap-4"><StereoPanelBody /></div>,
   })
-  return <BottomSheet tabs={tabs} label="Viewer panels" />
+  return (
+    <>
+      <div className="qs-chrome contents"><BottomSheet tabs={tabs} label="Viewer panels" /></div>
+      {stereo.hideMenus && (
+        <button
+          type="button" onClick={() => setStereo({ hideMenus: false })} aria-label={bi('showMenus')}
+          className="qs-keep fixed bottom-[calc(0.75rem+env(safe-area-inset-bottom))] right-3 z-30 h-11 px-4 rounded-xl text-xs font-medium border border-white/20 bg-[#090d0b]/70 text-white/80 backdrop-blur-md opacity-60 active:opacity-100"
+        ><bdi>{T.showMenus.he}</bdi> / <bdi>{T.showMenus.en}</bdi></button>
+      )}
+    </>
+  )
 }

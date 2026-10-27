@@ -6,6 +6,7 @@ import 'cesium/Build/Cesium/Widgets/widgets.css'
 // Disable Ion so Cesium doesn't attempt Ion network calls without a token
 Cesium.Ion.defaultAccessToken = ''
 import { useMeasure } from '@/hooks/useMeasure'
+import { Chrome } from '@/components/Chrome'
 import { useStereo } from '@/hooks/useStereo'
 import { useStereoState } from '@/lib/anaglyph'
 import { useGeopoints } from '@/hooks/useGeopoints'
@@ -1014,14 +1015,16 @@ function CesiumViewerInner({
   }, [layers, featurePick])
 
   return (
-    <div className="relative w-full h-full">
+    <div className="qs-keep relative w-full h-full">
       <div ref={containerRef} className="w-full h-full" />
       {/* Hidden credit container — keeps Cesium logo off the canvas */}
       {/* Credits stay hidden except while Google 3D is shown: Google requires attribution on screen */}
       <div ref={creditRef} className={googleShown ? 'absolute bottom-1 left-2 z-10 max-w-[60%] text-[10px] text-white/80 [&_a]:text-white/90' : 'hidden'} />
       {featurePick && <LayerFeatureCard pick={featurePick} onClose={() => setFeaturePick(null)} />}
-      <OrientationAids viewer={viewer} onHome={selectedModel ? () => homeRef.current?.() : undefined} />
-      {profile && measureMode === 'profile' && <ProfilePanel profile={profile} onClose={() => setProfile(null)} />}
+      <Chrome>
+        <OrientationAids viewer={viewer} onHome={selectedModel ? () => homeRef.current?.() : undefined} />
+        {profile && measureMode === 'profile' && <ProfilePanel profile={profile} onClose={() => setProfile(null)} />}
+      </Chrome>
       {notice && (
         <div role="status"
              className="absolute top-16 left-1/2 -translate-x-1/2 rounded-2xl border border-white/[0.15]

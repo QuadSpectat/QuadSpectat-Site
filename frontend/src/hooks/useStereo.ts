@@ -180,6 +180,22 @@ export function useStereo(viewer: Cesium.Viewer | null, o: Options): void {
     return () => { stop(); setStereo({ boost: 1 }) }
   }, [viewer, active])
 
+  // Key H hides / shows every menu while 3D is on (not while typing)
+  useEffect(() => {
+    if (!active) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== 'h' || e.ctrlKey || e.metaKey || e.altKey) return
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return
+      setStereo({ hideMenus: !getStereo().hideMenus })
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [active])
+
+  // Menus come back when 3D goes off
+  useEffect(() => { if (!st.on && getStereo().hideMenus) setStereo({ hideMenus: false }) }, [st.on])
+
   // The viewer is gone (page change or reload): the next one starts flat
-  useEffect(() => () => { setStereo({ on: false, blocked: null, paused: false, flatMap: false, boost: 1 }) }, [])
+  useEffect(() => () => { setStereo({ on: false, blocked: null, paused: false, flatMap: false, boost: 1, hideMenus: false }) }, [])
 }

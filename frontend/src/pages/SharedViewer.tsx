@@ -65,7 +65,7 @@ function ShowcaseChrome({ title, expires, extra }: { title: string; expires?: st
   const until = fmtDate(expires)
   return (
     <>
-      <div className="absolute top-[calc(0.75rem+env(safe-area-inset-top))] left-[max(0.75rem,env(safe-area-inset-left))] z-20 flex items-center gap-3 pl-2.5 pr-4 py-2 rounded-2xl showcase-card max-w-[calc(100%-1.5rem)] sm:max-w-md">
+      <div className="qs-chrome absolute top-[calc(0.75rem+env(safe-area-inset-top))] left-[max(0.75rem,env(safe-area-inset-left))] z-20 flex items-center gap-3 pl-2.5 pr-4 py-2 rounded-2xl showcase-card max-w-[calc(100%-1.5rem)] sm:max-w-md">
         <LogoMark size={36} filled className="shrink-0" />
         <div className="min-w-0 leading-tight">
           <h1 className="text-[15px] font-bold truncate">{title}</h1>
@@ -73,7 +73,7 @@ function ShowcaseChrome({ title, expires, extra }: { title: string; expires?: st
         </div>
         <BackLink />
       </div>
-      <div className="absolute top-[calc(0.75rem+env(safe-area-inset-top))] right-[max(0.75rem,env(safe-area-inset-right))] z-20 flex items-center gap-2">
+      <div className="qs-chrome absolute top-[calc(0.75rem+env(safe-area-inset-top))] right-[max(0.75rem,env(safe-area-inset-right))] z-20 flex items-center gap-2">
         {until && (
           <div className="hidden sm:block px-4 py-2.5 rounded-xl showcase-card text-xs text-muted-foreground">
             Link valid until <strong className="text-foreground font-semibold">{until}</strong>
@@ -224,7 +224,7 @@ function ModelSharedView({
   return (
     <div className="skin-light relative h-svh overflow-hidden bg-background text-foreground">
       <ShowcaseChrome title={model.name} expires={expires} />
-      <div className="absolute inset-0">
+      <div className="qs-stage absolute inset-0">
         <CesiumViewer
           shareToken={token}
           selectedModel={editModel}
@@ -376,7 +376,7 @@ function OrthoSharedView({ orthophoto, token, expires }: { orthophoto: Orthophot
   return (
     <div className="skin-light relative h-svh overflow-hidden bg-background text-foreground">
       <ShowcaseChrome title={photo.name} expires={expires} />
-      <div className="absolute inset-0">
+      <div className="qs-stage absolute inset-0">
         <CesiumViewer
           shareToken={token}
           selectedModel={null}
@@ -430,7 +430,7 @@ function OrthoSharedView({ orthophoto, token, expires }: { orthophoto: Orthophot
 
         {photo.show_watermark !== 0 && photo.watermark_text && (
           <div
-            className="absolute bottom-[calc(0.5rem+env(safe-area-inset-bottom)+var(--qs-dock-h,0px))] left-[max(1rem,env(safe-area-inset-left))] z-20 pointer-events-none select-none"
+            className="qs-keep absolute bottom-[calc(0.5rem+env(safe-area-inset-bottom)+var(--qs-dock-h,0px))] left-[max(1rem,env(safe-area-inset-left))] z-20 pointer-events-none select-none"
             style={{ direction: 'rtl' }}
           >
             <span

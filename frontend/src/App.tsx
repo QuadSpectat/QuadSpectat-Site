@@ -216,7 +216,7 @@ export default function App() {
   return (
     <div className="flex flex-col h-svh bg-background text-foreground">
       <header
-        className="flex items-center border-b border-border shrink-0 gap-2 min-[430px]:gap-3 bg-card pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] min-[430px]:pl-[max(1rem,env(safe-area-inset-left))] min-[430px]:pr-[max(1rem,env(safe-area-inset-right))]"
+        className="qs-chrome flex items-center border-b border-border shrink-0 gap-2 min-[430px]:gap-3 bg-card pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] min-[430px]:pl-[max(1rem,env(safe-area-inset-left))] min-[430px]:pr-[max(1rem,env(safe-area-inset-right))]"
         style={{ height: 'calc(56px + env(safe-area-inset-top))', paddingTop: 'env(safe-area-inset-top)' }}
       >
         <button
@@ -272,7 +272,7 @@ export default function App() {
         />
 
         {/* Viewer + floating toolbar share this relative container */}
-        <div className={`relative flex-1 overflow-hidden${geopointActive ? ' cursor-crosshair' : ''}`}>
+        <div className={`qs-stage relative flex-1 overflow-hidden${geopointActive ? ' cursor-crosshair' : ''}`}>
           <CesiumViewer
             selectedModel={selectedModel}
             modelUrl={modelUrl}
@@ -396,7 +396,7 @@ export default function App() {
         </div>
 
         {/* Inspector: measurements and points (large screens; on small screens they float over the map) */}
-        <aside className="hidden lg:flex w-72 shrink-0 flex-col gap-3 p-3 border-l border-border bg-card overflow-y-auto">
+        <aside className="qs-chrome hidden lg:flex w-72 shrink-0 flex-col gap-3 p-3 border-l border-border bg-card overflow-y-auto">
           {selectedModel && (
             <ViewsPanel editable modelId={selectedModel.id} viewApiRef={viewApiRef} />
           )}
