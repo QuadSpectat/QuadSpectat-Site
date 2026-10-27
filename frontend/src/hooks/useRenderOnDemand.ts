@@ -56,3 +56,20 @@ export function useRenderAfterCommit(viewer: Cesium.Viewer | null): void {
     if (viewer && !viewer.isDestroyed()) viewer.scene.requestRender()
   })
 }
+
+const renderUntil = new WeakMap<Cesium.Viewer, number>()
+/** Ask for a frame on every animation frame for the next `ms`. Cesium needs a few frames to finish some changes (globe imagery
+ *  after show/hide or reorder) and in request-render mode it would otherwise draw only the first. Overlapping calls share one loop. */
+export function requestRenderFor(v: Cesium.Viewer, ms: number): void {
+  if (v.isDestroyed()) return
+  const running = renderUntil.has(v)
+  renderUntil.set(v, Math.max(renderUntil.get(v) ?? 0, performance.now() + ms))
+  if (running) return
+  const tick = () => {
+    if (v.isDestroyed()) { renderUntil.delete(v); return }
+    v.scene.requestRender()
+    if (performance.now() < (renderUntil.get(v) ?? 0)) requestAnimationFrame(tick)
+    else renderUntil.delete(v)
+  }
+  requestAnimationFrame(tick)
+}

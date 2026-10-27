@@ -22,7 +22,7 @@ import type { ViewApi } from '@/lib/views'
 import { OrientationAids } from '@/components/OrientationAids'
 import { effectiveSse, tilesetMemoryOptions, setQualityMode } from '@/lib/deviceProfile'
 import { usePerformanceProfile } from '@/hooks/usePerformanceProfile'
-import { useRenderOnDemand, useRenderAfterCommit, continuousRenderRequested } from '@/hooks/useRenderOnDemand'
+import { useRenderOnDemand, useRenderAfterCommit, continuousRenderRequested, requestRenderFor } from '@/hooks/useRenderOnDemand'
 import { useContextLoss } from '@/hooks/useContextLoss'
 import { takeEarlyTileset } from '@/lib/earlyModel'
 import { GpuNoticeCard } from '@/components/GpuNoticeCard'
@@ -837,6 +837,9 @@ function CesiumViewerInner({
       if (v.imageryLayers.indexOf(bottomUp[k - 1]) > v.imageryLayers.indexOf(bottomUp[k])) { ordered = false; break }
     }
     if (!ordered) for (const l of bottomUp) v.imageryLayers.raiseToTop(l)
+    // The globe needs several frames to drop or repaint imagery after show / alpha / order change; with render-on-demand one
+    // frame is not enough (a hidden orthophoto stayed painted until the camera moved)
+    requestRenderFor(v, 1500)
   }, [orthophotos, orthoCompare, shareToken])
 
   // Track camera lat/lon so we can check if it's over an orthophoto's bounds.
@@ -868,26 +871,41 @@ function CesiumViewerInner({
         && camPos.lat >= p.bounds_south - PAD && camPos.lat <= p.bounds_north + PAD
   })
 
+  // The lock is for looking at an orthophoto on its own. With a 3D model open the user needs to tilt around it, and snapping
+  // the camera to straight-down at its old position used to push the model off the screen: no lock while a model is open.
+  const nadirLock = hasActiveOrtho && !selectedModel
   const prevActiveRef = useRef(false)
   useEffect(() => {
     const v = viewerRef.current
     if (!v) return
     const ctrl = v.scene.screenSpaceCameraController
-    ctrl.enableTilt = !hasActiveOrtho
-    ctrl.enableLook = !hasActiveOrtho
+    ctrl.enableTilt = !nadirLock
+    ctrl.enableLook = !nadirLock
 
     // Snap to nadir only when first entering an ortho area, not on every move
-    const justEntered = hasActiveOrtho && !prevActiveRef.current
-    prevActiveRef.current = hasActiveOrtho
+    const justEntered = nadirLock && !prevActiveRef.current
+    prevActiveRef.current = nadirLock
     if (justEntered && v.camera.pitch > Cesium.Math.toRadians(-85)) {
-      const cart = Cesium.Cartographic.fromCartesian(v.camera.position)
-      v.camera.flyTo({
-        destination: Cesium.Cartesian3.fromRadians(cart.longitude, cart.latitude, cart.height),
-        orientation: { heading: v.camera.heading, pitch: Cesium.Math.toRadians(-90), roll: 0 },
-        duration: 0.5,
-      })
+      // Look straight down at the point the camera was looking at (same distance), instead of at the spot below the camera
+      const c = v.scene.canvas
+      const mid = new Cesium.Cartesian2(c.clientWidth / 2, c.clientHeight / 2)
+      const target = v.camera.pickEllipsoid(mid, v.scene.globe.ellipsoid)
+      if (target) {
+        const range = Math.max(Cesium.Cartesian3.distance(v.camera.position, target), 5)
+        v.camera.flyToBoundingSphere(new Cesium.BoundingSphere(target, 1), {
+          offset: new Cesium.HeadingPitchRange(v.camera.heading, Cesium.Math.toRadians(-90), range),
+          duration: 0.5,
+        })
+      } else {
+        const cart = Cesium.Cartographic.fromCartesian(v.camera.position)
+        v.camera.flyTo({
+          destination: Cesium.Cartesian3.fromRadians(cart.longitude, cart.latitude, cart.height),
+          orientation: { heading: v.camera.heading, pitch: Cesium.Math.toRadians(-90), roll: 0 },
+          duration: 0.5,
+        })
+      }
     }
-  }, [hasActiveOrtho])
+  }, [nadirLock])
 
   // Measurement
   // Never take points on Google's tiles (terms bar measuring on them): tools are off while shown
