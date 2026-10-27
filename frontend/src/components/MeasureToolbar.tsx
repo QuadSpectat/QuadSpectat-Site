@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from 'react'
-import { Ruler, Hexagon, Box, Trash2, Home, MapPin, X, FileText, Download, Pencil, Undo2, Check, TrendingUp } from 'lucide-react'
+import { Ruler, Hexagon, Box, Trash2, Home, MapPin, X, FileText, Download, Pencil, Undo2, Redo2, Check, TrendingUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { MeasureMode } from '@/lib/measure'
 import type { GeoPoint, ExportCrs } from '@/lib/geopoints'
@@ -28,6 +28,8 @@ interface Props {
   history?: { id: string; text: string }[]
   /** Removes the last measurement point (for devices without a right mouse button). */
   onUndo?: () => void
+  /** Puts back the point that Undo removed. */
+  onRedo?: () => void
   /** Completes the current measurement (touch devices have no double-click). */
   onFinish?: () => void
 }
@@ -61,7 +63,7 @@ function fmt(n: number, d: number) { return n.toFixed(d) }
 export function MeasureToolbar({
   mode, onModeChange, baseElevation, onBaseElevationChange, result, onResetCamera,
   geopointActive, onGeopointToggle, geopoints, onGeopointDelete, onGeopointNote, onGeopointClear,
-  placement = 'top-right', part = 'all', history, onUndo, onFinish,
+  placement = 'top-right', part = 'all', history, onUndo, onRedo, onFinish,
 }: Props) {
   const coarse = useCoarsePointer()
   const showTools  = part !== 'panels'
@@ -177,7 +179,7 @@ export function MeasureToolbar({
           <>
             <div className="w-px h-4 bg-white/[0.20] mx-1" />
             <button
-              title="Undo last point"
+              title="Undo last point (Ctrl+Z)"
               aria-label="Undo last point"
               onClick={handleUndo}
               className="flex items-center justify-center h-11 w-11 rounded-xl text-white/75
@@ -186,6 +188,18 @@ export function MeasureToolbar({
             >
               <Undo2 size={16} strokeWidth={1.8} />
             </button>
+            {!geopointActive && onRedo && (
+              <button
+                title="Redo (Ctrl+Y)"
+                aria-label="Redo last point"
+                onClick={() => onRedo()}
+                className="flex items-center justify-center h-11 w-11 rounded-xl text-white/75
+                           hover:text-white/95 hover:bg-white/[0.08] border border-transparent
+                           transition-all duration-150 select-none"
+              >
+                <Redo2 size={16} strokeWidth={1.8} />
+              </button>
+            )}
           </>
         )}
 
@@ -240,6 +254,11 @@ export function MeasureToolbar({
       {showTools && mode !== 'none' && !result && (
         <div className={cn(PANEL, 'px-3 py-2 max-w-xs', coarse && 'pointer-events-auto')}>
           <p className="text-[11px] text-white/70 leading-snug">{coarse ? TOUCH_INSTRUCTIONS[mode] : INSTRUCTIONS[mode]}</p>
+          {!coarse && (
+            <p className="text-[10px] text-white/45 leading-snug mt-1" data-testid="shortcut-hint">
+              Ctrl+Z undo · Ctrl+Y redo · Esc cancel · Enter finish · Del remove / קיצורים: Ctrl+Z ביטול · Ctrl+Y שחזור · Esc ביטול מדידה · Enter סיום · Del מחיקה
+            </p>
+          )}
           {coarse && (
             <div className="flex gap-2 mt-2">
               <button type="button" onClick={handleUndo} aria-label="Undo last point"
@@ -247,6 +266,11 @@ export function MeasureToolbar({
                            text-white/85 bg-white/[0.08] border border-white/[0.15] active:bg-white/[0.16] select-none">
                 <Undo2 size={16} strokeWidth={1.8} />Undo
               </button>
+              {onRedo && <button type="button" onClick={() => onRedo()} aria-label="Redo last point"
+                className="flex-1 inline-flex items-center justify-center gap-1.5 h-11 rounded-xl text-xs font-semibold
+                           text-white/85 bg-white/[0.08] border border-white/[0.15] active:bg-white/[0.16] select-none">
+                <Redo2 size={16} strokeWidth={1.8} />Redo
+              </button>}
               {mode !== 'profile' && <button type="button" onClick={() => onFinish?.()}
                 className="flex-1 inline-flex items-center justify-center gap-1.5 h-11 rounded-xl text-xs font-bold
                            bg-[#9ACD3C] text-[#17220a] active:brightness-90 select-none">

@@ -9,7 +9,7 @@ import { T, bi, setStereo, useStereoState } from '@/lib/anaglyph'
 import type { ViewApi } from '@/lib/views'
 import type { VisualSettings } from '@/lib/visualControls'
 
-type MeasureProps = Omit<React.ComponentProps<typeof MeasureToolbar>, 'part' | 'placement' | 'onUndo' | 'onFinish' | 'onResetCamera'>
+type MeasureProps = Omit<React.ComponentProps<typeof MeasureToolbar>, 'part' | 'placement' | 'onUndo' | 'onRedo' | 'onFinish' | 'onResetCamera'>
 
 interface Props {
   measure: MeasureProps

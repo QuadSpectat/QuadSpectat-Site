@@ -1,7 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express'
 import { randomUUID } from 'node:crypto'
 import { db } from '../db'
-import { env } from '../env'
 import { optionalAuth } from '../middleware/optionalAuth'
 import { requireAuth } from '../middleware/auth'
 import { shareGrantsModel } from '../shareAccess'
@@ -10,9 +9,8 @@ const router = Router()
 const MAX_VIEWS_PER_MODEL = 20
 
 async function parentModelIsPublic(modelId: string): Promise<boolean> {
-  const { rows } = await db.query('SELECT asset_name FROM models WHERE id = $1', [modelId])
-  if (!rows[0]) return false
-  return String(rows[0].asset_name ?? '').toLowerCase().includes(env.PUBLIC_ASSET_NAME.toLowerCase())
+  const { rows } = await db.query('SELECT is_public_demo FROM models WHERE id = $1', [modelId])
+  return !!rows[0]?.is_public_demo
 }
 
 interface ViewRow { id: string; model_id: string; name: string; camera: string; position: number; created_at: string }

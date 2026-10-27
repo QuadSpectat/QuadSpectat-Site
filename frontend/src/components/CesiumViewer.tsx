@@ -19,18 +19,19 @@ import { DEFAULT_VISUAL, qualityToSSE } from '@/lib/visualControls'
 import type { BaseMap } from '@/components/MapSwitcher'
 import type { GeoPoint } from '@/lib/geopoints'
 import type { HeightRef } from '@/lib/heights'
+import { modelGeoidShift, modelCoordinateSystem } from '@/lib/heights'
 import type { ViewApi } from '@/lib/views'
 import { OrientationAids } from '@/components/OrientationAids'
 import { effectiveSse, tilesetMemoryOptions, setQualityMode } from '@/lib/deviceProfile'
 import { usePerformanceProfile } from '@/hooks/usePerformanceProfile'
-import { useRenderOnDemand, useRenderAfterCommit, continuousRenderRequested } from '@/hooks/useRenderOnDemand'
+import { useRenderOnDemand, useRenderAfterCommit, continuousRenderRequested, requestRenderFor } from '@/hooks/useRenderOnDemand'
 import { useContextLoss } from '@/hooks/useContextLoss'
 import { takeEarlyTileset } from '@/lib/earlyModel'
 import { GpuNoticeCard } from '@/components/GpuNoticeCard'
 import { LayerFeatureCard } from '@/components/LayerFeatureCard'
 import type { FeaturePick } from '@/components/LayerFeatureCard'
 import {
-  loadLayerDataSource, nameDataSource, applyVisibility, captureOrigins, applyLayerOffset, drapePoints, describeEntity,
+  loadLayerDataSource, nameDataSource, applyVisibility, captureOrigins, applyLayerOffset, drapePoints, drapeOnModel, describeEntity,
 } from '@/lib/layerRender'
 import type { EntityOrigin } from '@/lib/layerRender'
 
@@ -130,6 +131,11 @@ interface Props {
   compareBlend?: number
   /** Orthophoto before/after compare state */
   orthoCompare?: OrthoCompare | null
+  /** How the compare is shown: cross-fade (default) or a draggable swipe line */
+  compareMode?: 'fade' | 'swipe'
+  /** Swipe line position, 0 (left edge) to 1 (right edge) of the map */
+  swipePos?: number
+  onSwipePosChange?: (pos: number) => void
   /** Called with the detected geoid offset (m) when user snaps to ground */
   onSnapToGround?: (detectedOffset: number) => void
   /** Parent passes a ref; CesiumViewer writes the snap-to-ground function into it */
@@ -145,6 +151,8 @@ interface Props {
   viewApiRef?: React.MutableRefObject<ViewApi | null>
   /** Parent passes a ref; CesiumViewer's measure tool writes its undo function into it */
   undoRef?: React.MutableRefObject<(() => void) | null>
+  /** Same, for Redo */
+  redoRef?: React.MutableRefObject<(() => void) | null>
   /** Same, for the touch "Finish" button (completes the measurement without a double-click) */
   finishRef?: React.MutableRefObject<(() => void) | null>
 }
@@ -175,6 +183,9 @@ function CesiumViewerInner({
   overlayModelUrl = null,
   compareBlend = 0.5,
   orthoCompare = null,
+  compareMode = 'fade',
+  swipePos = 0.5,
+  onSwipePosChange,
   onSnapToGround,
   snapRef,
   resetCameraRef,
@@ -184,6 +195,7 @@ function CesiumViewerInner({
   onGeopointAdd,
   viewApiRef,
   undoRef,
+  redoRef,
   finishRef,
 }: Props & { onRecover: () => void }) {
   // Never show Google tiles unless the page explicitly allows it (share/client links don't)
@@ -215,21 +227,39 @@ function CesiumViewerInner({
   const overlayTilesetRef = useRef<Cesium.Cesium3DTileset | null>(null)
   // Bounding sphere of the open model: red/cyan 3D takes its focus distance and eye separation from it
   const stereoSphereRef = useRef<Cesium.BoundingSphere | null>(null)
+  // True once the open glTF model can be sampled for heights (layers are draped onto it only then)
+  const modelReadyRef = useRef(false)
+  const swipePosRef = useRef(swipePos)
+  swipePosRef.current = swipePos
 
   // Keep a ref so shader uniform getters always read the latest values
   const visualRef = useRef<VisualSettings>(visualSettings)
   visualRef.current = visualSettings
   // What shift the model currently has, so measured heights can be converted to height above sea level
+  const selectedModelRef = useRef(selectedModel)
+  selectedModelRef.current = selectedModel
+  // Where a 3D Tiles model is (its middle), known once the tileset has loaded: the geoid height N is taken there
+  const tileCenterRef = useRef<{ lat: number; lon: number } | null>(null)
+  /** The vertical shift the open model is drawn with: geoid part (see modelGeoidShift) without the fine-tune slider */
+  const geoidShiftOf = (m: Model | null | undefined): number => {
+    if (!m) return 0
+    if (m.model_type === '3d-tiles') return modelGeoidShift(m, tileCenterRef.current?.lat, tileCenterRef.current?.lon)
+    return modelGeoidShift(m, m.latitude, m.longitude)
+  }
+  // Getters, so a measurement always sees the shift that is drawn right now (the tileset centre arrives after the first render)
   const heightRef = useRef<HeightRef>({ appliedOffset: 0 })
   heightRef.current = {
-    coordinateSystem: selectedModel?.coordinate_system,
-    appliedOffset: (selectedModel?.geoid_offset ?? 0) + visualSettings.heightOffset,
+    get coordinateSystem() { return modelCoordinateSystem(selectedModelRef.current) },
+    // exactly the vertical shift the model is drawn with
+    get appliedOffset() { return geoidShiftOf(selectedModelRef.current) + visualRef.current.heightOffset },
   }
 
   // Exposed as state so useMeasure re-runs once the viewer is ready
   const [viewer, setViewer] = useState<Cesium.Viewer | null>(null)
   const [tileError, setTileError] = useState<string | null>(null)
   const [startError, setStartError] = useState<string | null>(null)
+  // "Loading 3D model..." while the model file is on its way (a blank globe looked like a failure on slow connections)
+  const [loadingModel, setLoadingModel] = useState(false)
   const ccStageRef = useRef<Cesium.PostProcessStage | Cesium.PostProcessStageComposite | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -377,6 +407,8 @@ function CesiumViewerInner({
     if (!v) return
 
     stereoSphereRef.current = null
+    modelReadyRef.current = false
+    tileCenterRef.current = null
     // Remove previous glTF entity
     if (entityRef.current) {
       v.entities.remove(entityRef.current)
@@ -388,9 +420,11 @@ function CesiumViewerInner({
       tilesetRef.current = null
     }
 
+    setLoadingModel(false)
     if (!selectedModel || !modelUrl) return
 
     setTileError(null)
+    setLoadingModel(true)
 
     // 3D Tiles path
     if (selectedModel.model_type === '3d-tiles') {
@@ -412,13 +446,15 @@ function CesiumViewerInner({
         ...tilesetMemoryOptions(),
       }).then((tileset) => {
         if (cancelled || !viewerRef.current) return
+        setLoadingModel(false)
         const vv = viewerRef.current
         vv.scene.primitives.add(tileset)
         tilesetRef.current = tileset
         // Combined offset: model's stored geoid correction + user fine-tune slider
-        const geoidOffset = selectedModel?.geoid_offset ?? 0
         const rootBefore = tileset.boundingSphere.center.clone()
-        applyHeightOffset(tileset, geoidOffset + visualRef.current.heightOffset)
+        const c0 = Cesium.Cartographic.fromCartesian(rootBefore)
+        tileCenterRef.current = { lat: Cesium.Math.toDegrees(c0.latitude), lon: Cesium.Math.toDegrees(c0.longitude) }
+        applyHeightOffset(tileset, geoidShiftOf(selectedModel) + visualRef.current.heightOffset)
         const shift = Cesium.Cartesian3.subtract(tileset.boundingSphere.center, rootBefore, new Cesium.Cartesian3())
         const focus = contentSphere(tileset, shift)
         stereoSphereRef.current = focus
@@ -433,6 +469,7 @@ function CesiumViewerInner({
         if (!cancelled) {
           const msg = err instanceof Error ? err.message : String(err)
           console.error('[CesiumViewer] Failed to load 3D Tileset:', err)
+          setLoadingModel(false)
           setTileError(msg)
         }
       })
@@ -444,13 +481,16 @@ function CesiumViewerInner({
     if (![longitude, latitude, altitude].every((n) => typeof n === 'number' && Number.isFinite(n))
         || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
       const msg = 'This model has no valid position (longitude / latitude / altitude). Open Admin > Models > Edit and enter where it is.'
+      setLoadingModel(false)
       setTileError(msg)
       const noop = () => onNotice(msg)
       if (resetCameraRef) resetCameraRef.current = noop
       homeRef.current = noop
       return
     }
-    const position = Cesium.Cartesian3.fromDegrees(longitude, latitude, altitude)
+    // The altitude is the sea-level height of the model's ground: the geoid offset (when switched on for this model) and the
+    // Height Offset slider are added, like they are for 3D Tiles; the slider moves the model later (see the effect below)
+    const position = Cesium.Cartesian3.fromDegrees(longitude, latitude, altitude + modelGeoidShift(selectedModel, latitude, longitude) + visualRef.current.heightOffset)
     const hpr = new Cesium.HeadingPitchRoll(
       Cesium.Math.toRadians(heading),
       Cesium.Math.toRadians(pitch),
@@ -523,6 +563,8 @@ function CesiumViewerInner({
         if (cancelled) { window.clearInterval(timer); return }
         if (modelReady()) {
           window.clearInterval(timer)
+          modelReadyRef.current = true
+          setLoadingModel(false)
           setTileError((cur) => (cur === notReadyMsg ? null : cur))
           stereoSphereRef.current = new Cesium.BoundingSphere(bs.center.clone(), bs.radius)
           const far = Cesium.Cartesian3.distance(bs.center, position)
@@ -532,7 +574,7 @@ function CesiumViewerInner({
           fly()
         } else if (!document.hidden) {
           visibleMs += 300
-          if (visibleMs > 25_000 && visibleMs <= 25_300) setTileError(notReadyMsg)
+          if (visibleMs > 25_000 && visibleMs <= 25_300) { setLoadingModel(false); setTileError(notReadyMsg) }
         }
       }, 300)
       timerRef = timer
@@ -540,6 +582,24 @@ function CesiumViewerInner({
     // Normalise photogrammetry GLBs that carry a projected CESIUM_RTC centre (see glbNormalize.ts); others load as-is
     void prepareGlb(directUrl).then((r) => {
       if (cancelled) { r.revoke?.(); return }
+      if (r.failed) {
+        // The file is not there (or not allowed): say so now, keep Home working (it flies to the placement point)
+        const st = r.failed.status
+        setLoadingModel(false)
+        setTileError(st === 404 || st === 410
+          ? `The model file was not found (HTTP ${st}). It may have been moved or deleted: please contact QuadSpectat.`
+          : st === 401 || st === 403
+            ? `The model file could not be opened: access was refused (HTTP ${st}). The link may have expired: please contact QuadSpectat.`
+            : `The model file could not be downloaded: the file server returned an error (HTTP ${st}). Please try again in a moment.`)
+        const goHome = () => {
+          const vv = viewerRef.current
+          if (vv && !vv.isDestroyed()) vv.camera.flyToBoundingSphere(new Cesium.BoundingSphere(position, 1), { duration: 1.5, offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-35), 60) })
+        }
+        if (resetCameraRef) resetCameraRef.current = goHome
+        homeRef.current = goHome
+        goHome()
+        return
+      }
       revoke = r.revoke
       if (r.note) onNotice(r.note)
       build(r.url)
@@ -645,10 +705,23 @@ function CesiumViewerInner({
   // Re-apply height offset whenever the slider or model changes
   useEffect(() => {
     if (tilesetRef.current) {
-      const geoidOffset = selectedModel?.geoid_offset ?? 0
-      applyHeightOffset(tilesetRef.current, geoidOffset + visualSettings.heightOffset)
+      applyHeightOffset(tilesetRef.current, geoidShiftOf(selectedModel) + visualSettings.heightOffset)
     }
-  }, [visualSettings.heightOffset, selectedModel?.geoid_offset])
+  }, [visualSettings.heightOffset, selectedModel?.geoid_offset, selectedModel?.geoid_mode])
+
+  // The same slider (and the geoid switch) moves a GLB model: its entity is re-placed, nothing is reloaded
+  useEffect(() => {
+    const e = entityRef.current
+    const m = selectedModel
+    if (!e || !m || m.model_type === '3d-tiles') return
+    if (![m.longitude, m.latitude, m.altitude].every((n) => typeof n === 'number' && Number.isFinite(n))) return
+    const position = Cesium.Cartesian3.fromDegrees(m.longitude, m.latitude, m.altitude + modelGeoidShift(m, m.latitude, m.longitude) + visualSettings.heightOffset)
+    e.position = new Cesium.ConstantPositionProperty(position)
+    e.orientation = new Cesium.ConstantProperty(Cesium.Transforms.headingPitchRollQuaternion(position, new Cesium.HeadingPitchRoll(
+      Cesium.Math.toRadians(m.heading), Cesium.Math.toRadians(m.pitch), Cesium.Math.toRadians(m.roll),
+    )))
+    viewerRef.current?.scene.requestRender()
+  }, [visualSettings.heightOffset, selectedModel?.geoid_offset, selectedModel?.geoid_mode])
 
   // ── Overlay model loading ────────────────────────────────────────────────────
   useEffect(() => {
@@ -678,8 +751,8 @@ function CesiumViewerInner({
         ...tilesetMemoryOptions(),
       }).then((tileset) => {
         if (cancelled || !viewerRef.current) return
-        const geoidOffset = overlayModel.geoid_offset ?? 0
-        applyHeightOffset(tileset, geoidOffset + visualRef.current.heightOffset)
+        const oc = Cesium.Cartographic.fromCartesian(tileset.boundingSphere.center)
+        applyHeightOffset(tileset, modelGeoidShift(overlayModel, Cesium.Math.toDegrees(oc.latitude), Cesium.Math.toDegrees(oc.longitude)) + visualRef.current.heightOffset)
         viewerRef.current.scene.primitives.add(tileset)
         overlayTilesetRef.current = tileset
         viewerRef.current.scene.requestRender()
@@ -689,7 +762,7 @@ function CesiumViewerInner({
 
     // glTF / GLB overlay
     const { longitude, latitude, altitude, heading, pitch, roll, scale } = overlayModel
-    const position = Cesium.Cartesian3.fromDegrees(longitude, latitude, altitude)
+    const position = Cesium.Cartesian3.fromDegrees(longitude, latitude, altitude + modelGeoidShift(overlayModel, latitude, longitude) + visualRef.current.heightOffset)
     const hpr = new Cesium.HeadingPitchRoll(
       Cesium.Math.toRadians(heading),
       Cesium.Math.toRadians(pitch),
@@ -714,6 +787,7 @@ function CesiumViewerInner({
 
   // ── Compare blend — crossfade base ↔ overlay ─────────────────────────────────
   useEffect(() => {
+    if (compareMode === 'swipe') return   // the swipe line owns the shaders (effect below)
     const hasOverlay = overlayModel !== null && (overlayEntityRef.current !== null || overlayTilesetRef.current !== null)
     const baseAlpha    = hasOverlay ? 1 - compareBlend : 1
     const overlayAlpha = compareBlend
@@ -748,9 +822,73 @@ function CesiumViewerInner({
       overlayEntityRef.current.model.colorBlendMode = new Cesium.ConstantProperty(Cesium.ColorBlendMode.HIGHLIGHT)
       overlayEntityRef.current.model.color = new Cesium.ConstantProperty(new Cesium.Color(1, 1, 1, overlayAlpha))
     }
-  }, [compareBlend, overlayModel?.id,
+  }, [compareBlend, compareMode, overlayModel?.id,
       // Re-run once the overlay refs are populated (tracked via overlayModelUrl as a proxy)
       overlayModelUrl])
+
+  // ── Compare swipe line ───────────────────────────────────────────────────────
+  // A vertical line splits the screen: the base model (or the "before" orthophoto) is drawn on its left, the overlay model (or
+  // the "after" orthophoto) on its right. Models use a custom shader that drops the fragments on the wrong side of the line
+  // (the line position is a uniform, so dragging it recompiles nothing); orthophotos use Cesium's split direction.
+  const swipeShaders = useRef<{ base?: Cesium.CustomShader; over?: Cesium.CustomShader }>({})
+  const swipeActive = compareMode === 'swipe' && (overlayModel !== null || !!(orthoCompare?.beforeId && orthoCompare?.afterId))
+  useEffect(() => {
+    if (compareMode !== 'swipe') return
+    const make = (side: number) => new Cesium.CustomShader({
+      uniforms: {
+        u_split: { type: Cesium.UniformType.FLOAT, value: swipePosRef.current },
+        u_side: { type: Cesium.UniformType.FLOAT, value: side },
+      },
+      fragmentShaderText: `void fragmentMain(FragmentInput fsInput, inout czm_modelMaterial material) {
+        bool left = (gl_FragCoord.x / czm_viewport.z) < u_split;
+        if ((u_side < 0.5) != left) { discard; }
+      }`,
+    })
+    const done = { base: false, over: false }
+    const apply = () => {
+      if (!done.base) {
+        const sh = make(0)
+        if (tilesetRef.current) { tilesetRef.current.customShader = sh; done.base = true }
+        else if (entityRef.current?.model) {
+          entityRef.current.model.color = undefined; entityRef.current.model.colorBlendMode = undefined
+          entityRef.current.model.customShader = new Cesium.ConstantProperty(sh); done.base = true
+        }
+        if (done.base) swipeShaders.current.base = sh
+      }
+      if (overlayModel && !done.over) {
+        const sh = make(1)
+        if (overlayTilesetRef.current) { overlayTilesetRef.current.customShader = sh; done.over = true }
+        else if (overlayEntityRef.current?.model) {
+          overlayEntityRef.current.model.color = undefined; overlayEntityRef.current.model.colorBlendMode = undefined
+          overlayEntityRef.current.model.customShader = new Cesium.ConstantProperty(sh); done.over = true
+        }
+        if (done.over) swipeShaders.current.over = sh
+      }
+      viewerRef.current?.scene.requestRender()
+      return done.base && (!overlayModel || done.over)
+    }
+    apply()
+    const timer = window.setInterval(() => { if (apply()) window.clearInterval(timer) }, 400)
+    return () => {
+      window.clearInterval(timer)
+      if (tilesetRef.current) tilesetRef.current.customShader = undefined
+      if (overlayTilesetRef.current) overlayTilesetRef.current.customShader = undefined
+      if (entityRef.current?.model) entityRef.current.model.customShader = undefined
+      if (overlayEntityRef.current?.model) overlayEntityRef.current.model.customShader = undefined
+      swipeShaders.current = {}
+      viewerRef.current?.scene.requestRender()
+    }
+  }, [compareMode, overlayModel?.id, overlayModelUrl, selectedModel?.id, modelUrl])
+  // the line moves: update the uniforms and the imagery split position, nothing else
+  useEffect(() => {
+    const v = viewerRef.current
+    if (!v || v.isDestroyed()) return
+    swipeShaders.current.base?.setUniform('u_split', swipePos)
+    swipeShaders.current.over?.setUniform('u_split', swipePos)
+    v.scene.splitPosition = swipePos
+    v.scene.requestRender()
+  }, [swipePos, compareMode])
+
 
   // Sync orthophoto imagery layers
   useEffect(() => {
@@ -770,7 +908,9 @@ function CesiumViewerInner({
 
     // `orthophotos` is topmost-first. Cross-fade two opaque layers exactly: the lower of the pair stays fully opaque and
     // the upper one carries the fade weight, whichever order the user has stacked them in.
-    const cmp = orthoCompare?.beforeId && orthoCompare.afterId ? orthoCompare : null
+    const cmpAny = orthoCompare?.beforeId && orthoCompare.afterId ? orthoCompare : null
+    const cmp = compareMode === 'swipe' ? null : cmpAny           // cross-fade
+    const swipeCmp = compareMode === 'swipe' ? cmpAny : null      // swipe line: before on the left, after on the right
     const idxOf = (id: string) => orthophotos.findIndex((q) => q.id === id)
     const upperIsAfter = cmp ? idxOf(cmp.afterId) < idxOf(cmp.beforeId) : false
 
@@ -828,6 +968,14 @@ function CesiumViewerInner({
       }
     }
 
+    for (const photo of orthophotos) {
+      const l = orthoMap.get(photo.id)
+      if (!l) continue
+      l.splitDirection = swipeCmp && photo.id === swipeCmp.beforeId ? Cesium.SplitDirection.LEFT
+        : swipeCmp && photo.id === swipeCmp.afterId ? Cesium.SplitDirection.RIGHT : Cesium.SplitDirection.NONE
+    }
+    v.scene.splitPosition = swipePosRef.current
+
     // Deterministic stacking: draw bottom-up in list order (list = topmost first). New layers are added on top by
     // Cesium and reload order no longer matters. Only touch Cesium when the relative order actually differs.
     const bottomUp = [...orthophotos].reverse()
@@ -838,7 +986,10 @@ function CesiumViewerInner({
       if (v.imageryLayers.indexOf(bottomUp[k - 1]) > v.imageryLayers.indexOf(bottomUp[k])) { ordered = false; break }
     }
     if (!ordered) for (const l of bottomUp) v.imageryLayers.raiseToTop(l)
-  }, [orthophotos, orthoCompare, shareToken])
+    // The globe needs several frames to drop or repaint imagery after show / alpha / order change; with render-on-demand one
+    // frame is not enough (a hidden orthophoto stayed painted until the camera moved)
+    if (orthophotos.length) requestRenderFor(v, 1500)
+  }, [orthophotos, orthoCompare, shareToken, compareMode])
 
   // Track camera lat/lon so we can check if it's over an orthophoto's bounds.
   // Updated on moveEnd (after each navigation gesture) — not per-frame.
@@ -869,26 +1020,41 @@ function CesiumViewerInner({
         && camPos.lat >= p.bounds_south - PAD && camPos.lat <= p.bounds_north + PAD
   })
 
+  // The lock is for looking at an orthophoto on its own. With a 3D model open the user needs to tilt around it, and snapping
+  // the camera to straight-down at its old position used to push the model off the screen: no lock while a model is open.
+  const nadirLock = hasActiveOrtho && !selectedModel
   const prevActiveRef = useRef(false)
   useEffect(() => {
     const v = viewerRef.current
     if (!v) return
     const ctrl = v.scene.screenSpaceCameraController
-    ctrl.enableTilt = !hasActiveOrtho
-    ctrl.enableLook = !hasActiveOrtho
+    ctrl.enableTilt = !nadirLock
+    ctrl.enableLook = !nadirLock
 
     // Snap to nadir only when first entering an ortho area, not on every move
-    const justEntered = hasActiveOrtho && !prevActiveRef.current
-    prevActiveRef.current = hasActiveOrtho
+    const justEntered = nadirLock && !prevActiveRef.current
+    prevActiveRef.current = nadirLock
     if (justEntered && v.camera.pitch > Cesium.Math.toRadians(-85)) {
-      const cart = Cesium.Cartographic.fromCartesian(v.camera.position)
-      v.camera.flyTo({
-        destination: Cesium.Cartesian3.fromRadians(cart.longitude, cart.latitude, cart.height),
-        orientation: { heading: v.camera.heading, pitch: Cesium.Math.toRadians(-90), roll: 0 },
-        duration: 0.5,
-      })
+      // Look straight down at the point the camera was looking at (same distance), instead of at the spot below the camera
+      const c = v.scene.canvas
+      const mid = new Cesium.Cartesian2(c.clientWidth / 2, c.clientHeight / 2)
+      const target = v.camera.pickEllipsoid(mid, v.scene.globe.ellipsoid)
+      if (target) {
+        const range = Math.max(Cesium.Cartesian3.distance(v.camera.position, target), 5)
+        v.camera.flyToBoundingSphere(new Cesium.BoundingSphere(target, 1), {
+          offset: new Cesium.HeadingPitchRange(v.camera.heading, Cesium.Math.toRadians(-90), range),
+          duration: 0.5,
+        })
+      } else {
+        const cart = Cesium.Cartographic.fromCartesian(v.camera.position)
+        v.camera.flyTo({
+          destination: Cesium.Cartesian3.fromRadians(cart.longitude, cart.latitude, cart.height),
+          orientation: { heading: v.camera.heading, pitch: Cesium.Math.toRadians(-90), roll: 0 },
+          duration: 0.5,
+        })
+      }
     }
-  }, [hasActiveOrtho])
+  }, [nadirLock])
 
   // Measurement
   // Never take points on Google's tiles (terms bar measuring on them): tools are off while shown
@@ -905,13 +1071,20 @@ function CesiumViewerInner({
     onRecover()
   }
   const gpu = useContextLoss(viewer, recover)
-  useMeasure(viewer, googleShown ? 'none' : measureMode, baseElevation, measureKey, onMeasureResult, heightRef, { undoRef, finishRef, onNotice, onProfile: setProfile })
+  useMeasure(viewer, googleShown ? 'none' : measureMode, baseElevation, measureKey, onMeasureResult, heightRef, { undoRef, redoRef, finishRef, onNotice, onProfile: setProfile })
   useGeopoints(viewer, geopointActive && !googleShown, geopoints, onGeopointAdd ?? (() => {}), heightRef, { onNotice })
   // Red/cyan 3D glasses (waits while a tool is active; off for Google 3D and for pages without a 3D model)
   useStereo(viewer, {
     sphereRef: stereoSphereRef, toolActive: toolWanted, googleShown, hasModel: !!selectedModel, onNotice,
     flatMap: baseMap !== 'none' || orthophotos.some((p) => p.status === 'ready' && p.visible),
   })
+
+  // Height Offset slider -> moves a GLB; draped layers follow it once the slider has rested for a moment
+  const [drapeShift, setDrapeShift] = useState(0)
+  useEffect(() => {
+    const t = window.setTimeout(() => setDrapeShift(visualSettings.heightOffset), 600)
+    return () => window.clearTimeout(t)
+  }, [visualSettings.heightOffset])
 
   // Sync KML/overlay layers.
   // Each layer is loaded once per key (file + placement mode + retry counter). Afterwards ONLY what changed is touched:
@@ -929,10 +1102,13 @@ function CesiumViewerInner({
     }
     for (const id of [...loading.keys()]) if (!wanted.has(id)) loading.delete(id)
 
+    // Cesium can clamp to the globe and to 3D Tiles but not to a glTF model: for a GLB the layer is draped by height sampling
+    const onGlb = !!selectedModel && selectedModel.model_type !== '3d-tiles'
     for (const layer of layers) {
       const drape = layer.clampMode === 'drape' && layer.fileType !== 'czml'
       const offset = drape ? 0 : layer.heightOffset
-      const key = `${layer.url}|${drape ? 'drape' : 'heights'}|${layer.reloadKey}`
+      // a draped layer on a GLB is sampled again when the model is moved with the Height Offset slider
+      const key = `${layer.url}|${drape ? (onGlb ? `glb${drapeShift}` : 'drape') : 'heights'}|${layer.reloadKey}`
       let cur = rt.get(layer.id)
 
       if (cur && cur.key !== key) {          // file or placement mode changed: rebuild from the file
@@ -951,7 +1127,7 @@ function CesiumViewerInner({
       loading.set(layer.id, key)
       onLayerStateRef.current?.(layer.id, { state: 'loading' })
       const stillWanted = () => loading.get(layer.id) === key && !v.isDestroyed()
-      loadLayerDataSource(v, layer, drape)
+      loadLayerDataSource(v, layer, drape && !onGlb)
         .then(async (ds) => {
           if (!stillWanted()) return           // deleted, hidden away or reloaded meanwhile: never add a zombie
           loading.delete(layer.id)
@@ -968,7 +1144,20 @@ function CesiumViewerInner({
           v.dataSources.add(ds)
           v.scene.requestRender()
           onLayerStateRef.current?.(layer.id, { state: 'ok' })
-          if (drape) await drapePoints(v, ds, () => rt.get(layer.id) === r)
+          if (drape && onGlb) {
+            const alive = () => rt.get(layer.id) === r
+            const ready = async (): Promise<boolean> => {
+              for (let waited = 0; waited < 90_000; waited += 250) {
+                if (!alive() || v.isDestroyed()) return false
+                if (modelReadyRef.current) return true
+                await new Promise((res) => setTimeout(res, 250))
+              }
+              return false
+            }
+            const skip = v.entities.values.filter((e) => !e.model)
+            for (let i = 0; i < v.dataSources.length; i++) skip.push(...v.dataSources.get(i).entities.values)
+            await drapeOnModel(v, ds, ready, alive, skip)
+          } else if (drape) await drapePoints(v, ds, () => rt.get(layer.id) === r)
         })
         .catch((err: unknown) => {
           if (!stillWanted()) return
@@ -980,7 +1169,7 @@ function CesiumViewerInner({
         })
     }
     v.scene.requestRender()
-  }, [layers, viewer])
+  }, [layers, viewer, drapeShift])
 
   // Click a layer feature: name, attributes, coordinates (WGS84 / ITM). Off while a tool or Google 3D owns the click.
   const [featurePick, setFeaturePick] = useState<FeaturePick | null>(null)
@@ -1021,6 +1210,7 @@ function CesiumViewerInner({
       {/* Credits stay hidden except while Google 3D is shown: Google requires attribution on screen */}
       <div ref={creditRef} className={googleShown ? 'absolute bottom-1 left-2 z-10 max-w-[60%] text-[10px] text-white/80 [&_a]:text-white/90' : 'hidden'} />
       {featurePick && <LayerFeatureCard pick={featurePick} onClose={() => setFeaturePick(null)} />}
+      {swipeActive && <SwipeLine pos={swipePos} onChange={(p) => onSwipePosChange?.(p)} />}
       <Chrome>
         <OrientationAids viewer={viewer} onHome={selectedModel ? () => homeRef.current?.() : undefined} />
         {profile && measureMode === 'profile' && <ProfilePanel profile={profile} onClose={() => setProfile(null)} />}
@@ -1036,6 +1226,12 @@ function CesiumViewerInner({
       {(gpu !== 'ok' || startError) && (
         <GpuNoticeCard kind={startError ? 'start' : gpu === 'repeated' ? 'repeated' : 'lost'} onReload={recover} />
       )}
+      {loadingModel && !tileError && (
+        <div role="status" className="absolute top-14 left-1/2 -translate-x-1/2 rounded-full border border-white/[0.15] bg-[#0b100d]/[0.92] text-white/80
+                        text-xs px-3 py-1.5 z-10 pointer-events-none">
+          Loading 3D model…
+        </div>
+      )}
       {tileError && (
         <div className="absolute top-14 left-1/2 -translate-x-1/2 bg-red-900/90 text-red-100
                         text-xs px-3 py-2 rounded-md max-w-sm text-center z-10 pointer-events-none">
@@ -1045,6 +1241,36 @@ function CesiumViewerInner({
     </div>
   )
 }
+/** The draggable swipe line of the compare: mouse and touch, he + en side labels. */
+function SwipeLine({ pos, onChange }: { pos: number; onChange: (p: number) => void }) {
+  const rootRef = useRef<HTMLDivElement>(null)
+  const drag = (e: React.PointerEvent<HTMLDivElement>) => {
+    const r = rootRef.current?.getBoundingClientRect()
+    if (!r || r.width <= 0) return
+    onChange(Math.min(0.98, Math.max(0.02, (e.clientX - r.left) / r.width)))
+  }
+  return (
+    <div ref={rootRef} className="absolute inset-0 z-[15] pointer-events-none" data-testid="swipe-line">
+      <div className="absolute top-0 bottom-0 w-0.5 bg-white/90 shadow-[0_0_6px_rgba(0,0,0,0.7)]" style={{ left: `${pos * 100}%` }} />
+      <div
+        role="slider" aria-label="Compare swipe line / קו השוואה" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pos * 100)}
+        className="absolute top-0 bottom-0 w-10 -ml-5 pointer-events-auto cursor-ew-resize flex items-center justify-center"
+        style={{ left: `${pos * 100}%`, touchAction: 'none' }}
+        onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); drag(e) }}
+        onPointerMove={(e) => { if (e.currentTarget.hasPointerCapture(e.pointerId)) drag(e) }}
+      >
+        <div className="h-9 w-9 rounded-full bg-white/95 text-black text-xs font-bold flex items-center justify-center shadow-lg select-none">&#x2194;</div>
+      </div>
+      <div className="absolute top-16 text-[11px] font-semibold px-2 py-1 rounded-lg bg-black/60 text-white" style={{ left: `calc(${pos * 100}% - 6px)`, transform: 'translateX(-100%)' }}>
+        <span dir="rtl">לפני / בסיס</span> · Before / Base
+      </div>
+      <div className="absolute top-16 text-[11px] font-semibold px-2 py-1 rounded-lg bg-black/60 text-white" style={{ left: `calc(${pos * 100}% + 6px)` }}>
+        After / Overlay · <span dir="rtl">אחרי / שכבה</span>
+      </div>
+    </div>
+  )
+}
+
 /** Rebuilds the whole viewer (fresh WebGL context, every effect re-run) when the user taps reload after a lost context. */
 export function CesiumViewer(props: Props) {
   const [epoch, setEpoch] = useState(0)

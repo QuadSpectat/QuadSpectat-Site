@@ -11,7 +11,7 @@ import { effectiveExpiry, isExpired, oneYearFromNow } from '../shareAccess'
  */
 
 type AssetKind = 'model' | 'orthophoto'
-interface PageRow { token: string; name: string; note: string | null; created_at: string; expires_at: string | null }
+interface PageRow { token: string; name: string; note: string | null; created_at: string; expires_at: string | null; allow_google3d?: number }
 interface AssetLink { share_token: string; position: number; model_id: string | null; orthophoto_id: string | null }
 
 const newToken = () => randomBytes(24).toString('hex')
@@ -37,7 +37,7 @@ async function describe(a: AssetLink) {
   return o ? { kind: 'orthophoto' as const, id: o.id as string, name: o.name as string, description: (o.description as string | null) ?? null, type: 'orthophoto', share_token: a.share_token } : null
 }
 
-async function addAsset(clientToken: string, kind: AssetKind, id: string, expiresAt: string, clientName: string): Promise<'added' | 'exists' | 'not_found'> {
+async function addAsset(clientToken: string, kind: AssetKind, id: string, expiresAt: string, clientName: string, google3d = false): Promise<'added' | 'exists' | 'not_found'> {
   const table = kind === 'model' ? 'models' : 'orthophotos'
   const col = kind === 'model' ? 'model_id' : 'orthophoto_id'
   const exists = await db.query(`SELECT id FROM ${table} WHERE id = $1`, [id])
@@ -46,8 +46,8 @@ async function addAsset(clientToken: string, kind: AssetKind, id: string, expire
   if (current.some((a) => (kind === 'model' ? a.model_id : a.orthophoto_id) === id)) return 'exists'
   const shareToken = newToken()
   await db.query(
-    `INSERT INTO share_links (token, ${col}, label, can_edit, expires_at) VALUES ($1, $2, $3, 0, $4)`,
-    [shareToken, id, `Client page: ${clientName}`.slice(0, 120), expiresAt],
+    `INSERT INTO share_links (token, ${col}, label, can_edit, expires_at, allow_google3d) VALUES ($1, $2, $3, 0, $4, $5)`,
+    [shareToken, id, `Client page: ${clientName}`.slice(0, 120), expiresAt, google3d ? 1 : 0],
   )
   await db.query('INSERT INTO client_page_assets (client_token, share_token, position) VALUES ($1, $2, $3)', [clientToken, shareToken, current.length])
   return 'added'
@@ -57,12 +57,12 @@ async function pageSummary(p: PageRow) {
   const assets = (await Promise.all((await assetsOf(p.token)).map(describe))).filter(Boolean)
   return {
     token: p.token, name: p.name, note: p.note, created_at: p.created_at,
-    expires_at: effectiveExpiry(p).toISOString(), expired: isExpired(p), path: `/c/${p.token}`, assets,
+    expires_at: effectiveExpiry(p).toISOString(), expired: isExpired(p), path: `/c/${p.token}`, allow_google3d: Boolean(p.allow_google3d), assets,
   }
 }
 
 async function getPage(token: string): Promise<PageRow | null> {
-  const { rows } = await db.query<PageRow>('SELECT token, name, note, created_at, expires_at FROM client_pages WHERE token = $1', [token])
+  const { rows } = await db.query<PageRow>('SELECT token, name, note, created_at, expires_at, allow_google3d FROM client_pages WHERE token = $1', [token])
   return rows[0] ?? null
 }
 
@@ -72,7 +72,7 @@ clientsAdmin.use(requireAuth)
 
 clientsAdmin.get('/', async (_req: Request, res: Response, next: NextFunction) => {
   try {
-    const { rows } = await db.query<PageRow>('SELECT token, name, note, created_at, expires_at FROM client_pages ORDER BY created_at DESC')
+    const { rows } = await db.query<PageRow>('SELECT token, name, note, created_at, expires_at, allow_google3d FROM client_pages ORDER BY created_at DESC')
     res.json(await Promise.all(rows.map(pageSummary)))
   } catch (err) { next(err) }
 })
@@ -87,7 +87,7 @@ clientsAdmin.post('/', async (req: Request, res: Response, next: NextFunction) =
     const expiresAt = oneYearFromNow()
     await db.query('INSERT INTO client_pages (token, name, note, expires_at) VALUES ($1, $2, $3, $4)', [token, name.trim().slice(0, 120), typeof note === 'string' ? note.slice(0, 500) : null, expiresAt])
     for (const a of list as Array<{ kind?: string; id?: string }>) {
-      if ((a.kind === 'model' || a.kind === 'orthophoto') && typeof a.id === 'string') await addAsset(token, a.kind, a.id, expiresAt, name.trim())
+      if ((a.kind === 'model' || a.kind === 'orthophoto') && typeof a.id === 'string') await addAsset(token, a.kind, a.id, expiresAt, name.trim(), false)
     }
     const page = await getPage(token)
     res.status(201).json(await pageSummary(page!))
@@ -98,7 +98,12 @@ clientsAdmin.patch('/:token', async (req: Request, res: Response, next: NextFunc
   try {
     const page = await getPage(req.params.token)
     if (!page) { res.status(404).json({ error: 'Not found' }); return }
-    const { name, note } = req.body as { name?: unknown; note?: unknown }
+    const { name, note, allow_google3d } = req.body as { name?: unknown; note?: unknown; allow_google3d?: unknown }
+    if (typeof allow_google3d === 'boolean') {
+      // per client: the page and every link on it (links added later inherit it)
+      await db.query('UPDATE client_pages SET allow_google3d = $1 WHERE token = $2', [allow_google3d ? 1 : 0, page.token])
+      for (const a of await assetsOf(page.token)) await db.query('UPDATE share_links SET allow_google3d = $1 WHERE token = $2', [allow_google3d ? 1 : 0, a.share_token])
+    }
     const newName = typeof name === 'string' && name.trim() ? name.trim().slice(0, 120) : page.name
     const newNote = typeof note === 'string' ? note.slice(0, 500) : page.note
     await db.query('UPDATE client_pages SET name = $1, note = $2 WHERE token = $3', [newName, newNote, page.token])
@@ -113,7 +118,7 @@ clientsAdmin.post('/:token/assets', async (req: Request, res: Response, next: Ne
     if (!page) { res.status(404).json({ error: 'Not found' }); return }
     const { kind, id } = req.body as { kind?: string; id?: string }
     if ((kind !== 'model' && kind !== 'orthophoto') || typeof id !== 'string') { res.status(400).json({ error: 'kind (model|orthophoto) and id are required' }); return }
-    const r = await addAsset(page.token, kind, id, effectiveExpiry(page).toISOString(), page.name)
+    const r = await addAsset(page.token, kind, id, effectiveExpiry(page).toISOString(), page.name, Boolean(page.allow_google3d))
     if (r === 'not_found') { res.status(404).json({ error: 'Asset not found' }); return }
     res.status(r === 'added' ? 201 : 200).json(await pageSummary(page))
   } catch (err) { next(err) }

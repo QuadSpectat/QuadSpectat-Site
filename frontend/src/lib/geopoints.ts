@@ -9,6 +9,16 @@ export interface GeoPoint {
   thumbnail?: string // base64 JPEG captured at collection time
 }
 
+/** Next free label: one more than the highest P-number in use, so deleting a middle point never makes two points share a label. */
+export function nextPointLabel(points: GeoPoint[]): string {
+  let max = 0
+  for (const p of points) {
+    const m = /^P(\d+)$/.exec(p.label)
+    if (m) max = Math.max(max, Number(m[1]))
+  }
+  return `P${Math.max(max, points.length) + 1}`
+}
+
 export type ExportCrs = 'wgs84' | 'itm'
 
 // ITM (EPSG:2039): the single official implementation (with the Israel 1993 datum shift) lives in itm.ts

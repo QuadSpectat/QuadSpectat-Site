@@ -11,6 +11,11 @@ function Bi({ k }: { k: TextKey }) {
   return <><bdi>{T[k].he}</bdi> / <bdi>{T[k].en}</bdi></>
 }
 
+/** Both languages on two deliberate lines (Hebrew above English) for narrow buttons, instead of a wrap in the middle of a label. */
+function TwoLines({ k }: { k: TextKey }) {
+  return <span className="flex flex-col items-center"><span dir="rtl">{T[k].he}</span><span dir="ltr">{T[k].en}</span></span>
+}
+
 /** Hebrew line (right to left) above its English line. */
 function Note({ he, en, className }: { he: string; en: string; className?: string }) {
   return (
@@ -138,12 +143,12 @@ export function StereoPanelBody() {
         <div className="flex gap-2">
           <button
             type="button" aria-pressed={st.swap} onClick={() => setStereo({ swap: !st.swap })}
-            className={cn('flex-1 h-8 coarse:h-11 rounded-lg text-[11px] border select-none', st.swap ? 'border-[#9ACD3C]/50 text-[#b8e05c] bg-[#9ACD3C]/15' : 'border-white/[0.15] text-white/70')}
-          ><Bi k="swap" /></button>
+            className={cn('flex-1 min-h-8 coarse:min-h-11 py-1 rounded-lg text-[11px] leading-tight border select-none', st.swap ? 'border-[#9ACD3C]/50 text-[#b8e05c] bg-[#9ACD3C]/15' : 'border-white/[0.15] text-white/70')}
+          ><TwoLines k="swap" /></button>
           <button
             type="button" onClick={() => setTest(true)}
-            className="flex-1 h-8 coarse:h-11 rounded-lg text-[11px] border border-white/[0.15] text-white/70 select-none"
-          ><Bi k="test" /></button>
+            className="flex-1 min-h-8 coarse:min-h-11 py-1 rounded-lg text-[11px] leading-tight border border-white/[0.15] text-white/70 select-none"
+          ><TwoLines k="test" /></button>
         </div>
         {test && <TestImage swap={st.swap} ghost={st.ghost} onClose={() => setTest(false)} />}
         <div className="flex flex-col gap-1.5">

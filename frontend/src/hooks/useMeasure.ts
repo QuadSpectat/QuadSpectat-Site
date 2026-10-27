@@ -33,6 +33,13 @@ function labelOpts(text: string, large = false): Cesium.LabelGraphics.Constructo
   }
 }
 
+/** True when a 3D Tiles model is in the scene (a glTF model is an entity and is looked up separately). */
+function tilesetOpen(v: Cesium.Viewer): boolean {
+  const prims = v.scene.primitives
+  for (let i = 0; i < prims.length; i++) if (prims.get(i) instanceof Cesium.Cesium3DTileset) return true
+  return false
+}
+
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
 /**
@@ -49,6 +56,8 @@ export function useMeasure(
   heightRef?: { current: HeightRef },
   extras?: {
     undoRef?: React.MutableRefObject<(() => void) | null>
+    /** Written with a function that puts back the point the last Undo took away. */
+    redoRef?: React.MutableRefObject<(() => void) | null>
     /** Written with a function that completes the measurement (the touch "Finish" button). */
     finishRef?: React.MutableRefObject<(() => void) | null>
     onNotice?: (msg: string) => void
@@ -89,6 +98,10 @@ export function useMeasure(
     // Per-point stacks — used for right-click undo
     const dotStack: Cesium.Entity[] = []
     const segLabelStack: Cesium.Entity[] = []
+    // Points taken away by Undo, newest last: Redo puts them back. Any new click starts a new history.
+    const redoStack: Cesium.Cartesian3[] = []
+    let resultLabel: Cesium.Entity | null = null
+    let profileRun = 0
 
     function addEnt(def: Cesium.Entity.ConstructorOptions): Cesium.Entity {
       const e = v.entities.add(def)
@@ -249,19 +262,31 @@ export function useMeasure(
       const b = { lat: Cesium.Math.toDegrees(cb.latitude), lon: Cesium.Math.toDegrees(cb.longitude) }
       const length = horizontalDistance(a.lat, a.lon, b.lat, b.lon)
       const stations = lineStations(a, b, sampleCount(length))
+      const myRun = ++profileRun
       extrasRef.current?.onNotice?.(`Sampling the surface along ${formatDistance(length)}...`)
       let heights: (number | null)[]
       try {
         const carts = stations.map((s) => Cesium.Cartographic.fromDegrees(s.lon, s.lat))
-        const res = await v.scene.sampleHeightMostDetailed(carts)
-        heights = res.map((c) => (c && Number.isFinite(c.height) ? c.height : null))
+        // Only the model / ground may count as surface: pins, layer lines and measuring shapes of this page are left out
+        // (a 100 m KML line used to be read as a 100 m wall), and so are the model-less globe hits below.
+        const skip = v.entities.values.filter((e) => !e.model)
+        for (let i = 0; i < v.dataSources.length; i++) skip.push(...v.dataSources.get(i).entities.values)
+        const res = await v.scene.sampleHeightMostDetailed(carts, skip)
+        // With a model open, a hit on the bare globe (ellipsoid height, no terrain) means "outside the model": a gap, not a
+        // 60 m cliff down to height 0. Without a model the globe is the only surface there is, so it stays.
+        const hasModel = v.entities.values.some((e) => !!e.model) || tilesetOpen(v)
+        heights = res.map((c, i) => {
+          if (!c || !Number.isFinite(c.height)) return null
+          if (hasModel && Math.abs(c.height - (v.scene.globe.getHeight(carts[i]) ?? 0)) < 0.01) return null
+          return c.height
+        })
       } catch {
-        if (cancelled) return
+        if (cancelled || myRun !== profileRun) return
         extrasRef.current?.onNotice?.('Could not sample the surface along this line. Try again.')
         retryProfile()
         return
       }
-      if (cancelled) return
+      if (cancelled || myRun !== profileRun) return
       const samples = stations.map((s, i) => {
         const h = heights[i]
         return { ...s, hEll: h, hMsl: h === null ? null : toMsl(s.lat, s.lon, h, ref) }
@@ -309,7 +334,8 @@ export function useMeasure(
         ? Cesium.Cartesian3.midpoint(points[0], points[points.length - 1], new Cesium.Cartesian3())
         : centroid(points)
 
-      addEnt({ position: center, label: labelOpts(text, true) })
+      // On a two-point distance the total sits exactly on the single segment label: lift it above it
+      resultLabel = addEnt({ position: center, label: { ...labelOpts(text, true), pixelOffset: new Cesium.Cartesian2(0, mode === 'distance' ? -32 : -6) } })
     }
 
     // ── ScreenSpaceEventHandler ───────────────────────────────────────────
@@ -328,6 +354,7 @@ export function useMeasure(
         return
       }
       points.push(pos)
+      redoStack.length = 0
       addDot(pos)
       refreshSegLabels()
       // A profile is exactly one line: it finishes on the second point (also by touch, no double-click needed)
@@ -354,16 +381,44 @@ export function useMeasure(
     // Undo: remove the last point + its dot, refresh segment labels
     function undoLast() {
       if (finished || points.length === 0) return
-      points.pop()
+      const gone = points.pop()
+      if (gone) redoStack.push(gone)
       const dot = dotStack.pop()
       if (dot) removeTracked(dot)
       refreshSegLabels()
+    }
+
+    // Redo: the point Undo took away comes back (with its dot and segment label)
+    function redoLast() {
+      if (finished || redoStack.length === 0) return
+      const pos = redoStack.pop()!
+      points.push(pos)
+      addDot(pos)
+      refreshSegLabels()
+    }
+
+    // Escape / Delete: throw the measurement away and start again with the same tool
+    function cancelMeasurement() {
+      profileRun++
+      points.length = 0
+      hover = null
+      finished = false
+      redoStack.length = 0
+      for (const e of dotStack) removeTracked(e)
+      dotStack.length = 0
+      refreshSegLabels()
+      if (resultLabel) { removeTracked(resultLabel); resultLabel = null }
+      onResultRef.current(null)
+      extrasRef.current?.onProfile?.(null)
+      v.scene.requestRender()
     }
 
     handler.setInputAction(() => undoLast(), Cesium.ScreenSpaceEventType.RIGHT_CLICK)
 
     const undoRef = extrasRef.current?.undoRef
     if (undoRef) undoRef.current = undoLast
+    const redoRef = extrasRef.current?.redoRef
+    if (redoRef) redoRef.current = redoLast
     const finishRef = extrasRef.current?.finishRef
     if (finishRef) finishRef.current = () => {
       if (finished) return
@@ -375,10 +430,31 @@ export function useMeasure(
     }
     const finishFn = finishRef?.current
 
+    // Keyboard shortcuts (never while typing in a field): Ctrl/Cmd+Z undo, Ctrl+Y or Ctrl+Shift+Z redo, Esc cancel,
+    // Enter finish, Delete / Backspace remove the finished measurement (asks first, like the trash button)
+    function onKey(ev: KeyboardEvent) {
+      const t = ev.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return
+      if (ev.defaultPrevented || ev.altKey) return
+      const mod = ev.ctrlKey || ev.metaKey
+      const k = ev.key.toLowerCase()
+      if (mod && k === 'z' && !ev.shiftKey) { ev.preventDefault(); undoLast() }
+      else if (mod && (k === 'y' || (k === 'z' && ev.shiftKey))) { ev.preventDefault(); redoLast() }
+      else if (mod) return
+      else if (ev.key === 'Escape') { cancelMeasurement() }
+      else if (ev.key === 'Enter') { if (finishFn) { ev.preventDefault(); finishFn() } }
+      else if (ev.key === 'Delete' || ev.key === 'Backspace') {
+        if (finished && window.confirm('Delete this measurement?')) { ev.preventDefault(); cancelMeasurement() }
+      }
+    }
+    window.addEventListener('keydown', onKey)
+
     // ── Cleanup ───────────────────────────────────────────────────────────
     return () => {
       cancelled = true
+      window.removeEventListener('keydown', onKey)
       if (undoRef && undoRef.current === undoLast) undoRef.current = null
+      if (redoRef && redoRef.current === redoLast) redoRef.current = null
       if (finishRef && finishRef.current === finishFn) finishRef.current = null
       extrasRef.current?.onProfile?.(null)
       handler.destroy()

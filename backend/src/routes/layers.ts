@@ -2,7 +2,6 @@ import { Router, Request, Response, NextFunction } from 'express'
 import { randomUUID } from 'node:crypto'
 import { db } from '../db'
 import { presignDownload, deleteObject, uploadObject, getObjectBuffer } from '../s3'
-import { env } from '../env'
 import { optionalAuth } from '../middleware/optionalAuth'
 import { requireAuth } from '../middleware/auth'
 import { shareGrantsModel } from '../shareAccess'
@@ -20,9 +19,8 @@ interface LayerRow {
 }
 
 async function parentModelIsPublic(modelId: string): Promise<boolean> {
-  const { rows } = await db.query('SELECT asset_name FROM models WHERE id = $1', [modelId])
-  if (!rows[0]) return false
-  return String(rows[0].asset_name ?? '').toLowerCase().includes(env.PUBLIC_ASSET_NAME.toLowerCase())
+  const { rows } = await db.query('SELECT is_public_demo FROM models WHERE id = $1', [modelId])
+  return !!rows[0]?.is_public_demo
 }
 
 /** What anyone but the owner may see of a layer: no storage key, source file name, CRS or error text. */

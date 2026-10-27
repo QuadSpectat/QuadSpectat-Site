@@ -11,11 +11,13 @@ import {
 import { cn } from '@/lib/utils'
 import {
   listModels, deleteModel, updateModel, presignUpload, uploadToSpaces, createModel,
-  listOrthophotos, deleteOrthophoto, presignOrthophotoUpload, createOrthophoto,
+  listOrthophotos, deleteOrthophoto, updateOrthophoto, presignOrthophotoUpload, createOrthophoto,
   login, getMe, getAgeInfo,
 } from '@/lib/api'
 import type { Model, Orthophoto, CreateOrthophotoPayload } from '@/lib/api'
 import { ClientPagesTab } from '@/components/ClientPagesTab'
+import { geoidUndulation } from '@/lib/geoid'
+import { modelGeoidShift, toMsl } from '@/lib/heights'
 import { readFolder, readZip, uploadTileset, type TileFile } from '@/lib/tilesetUpload'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -33,7 +35,7 @@ interface Toast {
 const CRS_PRESETS = [
   { value: 'unknown',  label: 'Unknown / manual slider',              offset: 0,    hint: 'Use the height offset slider after loading' },
   { value: 'wgs84',   label: 'WGS84 Ellipsoidal (no offset)',         offset: 0,    hint: 'Heights already in WGS84 — no correction needed' },
-  { value: 'itm',     label: 'Israel ITM / IG05 (ContextCapture/DJI)', offset: -17.5, hint: 'Auto-applies −17.5 m geoid correction for Israel' },
+  { value: 'itm',     label: 'Israel ITM / IG05: heights above sea level (orthometric)', offset: 0, hint: 'Heights are above sea level; the viewer adds the geoid height N (about +17 to +22.5 m in Israel) when drawing, so the Points panel shows exactly the height in the file' },
   { value: 'custom',  label: 'Custom geoid offset…',                  offset: null, hint: 'Enter your own geoid undulation value in metres' },
 ] as const
 
@@ -281,6 +283,53 @@ const POSE_HINT = 'Where the model sits on the globe. Altitude is metres above t
 
 // ─── Edit Model Modal ─────────────────────────────────────────────────────────
 
+/** Confirmation before a model becomes a public demo (he + en). */
+function confirmPublicDemo(name: string): boolean {
+  return window.confirm(`הפיכת "${name}" להדגמה ציבורית: כל אחד יוכל לפתוח אותו ללא קוד גישה ולראות את כל השכבות שלו. להמשיך?\n\nMake "${name}" a PUBLIC DEMO? Anyone with the link or the app can open it without a token and will see ALL its layers. Continue?`)
+}
+
+/**
+ * The "heights are above sea level" option of a model (geoid_mode), with the height of the model now and after the switch,
+ * so the owner can decide per model. Rule: drawn height h = H + N (N = EGM2008 geoid height at the model).
+ */
+function HeightOption({ model, pose, isGlb, checked, onChange }: {
+  model: Model; pose: PoseText; isGlb: boolean; checked: boolean; onChange: (v: boolean) => void
+}) {
+  const lat = isGlb && Number.isFinite(Number(pose.lat)) && Number(pose.lat) !== 0 ? Number(pose.lat) : 32.0
+  const lon = isGlb && Number.isFinite(Number(pose.lon)) && Number(pose.lon) !== 0 ? Number(pose.lon) : 34.8
+  const alt = Number(pose.alt)
+  const N = geoidUndulation(lat, lon)
+  const saved = !!model.geoid_mode
+  const s0 = modelGeoidShift({ model_type: model.model_type, geoid_offset: model.geoid_offset, geoid_mode: 0 })
+  const f = (v: number) => v.toFixed(2)
+  let now: string
+  let after: string | null = null
+  if (saved) {
+    now = `Now: drawn at h = H + N; N = ${N === null ? 'n/a' : f(N)} m here, so the Points panel shows exactly the height in the file.`
+  } else if (isGlb && Number.isFinite(alt)) {
+    const h0 = alt + s0
+    const H0 = toMsl(lat, lon, h0, { coordinateSystem: model.coordinate_system, appliedOffset: s0 })
+    now = `Now (legacy): altitude ${f(alt)} m is drawn at ellipsoid ${f(h0)} m and the Points panel shows ${H0 === null ? 'n/a' : f(H0)} m above sea level for its ground.`
+    if (N !== null) after = `With the option: drawn at ellipsoid ${f(alt + N)} m (= ${f(alt)} + N ${f(N)}); the Points panel shows ${f(alt)} m. The model moves ${N - s0 >= 0 ? 'UP' : 'DOWN'} by ${f(Math.abs(N - s0))} m.`
+  } else {
+    now = `Now (legacy): the tileset is drawn shifted by the stored geoid offset ${f(s0)} m.`
+    if (N !== null) after = `With the option: shifted by N = ${f(N)} m (at ${lat.toFixed(1)}N ${lon.toFixed(1)}E; the real value is taken at the model). The model moves ${N - s0 >= 0 ? 'UP' : 'DOWN'} by about ${f(Math.abs(N - s0))} m.`
+  }
+  return (
+    <label className="flex items-start gap-2.5 cursor-pointer select-none" data-testid="geoid-mode-toggle">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)}
+        className="mt-0.5 h-4 w-4 rounded border-white/20 bg-white/5 accent-primary" />
+      <span className="text-xs text-white/60 leading-snug">
+        <span dir="rtl" className="block">הגבהים של המודל הם מעל פני הים (אורתומטריים): לצייר אותו בגובה אליפסואיד h = H + N ולהציג בחלונית הנקודות בדיוק את H. שימו לב: המודל יזוז.</span>
+        The model&apos;s heights are above sea level (orthometric): draw it at ellipsoid height h = H + N (N = geoid height, about +17 to +22.5 m in Israel) and show exactly H in the Points panel. The model will MOVE.
+        <span className="block text-white/45" data-testid="geoid-now">{now}</span>
+        {after && <span className="block text-amber-200/80" data-testid="geoid-after">{after}</span>}
+        <span className="block text-white/45">Off = the model keeps being drawn exactly as before. (The old ITM preset used -17.5 m, which has the wrong sign for heights above sea level.)</span>
+      </span>
+    </label>
+  )
+}
+
 function EditModelModal({ model, onClose, onSaved }: { model: Model; onClose: () => void; onSaved: (m: Model) => void }) {
   const isGlb = model.model_type !== '3d-tiles'
   const presetKnown = CRS_PRESETS.some((p) => p.value === model.coordinate_system)
@@ -292,6 +341,8 @@ function EditModelModal({ model, onClose, onSaved }: { model: Model; onClose: ()
   })
   const [crsValue, setCrsValue] = useState(presetKnown ? model.coordinate_system : 'custom')
   const [customOffset, setCustomOffset] = useState(String(model.geoid_offset))
+  const [geoidMode, setGeoidMode] = useState(!!model.geoid_mode)
+  const [publicDemo, setPublicDemo] = useState(!!model.is_public_demo)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const setP = (k: keyof PoseText) => (v: string) => setPose((p) => ({ ...p, [k]: v }))
@@ -306,10 +357,14 @@ function EditModelModal({ model, onClose, onSaved }: { model: Model; onClose: ()
       if (r.error) { setError(r.error); return }
       Object.assign(payload, r.v)
     }
-    const off = preset.offset !== null ? preset.offset : Number(customOffset)
+    // An unchanged preset keeps the stored offset (an old ITM model carries -17.5: saving must not silently change it)
+    const keepOffset = crsValue === model.coordinate_system && crsValue !== 'custom'
+    const off = keepOffset ? model.geoid_offset : preset.offset !== null ? preset.offset : Number(customOffset)
     if (!Number.isFinite(off)) { setError('Geoid offset must be a number'); return }
     payload.coordinate_system = crsValue
     payload.geoid_offset = off
+    payload.geoid_mode = geoidMode
+    payload.is_public_demo = publicDemo
     setSaving(true); setError(null)
     try {
       onSaved(await updateModel(model.id, payload))
@@ -346,6 +401,15 @@ function EditModelModal({ model, onClose, onSaved }: { model: Model; onClose: ()
         {crsValue === 'custom' && (
           <Field label="Geoid Offset (m)" value={customOffset} onChange={setCustomOffset} type="number" step="0.1" />
         )}
+        <HeightOption model={model} pose={pose} isGlb={isGlb} checked={geoidMode} onChange={setGeoidMode} />
+        <label className="flex items-start gap-2.5 cursor-pointer select-none" data-testid="public-demo-toggle">
+          <input type="checkbox" checked={publicDemo} onChange={(e) => { if (!e.target.checked || confirmPublicDemo(model.name)) setPublicDemo(e.target.checked) }}
+            className="mt-0.5 h-4 w-4 rounded border-white/20 bg-white/5 accent-primary" />
+          <span className="text-xs text-white/60 leading-snug">
+            <span dir="rtl" className="block">הדגמה ציבורית: כל מי שיש לו את הקישור או את האפליקציה יכול לפתוח את המודל בלי קוד גישה, ורואה את כל השכבות שלו</span>
+            Public demo: anyone with the link or the app can open this model without a token and sees ALL its layers
+          </span>
+        </label>
         {error && (
           <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-400">
             <AlertCircle size={13} className="mt-0.5 shrink-0" />{error}
@@ -504,6 +568,7 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
             ...pr.v,
             coordinate_system,
             geoid_offset,
+            geoid_mode: coordinate_system === 'itm',   // ITM models: heights are above sea level, drawn at H + N
             show_watermark: showWatermark,
             watermark_text: wt,
           })
@@ -519,6 +584,7 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
             model_type: '3d-tiles',
             coordinate_system,
             geoid_offset,
+            geoid_mode: coordinate_system === 'itm',
             show_watermark: showWatermark,
             watermark_text: wt,
           })
@@ -534,6 +600,7 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
             model_type: '3d-tiles',
             coordinate_system,
             geoid_offset,
+            geoid_mode: coordinate_system === 'itm',
             show_watermark: showWatermark,
             watermark_text: wt,
           })
@@ -904,6 +971,13 @@ function ModelsTab({
   onRefresh: () => void; onDelete: (id: string) => void; onUpload: () => void; onEdit: (m: Model) => void
   toast: (type: Toast['type'], msg: string) => void
 }) {
+  // The public-demo tick box of the list: asks first when turning ON (it opens the model, with all its layers, to everyone)
+  async function togglePublicDemo(m: Model, on: boolean) {
+    if (on && !confirmPublicDemo(m.name)) return
+    try { await updateModel(m.id, { is_public_demo: on }); onRefresh(); toast('success', `"${m.name}" is ${on ? 'now' : 'no longer'} a public demo`) }
+    catch (err) { toast('error', err instanceof Error ? err.message : 'Could not change the public demo setting') }
+  }
+
   async function handleDelete(m: Model) {
     if (!confirm(`Delete model "${m.name}"? This cannot be undone.`)) return
     try {
@@ -952,7 +1026,7 @@ function ModelsTab({
           </button>
         </div>
       ) : (
-        <div className="rounded-xl border border-white/10 overflow-hidden">
+        <div className="rounded-xl border border-white/10 overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-white/10 bg-white/[0.02]">
@@ -963,6 +1037,7 @@ function ModelsTab({
                 <th className="text-left px-4 py-2.5 text-white/55 font-medium hidden md:table-cell">CRS</th>
                 <th className="text-left px-4 py-2.5 text-white/55 font-medium hidden sm:table-cell">Added</th>
                 <th className="text-left px-4 py-2.5 text-white/55 font-medium hidden sm:table-cell">Age</th>
+                <th className="text-left px-4 py-2.5 text-white/55 font-medium" title="Public demo: anyone with the link or the app can open the model without a token and sees ALL its layers / הדגמה ציבורית: פתוח לכל אחד ללא קוד גישה, עם כל השכבות">Public demo / הדגמה ציבורית</th>
                 <th className="text-right px-4 py-2.5 text-white/55 font-medium">Actions</th>
               </tr>
             </thead>
@@ -991,6 +1066,15 @@ function ModelsTab({
                   </td>
                   <td className="px-4 py-2.5 text-white/50 hidden sm:table-cell">{fmtDate(m.created_at)}</td>
                   <td className="px-4 py-2.5 hidden sm:table-cell"><AgeBadge createdAt={m.created_at} /></td>
+                  <td className="px-4 py-2.5">
+                    <label className="flex items-center gap-1.5 text-[11px] cursor-pointer select-none whitespace-nowrap"
+                      title="Public demo: anyone with the link or the app can open this model without a token and sees ALL its layers / הדגמה ציבורית: פתוח לכל אחד ללא קוד גישה, עם כל השכבות">
+                      <input type="checkbox" data-testid="model-public-demo" checked={!!m.is_public_demo}
+                        onChange={(e) => { void togglePublicDemo(m, e.target.checked) }}
+                        className="h-4 w-4 rounded border-white/20 bg-white/5 accent-primary" />
+                      <span className={m.is_public_demo ? 'text-amber-300 font-semibold' : 'text-white/50'}>{m.is_public_demo ? 'PUBLIC / ציבורי' : 'private / פרטי'}</span>
+                    </label>
+                  </td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-1 justify-end">
                       <a
@@ -1045,6 +1129,12 @@ function OrthophotosTab({
     return () => clearTimeout(id)
   }, [processingIds.join(','), onRefresh])
 
+  async function togglePublicDemo(o: Orthophoto, on: boolean) {
+    if (on && !confirmPublicDemo(o.name)) return
+    try { await updateOrthophoto(o.id, { is_public_demo: on }); onRefresh(); toast('success', `"${o.name}" is ${on ? 'now' : 'no longer'} a public demo`) }
+    catch (err) { toast('error', err instanceof Error ? err.message : 'Could not change the public demo setting') }
+  }
+
   async function handleDelete(o: Orthophoto) {
     if (!confirm(`Delete orthophoto "${o.name}"? This cannot be undone.`)) return
     try { await deleteOrthophoto(o.id); onDelete(o.id); toast('success', `Deleted "${o.name}"`) }
@@ -1080,7 +1170,7 @@ function OrthophotosTab({
           </button>
         </div>
       ) : (
-        <div className="rounded-xl border border-white/10 overflow-hidden">
+        <div className="rounded-xl border border-white/10 overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-white/10 bg-white/[0.02]">
@@ -1117,7 +1207,14 @@ function OrthophotosTab({
                   <td className="px-4 py-2.5 text-white/50 hidden sm:table-cell">{fmtDate(o.created_at)}</td>
                   <td className="px-4 py-2.5 hidden sm:table-cell"><AgeBadge createdAt={o.created_at} /></td>
                   <td className="px-4 py-2.5">
-                    <div className="flex items-center gap-1 justify-end">
+                    <div className="flex items-center gap-2 justify-end">
+                      <label className="flex items-center gap-1.5 text-[11px] text-white/55 cursor-pointer select-none whitespace-nowrap"
+                        title="Public demo: anyone can list and open this orthophoto without a link / הדגמה ציבורית: פתוח לכל אחד בלי קישור">
+                        <input type="checkbox" data-testid="ortho-public-demo" checked={!!o.is_public_demo}
+                          onChange={(e) => { void togglePublicDemo(o, e.target.checked) }}
+                          className="h-3.5 w-3.5 rounded border-white/20 bg-white/5 accent-primary" />
+                        Public demo
+                      </label>
                       <button
                         title="Delete orthophoto"
                         onClick={() => handleDelete(o)}
@@ -1614,22 +1711,22 @@ export function AdminPage() {
   return (
     <div className="min-h-svh bg-background text-white flex flex-col">
       {/* Top bar */}
-      <header className="shrink-0 flex items-center gap-4 px-6 border-b border-border bg-card" style={{ height: "56px" }}>
-        <div className="flex items-center gap-2.5">
+      <header className="shrink-0 flex flex-wrap items-center gap-x-4 gap-y-1 px-3 sm:px-6 py-2 min-h-14 border-b border-border bg-card">
+        <div className="flex items-center gap-2.5 min-w-0">
           <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center">
             <Globe size={14} className="text-primary-foreground" />
           </div>
           <span className="font-bold tracking-tight">QuadSpectat</span>
-          <span className="text-white/50 mx-1">/</span>
-          <span className="text-[11px] font-semibold tracking-[0.14em] uppercase text-muted-foreground">3D Viewer Admin</span>
+          <span className="text-white/50 mx-1 hidden sm:inline">/</span>
+          <span className="text-[11px] font-semibold tracking-[0.14em] uppercase text-muted-foreground hidden sm:inline">3D Viewer Admin</span>
         </div>
 
-        {/* Tab nav */}
-        <nav className="flex items-center gap-0.5 ml-4">
+        {/* Tab nav: on a phone or small tablet it takes its own row and scrolls sideways instead of widening the page */}
+        <nav className="flex items-center gap-0.5 order-last w-full overflow-x-auto pb-1 lg:order-none lg:w-auto lg:overflow-visible lg:pb-0 lg:ml-4">
           {NAV.map(({ tab, icon, label, dot }) => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className={cn(
-                'relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                'relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors shrink-0 whitespace-nowrap',
                 activeTab === tab ? 'bg-primary/15 text-primary' : 'text-white/55 hover:text-white hover:bg-white/5',
               )}>
               {icon}{label}
@@ -1651,7 +1748,7 @@ export function AdminPage() {
       </header>
 
       {/* Content */}
-      <main className="flex-1 overflow-y-auto p-6">
+      <main className="flex-1 overflow-y-auto p-3 sm:p-6">
         <div className="max-w-7xl mx-auto">
           {activeTab === 'dashboard' && (
             <>

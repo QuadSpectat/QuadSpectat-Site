@@ -15,7 +15,7 @@ type EditableField = typeof EDITABLE_FIELDS[number]
 // can_edit is honoured only for models.
 router.post('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { model_id, orthophoto_id, label, can_edit } = req.body as Record<string, unknown>
+    const { model_id, orthophoto_id, label, can_edit, allow_google3d } = req.body as Record<string, unknown>
     const mId = typeof model_id      === 'string' && model_id      ? model_id      : null
     const oId = typeof orthophoto_id === 'string' && orthophoto_id ? orthophoto_id : null
     if ((mId === null) === (oId === null)) {
@@ -37,8 +37,8 @@ router.post('/', requireAuth, async (req: Request, res: Response, next: NextFunc
 
     const expiresAt = oneYearFromNow()
     await db.query(
-      'INSERT INTO share_links (token, model_id, orthophoto_id, label, can_edit, expires_at) VALUES ($1, $2, $3, $4, $5, $6)',
-      [token, mId, oId, label ?? null, canEditInt, expiresAt],
+      'INSERT INTO share_links (token, model_id, orthophoto_id, label, can_edit, expires_at, allow_google3d) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [token, mId, oId, label ?? null, canEditInt, expiresAt, allow_google3d === true || allow_google3d === 1 ? 1 : 0],
     )
 
     res.status(201).json({ token, path: `/v/${token}`, expires_at: expiresAt })
@@ -64,7 +64,7 @@ router.get('/:token', async (req: Request, res: Response, next: NextFunction) =>
         [link.model_id],
       )
       if (!rows[0]) { res.status(404).json({ error: 'Model no longer exists' }); return }
-      res.json({ kind: 'model', model: rows[0], can_edit: Boolean(link.can_edit), expires_at })
+      res.json({ kind: 'model', model: rows[0], can_edit: Boolean(link.can_edit), allow_google3d: Boolean(link.allow_google3d), expires_at })
       return
     }
 
@@ -73,7 +73,7 @@ router.get('/:token', async (req: Request, res: Response, next: NextFunction) =>
       [link.orthophoto_id],
     )
     if (!rows[0]) { res.status(404).json({ error: 'Orthophoto no longer exists' }); return }
-    res.json({ kind: 'orthophoto', orthophoto: rows[0], can_edit: false, expires_at })
+    res.json({ kind: 'orthophoto', orthophoto: rows[0], can_edit: false, allow_google3d: Boolean(link.allow_google3d), expires_at })
   } catch (err) {
     next(err)
   }
@@ -86,24 +86,35 @@ router.get('/', requireAuth, async (req: Request, res: Response, next: NextFunct
     const { model_id, orthophoto_id } = req.query as Record<string, string>
     if (model_id) {
       const { rows } = await db.query<Record<string, unknown>>(
-        'SELECT token, label, can_edit, created_at, expires_at FROM share_links WHERE model_id = $1 ORDER BY created_at DESC',
+        'SELECT token, label, can_edit, allow_google3d, created_at, expires_at FROM share_links WHERE model_id = $1 ORDER BY created_at DESC',
         [model_id],
       )
-      res.json(rows.map((r) => ({ ...r, can_edit: Boolean(r.can_edit), expires_at: effectiveExpiry(r as { created_at: string; expires_at: string | null }).toISOString() })))
+      res.json(rows.map((r) => ({ ...r, can_edit: Boolean(r.can_edit), allow_google3d: Boolean(r.allow_google3d), expires_at: effectiveExpiry(r as { created_at: string; expires_at: string | null }).toISOString() })))
       return
     }
     if (orthophoto_id) {
       const { rows } = await db.query<Record<string, unknown>>(
-        'SELECT token, label, can_edit, created_at, expires_at FROM share_links WHERE orthophoto_id = $1 ORDER BY created_at DESC',
+        'SELECT token, label, can_edit, allow_google3d, created_at, expires_at FROM share_links WHERE orthophoto_id = $1 ORDER BY created_at DESC',
         [orthophoto_id],
       )
-      res.json(rows.map((r) => ({ ...r, can_edit: Boolean(r.can_edit), expires_at: effectiveExpiry(r as { created_at: string; expires_at: string | null }).toISOString() })))
+      res.json(rows.map((r) => ({ ...r, can_edit: Boolean(r.can_edit), allow_google3d: Boolean(r.allow_google3d), expires_at: effectiveExpiry(r as { created_at: string; expires_at: string | null }).toISOString() })))
       return
     }
     res.status(400).json({ error: 'model_id or orthophoto_id query param required' })
   } catch (err) {
     next(err)
   }
+})
+
+// PATCH /api/share/:token — owner only: switch Google 3D on or off for the client who holds this link
+router.patch('/:token', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { allow_google3d } = req.body as Record<string, unknown>
+    if (typeof allow_google3d !== 'boolean') { res.status(400).json({ error: 'allow_google3d must be true or false' }); return }
+    const r = await db.query('UPDATE share_links SET allow_google3d = $1 WHERE token = $2', [allow_google3d ? 1 : 0, req.params.token])
+    if (!r.rowCount) { res.status(404).json({ error: 'Share link not found' }); return }
+    res.json({ token: req.params.token, allow_google3d })
+  } catch (err) { next(err) }
 })
 
 // PATCH /api/share/:token/model — only valid for model share tokens

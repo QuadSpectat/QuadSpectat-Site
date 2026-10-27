@@ -21,6 +21,10 @@ export interface Model {
   external_url: string | null
   coordinate_system: string
   geoid_offset: number
+  /** 1 = the model's heights are orthometric (above sea level) and it is drawn at h = H + N (EGM2008); 0 = legacy drawing (see backend db.ts) */
+  geoid_mode?: number
+  /** 1 = listed and served to anyone without a login (the public demo); set by the owner */
+  is_public_demo?: number
   show_watermark: number  // 1 = show, 0 = hide
   watermark_text: string  // text shown as watermark; empty = no watermark
   created_at: string
@@ -45,6 +49,8 @@ export interface CreateModelPayload {
   external_url?: string
   coordinate_system?: string
   geoid_offset?: number
+  geoid_mode?: boolean
+  is_public_demo?: boolean
   show_watermark?: boolean
   watermark_text?: string
 }
@@ -61,11 +67,18 @@ export interface UpdateModelPayload {
   scale?: number
   coordinate_system?: string
   geoid_offset?: number
+  geoid_mode?: boolean
+  is_public_demo?: boolean
 }
 
 export function getAuthHeader(): { Authorization: string } | Record<string, never> {
   const token = localStorage.getItem('admin_token')
   return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+/** apiFetch errors read "<status> <text>". A 5xx answer, or no answer at all (server down / network), is not a problem with the link. */
+export function isServerProblem(message: string): boolean {
+  return !/^[1-4]\d\d(\s|$)/.test(message)
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -167,6 +180,8 @@ export interface ShareLink {
   token: string
   label: string | null
   can_edit: boolean
+  /** Google Photorealistic 3D is allowed for the client who holds this link (owner switch, default off) */
+  allow_google3d?: boolean
   created_at: string
 }
 
@@ -188,13 +203,17 @@ export const listShareLinks = (model_id: string) =>
 export const listOrthophotoShareLinks = (orthophoto_id: string) =>
   apiFetch<ShareLink[]>(`/share?orthophoto_id=${encodeURIComponent(orthophoto_id)}`)
 
+/** Owner: allow / forbid Google 3D for the client who holds this share link. */
+export const setShareGoogle3d = (token: string, allow_google3d: boolean) =>
+  apiFetch<{ token: string; allow_google3d: boolean }>(`/share/${token}`, { method: 'PATCH', body: JSON.stringify({ allow_google3d }) })
+
 export const deleteShareLink = (token: string) =>
   apiFetch<void>(`/share/${token}`, { method: 'DELETE' })
 
 // Resolve a share token → discriminated union of model or orthophoto
 export type ResolvedShare =
-  | { kind: 'model';      model: Model;        can_edit: boolean; expires_at?: string }
-  | { kind: 'orthophoto'; orthophoto: Orthophoto; can_edit: boolean; expires_at?: string }
+  | { kind: 'model';      model: Model;        can_edit: boolean; allow_google3d?: boolean; expires_at?: string }
+  | { kind: 'orthophoto'; orthophoto: Orthophoto; can_edit: boolean; allow_google3d?: boolean; expires_at?: string }
 export const resolveShareToken = (token: string) =>
   apiFetch<ResolvedShare>(`/share/${token}`)
 
@@ -319,6 +338,7 @@ export interface Orthophoto {
   show_watermark: number   // 1 = show, 0 = hide
   watermark_text: string   // empty = no watermark
   sort_order?: number      // stacking order within the asset, higher = drawn on top
+  is_public_demo?: number  // 1 = listed and served to anyone without a login (set by the owner)
   created_at: string
   updated_at: string
 }
@@ -329,7 +349,7 @@ export const listOrthophotos = () =>
 export const getOrthophoto = (id: string) =>
   apiFetch<Orthophoto>(`/orthophotos/${id}`)
 
-export const updateOrthophoto = (id: string, payload: { visible?: boolean; opacity?: number }) =>
+export const updateOrthophoto = (id: string, payload: { visible?: boolean; opacity?: number; is_public_demo?: boolean }) =>
   apiFetch<Orthophoto>(`/orthophotos/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
 
 /** Persist the stacking order of one asset's orthophotos. `ids` = the asset's orthophotos, topmost first. */
@@ -380,11 +400,16 @@ export interface ClientPageAdmin {
   expires_at: string
   expired: boolean
   path: string
+  allow_google3d?: boolean
   assets: ClientAsset[]
 }
 export const listClientPages = () => apiFetch<ClientPageAdmin[]>('/clients')
 export const createClientPage = (payload: { name: string; note?: string; assets?: { kind: 'model' | 'orthophoto'; id: string }[] }) =>
   apiFetch<ClientPageAdmin>('/clients', { method: 'POST', body: JSON.stringify(payload) })
+/** Owner: allow / forbid Google 3D for a client page and every link on it. */
+export const setClientGoogle3d = (token: string, allow_google3d: boolean) =>
+  apiFetch<ClientPageAdmin>(`/clients/${token}`, { method: 'PATCH', body: JSON.stringify({ allow_google3d }) })
+
 export const renewClientPage = (token: string) => apiFetch<ClientPageAdmin>(`/clients/${token}/renew`, { method: 'POST', body: '{}' })
 export const deleteClientPage = (token: string) => apiFetch<void>(`/clients/${token}`, { method: 'DELETE' })
 export const addClientAsset = (token: string, kind: 'model' | 'orthophoto', id: string) =>

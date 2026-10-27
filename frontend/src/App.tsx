@@ -54,6 +54,8 @@ export default function App() {
   const { models, loading, error, refresh, remove } = useModels()
   const navigate = useNavigate()
   const phone = usePhoneLayout()
+  // Google Photorealistic 3D is for the signed-in owner only (terms and billing): anonymous /app visitors never see the button
+  const owner = isOwnerSession()
 
   const [selectedModel, setSelectedModel] = useState<Model | null>(null)
   const [modelUrl, setModelUrl]           = useState<string | null>(null)
@@ -77,6 +79,8 @@ export default function App() {
   const [overlayModelUrl, setOverlayModelUrl]   = useState<string | null>(null)
   const [compareBlend, setCompareBlend]         = useState(0.5)
   const [orthoCompare, setOrthoCompare]         = useState<OrthoCompare | null>(null)
+  const [compareMode, setCompareMode]           = useState<'fade' | 'swipe'>('fade')
+  const [swipePos, setSwipePos]                 = useState(0.5)
 
   const [geopoints, setGeopoints]           = useState<GeoPoint[]>([])
   const [geopointActive, setGeopointActive] = useState(false)
@@ -87,6 +91,7 @@ export default function App() {
   const flyToOrthoRef  = useRef<((photo: ResolvedOrthophoto) => void) | null>(null)
   const viewApiRef     = useRef<ViewApi | null>(null)
   const undoRef        = useRef<(() => void) | null>(null)
+  const redoRef = useRef<(() => void) | null>(null)
   const finishRef      = useRef<(() => void) | null>(null)
 
   // Load orthophotos on mount
@@ -197,6 +202,7 @@ export default function App() {
     const updated = await updateModel(selectedModel.id, {
       coordinate_system: 'custom',
       geoid_offset: detectedOffset,
+      geoid_mode: false,
     }).catch(console.error)
     if (updated) {
       setSelectedModel(updated)
@@ -205,10 +211,17 @@ export default function App() {
     }
   }
 
+  // In /app only the orthophotos of the selected model's asset are drawn (not those of every other asset); with no model open all are
+  const selectedAsset = selectedModel?.asset_name?.trim()
+  const orthoForMap = selectedAsset ? orthoPhotos.filter((p) => p.asset_name === selectedAsset) : orthoPhotos
+
   function crsLabel(): string | undefined {
     if (!selectedModel) return undefined
     const { coordinate_system, geoid_offset } = selectedModel
+    if (selectedModel.geoid_mode) return 'Orthometric heights (H + N, EGM2008)'
     if (coordinate_system === 'unknown' || coordinate_system === 'wgs84') return undefined
+    // legacy drawing: a GLB is drawn at its altitude, whatever offset is stored
+    if (selectedModel.model_type !== '3d-tiles') return `${coordinate_system.toUpperCase()} (legacy: offset not applied)`
     const sign = geoid_offset >= 0 ? '+' : ''
     return `${coordinate_system.toUpperCase()} ${sign}${geoid_offset.toFixed(1)} m`
   }
@@ -236,7 +249,7 @@ export default function App() {
           </>
         )}
         <div className="flex-1" />
-        <MapSwitcher inline allowGoogle3d value={baseMap} onChange={setBaseMap} />
+        <MapSwitcher inline allowGoogle3d={owner} value={baseMap} onChange={setBaseMap} />
         <button
           type="button"
           disabled={!selectedModel}
@@ -282,21 +295,25 @@ export default function App() {
             onMeasureResult={setMeasureResult}
             visualSettings={visualSettings}
             baseMap={baseMap}
-            allowGoogle3d
+            allowGoogle3d={owner}
             onBaseMapFallback={() => setBaseMap(prevBaseMap.current)}
             layers={layerCtl.resolved}
             onLayerState={layerCtl.onLoadState}
-            orthophotos={orthoPhotos}
+            orthophotos={orthoForMap}
             overlayModel={overlayModel}
             overlayModelUrl={overlayModelUrl}
             compareBlend={compareBlend}
             orthoCompare={orthoCompare}
+            compareMode={compareMode}
+            swipePos={swipePos}
+            onSwipePosChange={setSwipePos}
             onSnapToGround={(offset) => void handleSnapToGround(offset)}
             snapRef={snapRef}
             resetCameraRef={resetCameraRef}
             flyToOrthoRef={flyToOrthoRef}
             viewApiRef={viewApiRef}
             undoRef={undoRef}
+            redoRef={redoRef}
             finishRef={finishRef}
             geopointActive={geopointActive}
             geopoints={geopoints}
@@ -306,6 +323,7 @@ export default function App() {
             <MeasureToolbar
               part="tools" placement="top-center"
             onUndo={() => undoRef.current?.()}
+            onRedo={() => redoRef.current?.()}
             onFinish={() => finishRef.current?.()}
             mode={measureMode}
             onModeChange={handleModeChange}
@@ -325,6 +343,7 @@ export default function App() {
             <MeasureToolbar
               part={phone ? 'tools' : 'all'} placement="top-right"
             onUndo={() => undoRef.current?.()}
+            onRedo={() => redoRef.current?.()}
             onFinish={() => finishRef.current?.()}
             mode={measureMode}
             onModeChange={handleModeChange}
@@ -352,10 +371,12 @@ export default function App() {
             <ComparePanel
               models={models}
               selectedModel={selectedModel}
-              orthophotos={orthoPhotos}
+              orthophotos={orthoForMap}
               overlayModel={overlayModel}
               compareBlend={compareBlend}
               orthoCompare={orthoCompare}
+              compareMode={compareMode}
+              onCompareModeChange={setCompareMode}
               onOverlayModelChange={setOverlayModel}
               onCompareBlendChange={setCompareBlend}
               onOrthoCompareChange={setOrthoCompare}

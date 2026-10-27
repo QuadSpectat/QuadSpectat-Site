@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Plus, Copy, Trash2, RefreshCw, X, ExternalLink, Users, Loader2 } from 'lucide-react'
 import {
-  listClientPages, createClientPage, renewClientPage, deleteClientPage, addClientAsset, removeClientAsset,
+  listClientPages, createClientPage, renewClientPage, deleteClientPage, addClientAsset, removeClientAsset, setClientGoogle3d,
 } from '@/lib/api'
 import type { ClientPageAdmin, Model, Orthophoto } from '@/lib/api'
 
@@ -129,6 +129,11 @@ export function ClientPagesTab({ models, orthophotos, toast }: { models: Model[]
                 <input readOnly value={pageUrl(p)} onFocus={(e) => e.currentTarget.select()} className={`${input} w-full mt-2 text-xs font-mono`} aria-label="Client page link" />
               </div>
               <div className="flex flex-wrap gap-2">
+                <label className={`${btn} cursor-pointer select-none`} title="Allow Google 3D for this client (default off): its links then show the Google 3D button / אפשר גוגל 3D ללקוח זה (ברירת מחדל: כבוי)">
+                  <input type="checkbox" data-testid="client-google3d" checked={!!p.allow_google3d} disabled={busy === p.token}
+                    onChange={(e) => { const on = e.target.checked; if (on && !window.confirm('לאפשר ללקוח זה גוגל 3D? השימוש נספר על חשבון מפתח המפות של QuadSpectat.\n\nAllow Google 3D for this client? Its use is billed to the QuadSpectat Google Maps key.')) return; void act(p.token, async () => { replace(await setClientGoogle3d(p.token, on)); toast('success', on ? 'Google 3D allowed for this client' : 'Google 3D switched off for this client') }) }}
+                    className="h-3.5 w-3.5 accent-primary" /> Google 3D
+                </label>
                 <button className={btn} onClick={() => copy(p)}><Copy size={12} /> Copy link</button>
                 <a className={btn} href={p.path} target="_blank" rel="noopener noreferrer"><ExternalLink size={12} /> Preview</a>
                 <button className={btn} disabled={busy === p.token} onClick={() => void act(p.token, async () => { replace(await renewClientPage(p.token)); toast('success', 'Renewed for another year') })}><RefreshCw size={12} /> Renew 1 year</button>

@@ -1,7 +1,7 @@
 import { useParams } from 'react-router-dom'
 import { useSearchParams } from 'react-router-dom'
 import { useState, useEffect, useRef } from 'react'
-import { getDownloadUrl, updateModelViaToken } from '@/lib/api'
+import { getDownloadUrl, updateModelViaToken, isServerProblem } from '@/lib/api'
 import { earlyShare } from '@/lib/earlyModel'
 import type { Model, Orthophoto, ResolvedShare } from '@/lib/api'
 import { CesiumViewer } from '@/components/CesiumViewer'
@@ -85,6 +85,8 @@ function ShowcaseChrome({ title, expires, extra }: { title: string; expires?: st
   )
 }
 
+const SERVER_DOWN = 'server-unavailable'
+
 export function SharedViewer() {
   const { token } = useParams<{ token: string }>()
   const [share, setShare] = useState<ResolvedShare | null>(null)
@@ -95,9 +97,10 @@ export function SharedViewer() {
     earlyShare(token)
       .then(setShare)
       .catch((e) => {
-        setErr(String((e as Error).message).startsWith('410')
+        const msg = String((e as Error).message)
+        setErr(msg.startsWith('410')
           ? 'This link has expired. Please contact QuadSpectat and we will send you a new one.'
-          : 'This link is invalid or has been removed.')
+          : isServerProblem(msg) ? SERVER_DOWN : 'This link is invalid or has been removed.')
         console.error('[SharedViewer] Failed to resolve share token:', e)
       })
   }, [token])
@@ -106,7 +109,16 @@ export function SharedViewer() {
     return (
       <div className="flex items-center justify-center h-svh bg-background text-foreground">
         <div className="text-center max-w-sm">
-          <p className="text-sm text-muted-foreground">{err}</p>
+          {err === SERVER_DOWN ? (
+            <>
+              <p className="text-sm text-muted-foreground" dir="rtl">השרת אינו זמין כרגע. הקישור תקין, נסו שוב בעוד מספר דקות.</p>
+              <p className="text-sm text-muted-foreground mt-1">The server is unavailable right now. The link is fine: please try again in a few minutes.</p>
+              <button type="button" onClick={() => window.location.reload()}
+                className="mt-4 h-9 px-4 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:brightness-105 transition">
+                Try again / נסו שוב
+              </button>
+            </>
+          ) : <p className="text-sm text-muted-foreground">{err}</p>}
         </div>
       </div>
     )
@@ -121,16 +133,16 @@ export function SharedViewer() {
   }
 
   if (share.kind === 'orthophoto') {
-    return <OrthoSharedView orthophoto={share.orthophoto} token={token} expires={share.expires_at} />
+    return <OrthoSharedView orthophoto={share.orthophoto} token={token} expires={share.expires_at} google3d={!!share.allow_google3d} />
   }
-  return <ModelSharedView model={share.model} canEdit={share.can_edit} token={token} expires={share.expires_at} />
+  return <ModelSharedView model={share.model} canEdit={share.can_edit} token={token} expires={share.expires_at} google3d={!!share.allow_google3d} />
 }
 
 // ─── Model-shared view ────────────────────────────────────────────────────────
 
 function ModelSharedView({
-  model: initialModel, canEdit, token, expires,
-}: { model: Model; canEdit: boolean; token: string; expires?: string }) {
+  model: initialModel, canEdit, token, expires, google3d = false,
+}: { model: Model; canEdit: boolean; token: string; expires?: string; google3d?: boolean }) {
   const safeModel = {
     ...initialModel,
     name: initialModel.name ?? '',
@@ -161,6 +173,7 @@ function ModelSharedView({
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const viewApiRef = useRef<ViewApi | null>(null)
   const undoRef = useRef<(() => void) | null>(null)
+  const redoRef = useRef<(() => void) | null>(null)
   const finishRef = useRef<(() => void) | null>(null)
   // Read-only: only the layers the owner marked "visible to clients"; the link authorises just this model's layers
   const layerCtl = useLayers(model.id, { shareToken: token, canEdit: false })
@@ -200,7 +213,9 @@ function ModelSharedView({
     }
   }
 
-  function NumField({
+  // A plain render function, not a component: a component declared inside this one is a new type on every keystroke, so React
+  // remounted the input and focus was lost after the first digit (typing "61" gave "6")
+  function numField({
     label, field, step = 'any',
   }: {
     label: string
@@ -237,8 +252,11 @@ function ModelSharedView({
           onMeasureResult={setMeasureResult}
           visualSettings={visualSettings}
           baseMap={baseMap}
+          allowGoogle3d={google3d}
+          onBaseMapFallback={() => setBaseMap('none')}
           viewApiRef={viewApiRef}
           undoRef={undoRef}
+          redoRef={redoRef}
           finishRef={finishRef}
           geopointActive={geopointActive}
           geopoints={geopoints}
@@ -248,6 +266,7 @@ function ModelSharedView({
           placement="bottom-dock"
           part={phone ? 'tools' : 'all'}
           onUndo={() => undoRef.current?.()}
+          onRedo={() => redoRef.current?.()}
           onFinish={() => finishRef.current?.()}
           mode={measureMode}
           onModeChange={handleModeChange}
@@ -262,7 +281,7 @@ function ModelSharedView({
           onGeopointClear={() => { setGeopoints([]); setGeopointActive(false) }}
         />
         <VisualControls settings={visualSettings} onChange={setVisualSettings} />
-        <MapSwitcher value={baseMap} onChange={setBaseMap} />
+        <MapSwitcher value={baseMap} onChange={setBaseMap} allowGoogle3d={google3d} />
 
         {phone ? (
           <PhonePanels
@@ -306,15 +325,15 @@ function ModelSharedView({
                   Position &amp; Orientation
                 </p>
                 <div className="grid grid-cols-2 gap-2">
-                  <NumField label="Longitude (°)" field="longitude" />
-                  <NumField label="Latitude (°)"  field="latitude" />
-                  <NumField label="Altitude (m)"  field="altitude" />
-                  <NumField label="Scale"         field="scale" step="0.01" />
+                  {numField({ label: "Longitude (°)", field: "longitude" })}
+                  {numField({ label: "Latitude (°)", field: "latitude" })}
+                  {numField({ label: "Altitude (m)", field: "altitude" })}
+                  {numField({ label: "Scale", field: "scale", step: "0.01" })}
                 </div>
                 <div className="grid grid-cols-3 gap-2">
-                  <NumField label="Heading (°)" field="heading" />
-                  <NumField label="Pitch (°)"   field="pitch" />
-                  <NumField label="Roll (°)"    field="roll" />
+                  {numField({ label: "Heading (°)", field: "heading" })}
+                  {numField({ label: "Pitch (°)", field: "pitch" })}
+                  {numField({ label: "Roll (°)", field: "roll" })}
                 </div>
                 <button
                   onClick={() => { void handleSave() }}
@@ -337,7 +356,7 @@ function ModelSharedView({
 
 // ─── Orthophoto-shared view ──────────────────────────────────────────────────
 
-function OrthoSharedView({ orthophoto, token, expires }: { orthophoto: Orthophoto; token: string; expires?: string }) {
+function OrthoSharedView({ orthophoto, token, expires, google3d = false }: { orthophoto: Orthophoto; token: string; expires?: string; google3d?: boolean }) {
   const photo = orthoToResolved(orthophoto)
   const phone = usePhoneLayout()
 
@@ -354,6 +373,7 @@ function OrthoSharedView({ orthophoto, token, expires }: { orthophoto: Orthophot
   const flyToOrthoRef = useRef<((p: ResolvedOrthophoto) => void) | null>(null)
   const viewApiRef = useRef<ViewApi | null>(null)
   const undoRef = useRef<(() => void) | null>(null)
+  const redoRef = useRef<(() => void) | null>(null)
   const finishRef = useRef<(() => void) | null>(null)
 
   // Fly to the orthophoto once the viewer wires up its ref
@@ -387,10 +407,13 @@ function OrthoSharedView({ orthophoto, token, expires }: { orthophoto: Orthophot
           onMeasureResult={setMeasureResult}
           visualSettings={visualSettings}
           baseMap={baseMap}
+          allowGoogle3d={google3d}
+          onBaseMapFallback={() => setBaseMap('none')}
           orthophotos={[photo]}
           flyToOrthoRef={flyToOrthoRef}
           viewApiRef={viewApiRef}
           undoRef={undoRef}
+          redoRef={redoRef}
           finishRef={finishRef}
           geopointActive={geopointActive}
           geopoints={geopoints}
@@ -400,6 +423,7 @@ function OrthoSharedView({ orthophoto, token, expires }: { orthophoto: Orthophot
           placement="bottom-dock"
           part={phone ? 'tools' : 'all'}
           onUndo={() => undoRef.current?.()}
+          onRedo={() => redoRef.current?.()}
           onFinish={() => finishRef.current?.()}
           mode={measureMode}
           onModeChange={handleModeChange}
@@ -414,7 +438,7 @@ function OrthoSharedView({ orthophoto, token, expires }: { orthophoto: Orthophot
           onGeopointClear={() => { setGeopoints([]); setGeopointActive(false) }}
         />
         <VisualControls settings={visualSettings} onChange={setVisualSettings} />
-        <MapSwitcher value={baseMap} onChange={setBaseMap} />
+        <MapSwitcher value={baseMap} onChange={setBaseMap} allowGoogle3d={google3d} />
         {phone && (
           <PhonePanels
             measure={{
