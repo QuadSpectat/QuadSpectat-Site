@@ -212,7 +212,9 @@ function ModelSharedView({
     }
   }
 
-  function NumField({
+  // A plain render function, not a component: a component declared inside this one is a new type on every keystroke, so React
+  // remounted the input and focus was lost after the first digit (typing "61" gave "6")
+  function numField({
     label, field, step = 'any',
   }: {
     label: string
@@ -318,15 +320,15 @@ function ModelSharedView({
                   Position &amp; Orientation
                 </p>
                 <div className="grid grid-cols-2 gap-2">
-                  <NumField label="Longitude (°)" field="longitude" />
-                  <NumField label="Latitude (°)"  field="latitude" />
-                  <NumField label="Altitude (m)"  field="altitude" />
-                  <NumField label="Scale"         field="scale" step="0.01" />
+                  {numField({ label: "Longitude (°)", field: "longitude" })}
+                  {numField({ label: "Latitude (°)", field: "latitude" })}
+                  {numField({ label: "Altitude (m)", field: "altitude" })}
+                  {numField({ label: "Scale", field: "scale", step: "0.01" })}
                 </div>
                 <div className="grid grid-cols-3 gap-2">
-                  <NumField label="Heading (°)" field="heading" />
-                  <NumField label="Pitch (°)"   field="pitch" />
-                  <NumField label="Roll (°)"    field="roll" />
+                  {numField({ label: "Heading (°)", field: "heading" })}
+                  {numField({ label: "Pitch (°)", field: "pitch" })}
+                  {numField({ label: "Roll (°)", field: "roll" })}
                 </div>
                 <button
                   onClick={() => { void handleSave() }}
