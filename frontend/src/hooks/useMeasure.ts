@@ -33,6 +33,13 @@ function labelOpts(text: string, large = false): Cesium.LabelGraphics.Constructo
   }
 }
 
+/** True when a 3D Tiles model is in the scene (a glTF model is an entity and is looked up separately). */
+function tilesetOpen(v: Cesium.Viewer): boolean {
+  const prims = v.scene.primitives
+  for (let i = 0; i < prims.length; i++) if (prims.get(i) instanceof Cesium.Cesium3DTileset) return true
+  return false
+}
+
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
 /**
@@ -253,8 +260,19 @@ export function useMeasure(
       let heights: (number | null)[]
       try {
         const carts = stations.map((s) => Cesium.Cartographic.fromDegrees(s.lon, s.lat))
-        const res = await v.scene.sampleHeightMostDetailed(carts)
-        heights = res.map((c) => (c && Number.isFinite(c.height) ? c.height : null))
+        // Only the model / ground may count as surface: pins, layer lines and measuring shapes of this page are left out
+        // (a 100 m KML line used to be read as a 100 m wall), and so are the model-less globe hits below.
+        const skip = v.entities.values.filter((e) => !e.model)
+        for (let i = 0; i < v.dataSources.length; i++) skip.push(...v.dataSources.get(i).entities.values)
+        const res = await v.scene.sampleHeightMostDetailed(carts, skip)
+        // With a model open, a hit on the bare globe (ellipsoid height, no terrain) means "outside the model": a gap, not a
+        // 60 m cliff down to height 0. Without a model the globe is the only surface there is, so it stays.
+        const hasModel = v.entities.values.some((e) => !!e.model) || tilesetOpen(v)
+        heights = res.map((c, i) => {
+          if (!c || !Number.isFinite(c.height)) return null
+          if (hasModel && Math.abs(c.height - (v.scene.globe.getHeight(carts[i]) ?? 0)) < 0.01) return null
+          return c.height
+        })
       } catch {
         if (cancelled) return
         extrasRef.current?.onNotice?.('Could not sample the surface along this line. Try again.')
@@ -309,7 +327,8 @@ export function useMeasure(
         ? Cesium.Cartesian3.midpoint(points[0], points[points.length - 1], new Cesium.Cartesian3())
         : centroid(points)
 
-      addEnt({ position: center, label: labelOpts(text, true) })
+      // On a two-point distance the total sits exactly on the single segment label: lift it above it
+      addEnt({ position: center, label: { ...labelOpts(text, true), pixelOffset: new Cesium.Cartesian2(0, mode === 'distance' ? -32 : -6) } })
     }
 
     // ── ScreenSpaceEventHandler ───────────────────────────────────────────

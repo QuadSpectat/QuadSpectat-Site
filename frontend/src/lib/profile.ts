@@ -27,7 +27,7 @@ export interface Profile {
 export interface ProfileStats {
   min: number
   max: number
-  /** Height of the end point minus the start point (null if either end is a gap) */
+  /** Height of the last sample with a surface minus the first one (null with fewer than two such samples) */
   netChange: number | null
   /** Slope-style rise over length of the whole line, percent (null if netChange unknown) */
   gradePct: number | null
@@ -73,11 +73,13 @@ export function profileStats(samples: ProfileSample[]): ProfileStats | null {
     if (s.hMsl < min) min = s.hMsl
     if (s.hMsl > max) max = s.hMsl
   }
-  const first = samples[0]?.hMsl ?? null
-  const last = samples[samples.length - 1]?.hMsl ?? null
-  const length = samples[samples.length - 1]?.dist ?? 0
-  const netChange = first !== null && last !== null ? last - first : null
-  const gradePct = netChange !== null && length > 0 ? (netChange / length) * 100 : null
+  // Net change runs from the first to the last sample that has a surface: a line that starts or ends just off the model
+  // (gap samples at its ends) still reports the rise along the part that is on the surface.
+  const first = vals[0]
+  const last = vals[vals.length - 1]
+  const spanLen = last.dist - first.dist
+  const netChange = vals.length >= 2 ? last.hMsl - first.hMsl : null
+  const gradePct = netChange !== null && spanLen > 0 ? (netChange / spanLen) * 100 : null
   return { min, max, netChange, gradePct }
 }
 
