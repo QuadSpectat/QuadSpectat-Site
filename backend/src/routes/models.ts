@@ -11,7 +11,7 @@ const router = Router()
 function poseError(b: Record<string, unknown>): string | null {
   const limits: Record<string, [number, number]> = {
     longitude: [-180, 180], latitude: [-90, 90], altitude: [-1e5, 1e5],
-    heading: [-3600, 3600], pitch: [-3600, 3600], roll: [-3600, 3600], scale: [1e-9, 1e9], geoid_offset: [-1e3, 1e3],
+    heading: [-3600, 3600], pitch: [-3600, 3600], roll: [-3600, 3600], scale: [1e-9, 1e9], geoid_offset: [-1e3, 1e3], google_offset: [-1e3, 1e3],
   }
   for (const [k, [lo, hi]] of Object.entries(limits)) {
     const v = b[k]
@@ -133,7 +133,7 @@ router.put('/:id', requireAuth, async (req: Request, res: Response, next: NextFu
     const {
       name, description,
       longitude, latitude, altitude, heading, pitch, roll, scale,
-      coordinate_system, geoid_offset, watermark_text, geoid_mode, is_public_demo,
+      coordinate_system, geoid_offset, watermark_text, geoid_mode, is_public_demo, google_offset,
     } = req.body as Record<string, unknown>
 
     const perr = poseError(req.body as Record<string, unknown>)
@@ -154,8 +154,9 @@ router.put('/:id', requireAuth, async (req: Request, res: Response, next: NextFu
            watermark_text     = COALESCE($12, watermark_text),
            geoid_mode  = COALESCE($13, geoid_mode),
            is_public_demo     = COALESCE($14, is_public_demo),
+           google_offset      = COALESCE($15, google_offset),
            updated_at         = NOW()
-       WHERE id = $15
+       WHERE id = $16
        RETURNING *`,
       [
         name ?? null,
@@ -172,6 +173,7 @@ router.put('/:id', requireAuth, async (req: Request, res: Response, next: NextFu
         typeof watermark_text === 'string' ? watermark_text : null,
         bit(geoid_mode),
         bit(is_public_demo),
+        typeof google_offset === 'number' ? google_offset : null,
         req.params.id,
       ],
     )

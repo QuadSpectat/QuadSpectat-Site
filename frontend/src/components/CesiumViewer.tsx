@@ -20,6 +20,8 @@ import type { BaseMap } from '@/components/MapSwitcher'
 import type { GeoPoint } from '@/lib/geopoints'
 import type { HeightRef } from '@/lib/heights'
 import { modelGeoidShift, modelCoordinateSystem } from '@/lib/heights'
+import { alignToGoogleSurface } from '@/lib/googleAlign'
+import type { GoogleAlignResult } from '@/lib/googleAlign'
 import type { ViewApi } from '@/lib/views'
 import { OrientationAids } from '@/components/OrientationAids'
 import { effectiveSse, tilesetMemoryOptions, setQualityMode } from '@/lib/deviceProfile'
@@ -140,6 +142,8 @@ interface Props {
   onSnapToGround?: (detectedOffset: number) => void
   /** Parent passes a ref; CesiumViewer writes the snap-to-ground function into it */
   snapRef?: React.MutableRefObject<(() => void) | null>
+  /** Parent passes a ref; CesiumViewer writes the Align to Google 3D measurement into it (owner only) */
+  googleAlignRef?: React.MutableRefObject<(() => Promise<GoogleAlignResult>) | null>
   /** Parent passes a ref; CesiumViewer writes the reset-camera function into it */
   resetCameraRef?: React.MutableRefObject<(() => void) | null>
   /** Parent passes a ref; CesiumViewer writes the fly-to-orthophoto function into it */
@@ -188,6 +192,7 @@ function CesiumViewerInner({
   onSwipePosChange,
   onSnapToGround,
   snapRef,
+  googleAlignRef,
   resetCameraRef,
   flyToOrthoRef,
   geopointActive = false,
@@ -241,10 +246,14 @@ function CesiumViewerInner({
   // Where a 3D Tiles model is (its middle), known once the tileset has loaded: the geoid height N is taken there
   const tileCenterRef = useRef<{ lat: number; lon: number } | null>(null)
   /** The vertical shift the open model is drawn with: geoid part (see modelGeoidShift) without the fine-tune slider */
+  const googleShownRef = useRef(googleShown)
+  googleShownRef.current = googleShown
   const geoidShiftOf = (m: Model | null | undefined): number => {
     if (!m) return 0
-    if (m.model_type === '3d-tiles') return modelGeoidShift(m, tileCenterRef.current?.lat, tileCenterRef.current?.lon)
-    return modelGeoidShift(m, m.latitude, m.longitude)
+    // Align to Google 3D: the saved google_offset applies ONLY while Google 3D is shown; the normal view is untouched
+    const g = googleShownRef.current ? (m.google_offset ?? 0) : 0
+    if (m.model_type === '3d-tiles') return modelGeoidShift(m, tileCenterRef.current?.lat, tileCenterRef.current?.lon) + g
+    return modelGeoidShift(m, m.latitude, m.longitude) + g
   }
   // Getters, so a measurement always sees the shift that is drawn right now (the tileset centre arrives after the first render)
   const heightRef = useRef<HeightRef>({ appliedOffset: 0 })
@@ -490,7 +499,7 @@ function CesiumViewerInner({
     }
     // The altitude is the sea-level height of the model's ground: the geoid offset (when switched on for this model) and the
     // Height Offset slider are added, like they are for 3D Tiles; the slider moves the model later (see the effect below)
-    const position = Cesium.Cartesian3.fromDegrees(longitude, latitude, altitude + modelGeoidShift(selectedModel, latitude, longitude) + visualRef.current.heightOffset)
+    const position = Cesium.Cartesian3.fromDegrees(longitude, latitude, altitude + geoidShiftOf(selectedModel) + visualRef.current.heightOffset)
     const hpr = new Cesium.HeadingPitchRoll(
       Cesium.Math.toRadians(heading),
       Cesium.Math.toRadians(pitch),
@@ -707,7 +716,7 @@ function CesiumViewerInner({
     if (tilesetRef.current) {
       applyHeightOffset(tilesetRef.current, geoidShiftOf(selectedModel) + visualSettings.heightOffset)
     }
-  }, [visualSettings.heightOffset, selectedModel?.geoid_offset, selectedModel?.geoid_mode])
+  }, [visualSettings.heightOffset, selectedModel?.geoid_offset, selectedModel?.geoid_mode, selectedModel?.google_offset, googleShown])
 
   // The same slider (and the geoid switch) moves a GLB model: its entity is re-placed, nothing is reloaded
   useEffect(() => {
@@ -715,13 +724,13 @@ function CesiumViewerInner({
     const m = selectedModel
     if (!e || !m || m.model_type === '3d-tiles') return
     if (![m.longitude, m.latitude, m.altitude].every((n) => typeof n === 'number' && Number.isFinite(n))) return
-    const position = Cesium.Cartesian3.fromDegrees(m.longitude, m.latitude, m.altitude + modelGeoidShift(m, m.latitude, m.longitude) + visualSettings.heightOffset)
+    const position = Cesium.Cartesian3.fromDegrees(m.longitude, m.latitude, m.altitude + geoidShiftOf(m) + visualSettings.heightOffset)
     e.position = new Cesium.ConstantPositionProperty(position)
     e.orientation = new Cesium.ConstantProperty(Cesium.Transforms.headingPitchRollQuaternion(position, new Cesium.HeadingPitchRoll(
       Cesium.Math.toRadians(m.heading), Cesium.Math.toRadians(m.pitch), Cesium.Math.toRadians(m.roll),
     )))
     viewerRef.current?.scene.requestRender()
-  }, [visualSettings.heightOffset, selectedModel?.geoid_offset, selectedModel?.geoid_mode])
+  }, [visualSettings.heightOffset, selectedModel?.geoid_offset, selectedModel?.geoid_mode, selectedModel?.google_offset, googleShown])
 
   // ── Overlay model loading ────────────────────────────────────────────────────
   useEffect(() => {
@@ -1056,13 +1065,21 @@ function CesiumViewerInner({
     }
   }, [nadirLock])
 
-  // Measurement
-  // Never take points on Google's tiles (terms bar measuring on them): tools are off while shown
+  // Measurement. While Google 3D is shown the tools work on the owner's model ONLY: every pick ignores Google's tileset (Google's
+  // content terms do not allow taking measurements from Google data), and heights come from the model or the entered base height.
   const toolWanted = measureMode !== 'none' || geopointActive
-  useEffect(() => {
-    if (googleShown && toolWanted) onNotice('Measuring is turned off while Google 3D is shown')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [googleShown, toolWanted])
+  const googleExcluded = (): object[] => (google3dRef.current ? [google3dRef.current] : [])
+  if (googleAlignRef) {
+    googleAlignRef.current = async () => {
+      const v = viewerRef.current
+      const g = google3dRef.current
+      const m = selectedModelRef.current
+      const sph = stereoSphereRef.current
+      if (!v || v.isDestroyed() || !g || !m) throw new Error('Google 3D is not loaded yet: wait until it is drawn, then try again.')
+      if (!sph) throw new Error('The model is not ready yet.')
+      return alignToGoogleSurface(v, g, sph, m.google_offset ?? 0)
+    }
+  }
   // Render only on change: gestures, hover while a tool is active, scene collections, every React commit
   useRenderOnDemand(viewer, toolWanted)
   useRenderAfterCommit(viewer)
@@ -1071,8 +1088,8 @@ function CesiumViewerInner({
     onRecover()
   }
   const gpu = useContextLoss(viewer, recover)
-  useMeasure(viewer, googleShown ? 'none' : measureMode, baseElevation, measureKey, onMeasureResult, heightRef, { undoRef, redoRef, finishRef, onNotice, onProfile: setProfile })
-  useGeopoints(viewer, geopointActive && !googleShown, geopoints, onGeopointAdd ?? (() => {}), heightRef, { onNotice })
+  useMeasure(viewer, measureMode, baseElevation, measureKey, onMeasureResult, heightRef, { undoRef, redoRef, finishRef, onNotice, onProfile: setProfile, getExcluded: googleExcluded })
+  useGeopoints(viewer, geopointActive, geopoints, onGeopointAdd ?? (() => {}), heightRef, { onNotice, getExcluded: googleExcluded })
   // Red/cyan 3D glasses (waits while a tool is active; off for Google 3D and for pages without a 3D model)
   useStereo(viewer, {
     sphereRef: stereoSphereRef, toolActive: toolWanted, googleShown, hasModel: !!selectedModel, onNotice,
@@ -1082,9 +1099,9 @@ function CesiumViewerInner({
   // Height Offset slider -> moves a GLB; draped layers follow it once the slider has rested for a moment
   const [drapeShift, setDrapeShift] = useState(0)
   useEffect(() => {
-    const t = window.setTimeout(() => setDrapeShift(visualSettings.heightOffset), 600)
+    const t = window.setTimeout(() => setDrapeShift(visualSettings.heightOffset + (googleShown ? (selectedModel?.google_offset ?? 0) : 0)), 600)
     return () => window.clearTimeout(t)
-  }, [visualSettings.heightOffset])
+  }, [visualSettings.heightOffset, googleShown, selectedModel?.google_offset])
 
   // Sync KML/overlay layers.
   // Each layer is loaded once per key (file + placement mode + retry counter). Afterwards ONLY what changed is touched:
@@ -1154,7 +1171,7 @@ function CesiumViewerInner({
               }
               return false
             }
-            const skip = v.entities.values.filter((e) => !e.model)
+            const skip: object[] = [...googleExcluded(), ...v.entities.values.filter((e) => !e.model)]
             for (let i = 0; i < v.dataSources.length; i++) skip.push(...v.dataSources.get(i).entities.values)
             await drapeOnModel(v, ds, ready, alive, skip)
           } else if (drape) await drapePoints(v, ds, () => rt.get(layer.id) === r)
@@ -1225,6 +1242,11 @@ function CesiumViewerInner({
       )}
       {(gpu !== 'ok' || startError) && (
         <GpuNoticeCard kind={startError ? 'start' : gpu === 'repeated' ? 'repeated' : 'lost'} onReload={recover} />
+      )}
+      {googleShown && (
+        <div role="note" data-testid="google-measure-note" className="absolute top-2 left-1/2 -translate-x-1/2 z-10 pointer-events-none rounded-full border border-white/[0.15] bg-[#0b100d]/[0.92] text-white/80 text-[11px] px-3 py-1 max-w-[92%] text-center">
+          <span dir="rtl">המדידה משתמשת במודל שלכם בלבד; גוגל 3D להקשר בלבד</span> · Measuring uses your model only; Google 3D is for context
+        </div>
       )}
       {loadingModel && !tileError && (
         <div role="status" className="absolute top-14 left-1/2 -translate-x-1/2 rounded-full border border-white/[0.15] bg-[#0b100d]/[0.92] text-white/80

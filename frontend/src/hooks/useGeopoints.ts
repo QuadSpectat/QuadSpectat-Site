@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import * as Cesium from 'cesium'
 import type { GeoPoint } from '@/lib/geopoints'
 import { nextPointLabel } from '@/lib/geopoints'
+import { pickModelPosition } from '@/lib/pickModel'
 import { toMsl, DEFAULT_HEIGHT_REF } from '@/lib/heights'
 import type { HeightRef } from '@/lib/heights'
 
@@ -13,13 +14,6 @@ function newId(): string {
 
 const PIN = new Cesium.Color(1.0, 0.55, 0.0, 1.0)   // orange
 
-function pickPos(v: Cesium.Viewer, win: Cesium.Cartesian2): Cesium.Cartesian3 | undefined {
-  const pos = v.scene.pickPosition(win)
-  if (Cesium.defined(pos) && !isNaN(pos.x)) return pos
-  const ray = v.camera.getPickRay(win, new Cesium.Ray())
-  if (!ray) return undefined
-  return v.scene.globe.pick(ray, v.scene) ?? undefined
-}
 
 // Capture a cropped thumbnail around the click point from the Cesium canvas.
 // Requires preserveDrawingBuffer: true on the viewer (set in CesiumViewer.tsx).
@@ -52,7 +46,7 @@ export function useGeopoints(
   points: GeoPoint[],
   onAdd: (pt: GeoPoint) => void,
   heightRef?: { current: HeightRef },
-  extras?: { onNotice?: (msg: string) => void },
+  extras?: { onNotice?: (msg: string) => void; getExcluded?: () => object[] },
 ): void {
   const extrasRef = useRef(extras)
   extrasRef.current = extras
@@ -120,7 +114,7 @@ export function useGeopoints(
     const handler = new Cesium.ScreenSpaceEventHandler(v.scene.canvas)
 
     handler.setInputAction((e: Cesium.ScreenSpaceEventHandler.PositionedEvent) => {
-      const pos = pickPos(v, e.position)
+      const pos = pickModelPosition(v, e.position, extrasRef.current?.getExcluded?.() ?? [])
       if (!pos) {
         extrasRef.current?.onNotice?.('Nothing to measure here. Click on the model or the ground.')
         return

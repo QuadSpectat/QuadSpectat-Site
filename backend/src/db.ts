@@ -220,6 +220,8 @@ sqlite.exec(`
   const o = cols('orthophotos')
   sqlite.transaction(() => {
     if (!m.has('geoid_mode')) sqlite.exec(`ALTER TABLE models ADD COLUMN geoid_mode INTEGER NOT NULL DEFAULT 0`)
+    // google_offset: metres added to the model's height ONLY while Google 3D is shown (owner's "Align to Google 3D"); 0 = no change
+    if (!m.has('google_offset')) sqlite.exec(`ALTER TABLE models ADD COLUMN google_offset REAL NOT NULL DEFAULT 0`)
     const marker = env.PUBLIC_ASSET_NAME.trim()
     if (!m.has('is_public_demo')) {
       sqlite.exec(`ALTER TABLE models ADD COLUMN is_public_demo INTEGER NOT NULL DEFAULT 0`)
