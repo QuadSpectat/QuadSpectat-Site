@@ -42,7 +42,7 @@ export interface StereoState extends StereoSettings {
   hideMenus: boolean
 }
 
-export const DEFAULT_STEREO: StereoSettings = { sep: 3, pop: 2.5, ghost: 0, limit: 0.8, window: 0, swap: false, comfort: false }
+export const DEFAULT_STEREO: StereoSettings = { sep: 3, pop: 2.5, ghost: 0, limit: 1.2, window: 0.4, swap: false, comfort: false }
 export const GHOST_BLUE_CUT = 0.6   // at ghost = 1 the blue channel is multiplied by 1 - 0.6
 export const SEP_MIN = 0, SEP_MAX = 6   // percent of viewing distance; the owner's eyes fused at 0.5 % and saw double above about 1 %
 
