@@ -130,6 +130,11 @@ interface Props {
   compareBlend?: number
   /** Orthophoto before/after compare state */
   orthoCompare?: OrthoCompare | null
+  /** How the compare is shown: cross-fade (default) or a draggable swipe line */
+  compareMode?: 'fade' | 'swipe'
+  /** Swipe line position, 0 (left edge) to 1 (right edge) of the map */
+  swipePos?: number
+  onSwipePosChange?: (pos: number) => void
   /** Called with the detected geoid offset (m) when user snaps to ground */
   onSnapToGround?: (detectedOffset: number) => void
   /** Parent passes a ref; CesiumViewer writes the snap-to-ground function into it */
@@ -177,6 +182,9 @@ function CesiumViewerInner({
   overlayModelUrl = null,
   compareBlend = 0.5,
   orthoCompare = null,
+  compareMode = 'fade',
+  swipePos = 0.5,
+  onSwipePosChange,
   onSnapToGround,
   snapRef,
   resetCameraRef,
@@ -220,6 +228,8 @@ function CesiumViewerInner({
   const stereoSphereRef = useRef<Cesium.BoundingSphere | null>(null)
   // True once the open glTF model can be sampled for heights (layers are draped onto it only then)
   const modelReadyRef = useRef(false)
+  const swipePosRef = useRef(swipePos)
+  swipePosRef.current = swipePos
 
   // Keep a ref so shader uniform getters always read the latest values
   const visualRef = useRef<VisualSettings>(visualSettings)
@@ -776,6 +786,7 @@ function CesiumViewerInner({
 
   // ── Compare blend — crossfade base ↔ overlay ─────────────────────────────────
   useEffect(() => {
+    if (compareMode === 'swipe') return   // the swipe line owns the shaders (effect below)
     const hasOverlay = overlayModel !== null && (overlayEntityRef.current !== null || overlayTilesetRef.current !== null)
     const baseAlpha    = hasOverlay ? 1 - compareBlend : 1
     const overlayAlpha = compareBlend
@@ -810,9 +821,73 @@ function CesiumViewerInner({
       overlayEntityRef.current.model.colorBlendMode = new Cesium.ConstantProperty(Cesium.ColorBlendMode.HIGHLIGHT)
       overlayEntityRef.current.model.color = new Cesium.ConstantProperty(new Cesium.Color(1, 1, 1, overlayAlpha))
     }
-  }, [compareBlend, overlayModel?.id,
+  }, [compareBlend, compareMode, overlayModel?.id,
       // Re-run once the overlay refs are populated (tracked via overlayModelUrl as a proxy)
       overlayModelUrl])
+
+  // ── Compare swipe line ───────────────────────────────────────────────────────
+  // A vertical line splits the screen: the base model (or the "before" orthophoto) is drawn on its left, the overlay model (or
+  // the "after" orthophoto) on its right. Models use a custom shader that drops the fragments on the wrong side of the line
+  // (the line position is a uniform, so dragging it recompiles nothing); orthophotos use Cesium's split direction.
+  const swipeShaders = useRef<{ base?: Cesium.CustomShader; over?: Cesium.CustomShader }>({})
+  const swipeActive = compareMode === 'swipe' && (overlayModel !== null || !!(orthoCompare?.beforeId && orthoCompare?.afterId))
+  useEffect(() => {
+    if (compareMode !== 'swipe') return
+    const make = (side: number) => new Cesium.CustomShader({
+      uniforms: {
+        u_split: { type: Cesium.UniformType.FLOAT, value: swipePosRef.current },
+        u_side: { type: Cesium.UniformType.FLOAT, value: side },
+      },
+      fragmentShaderText: `void fragmentMain(FragmentInput fsInput, inout czm_modelMaterial material) {
+        bool left = (gl_FragCoord.x / czm_viewport.z) < u_split;
+        if ((u_side < 0.5) != left) { discard; }
+      }`,
+    })
+    const done = { base: false, over: false }
+    const apply = () => {
+      if (!done.base) {
+        const sh = make(0)
+        if (tilesetRef.current) { tilesetRef.current.customShader = sh; done.base = true }
+        else if (entityRef.current?.model) {
+          entityRef.current.model.color = undefined; entityRef.current.model.colorBlendMode = undefined
+          entityRef.current.model.customShader = new Cesium.ConstantProperty(sh); done.base = true
+        }
+        if (done.base) swipeShaders.current.base = sh
+      }
+      if (overlayModel && !done.over) {
+        const sh = make(1)
+        if (overlayTilesetRef.current) { overlayTilesetRef.current.customShader = sh; done.over = true }
+        else if (overlayEntityRef.current?.model) {
+          overlayEntityRef.current.model.color = undefined; overlayEntityRef.current.model.colorBlendMode = undefined
+          overlayEntityRef.current.model.customShader = new Cesium.ConstantProperty(sh); done.over = true
+        }
+        if (done.over) swipeShaders.current.over = sh
+      }
+      viewerRef.current?.scene.requestRender()
+      return done.base && (!overlayModel || done.over)
+    }
+    apply()
+    const timer = window.setInterval(() => { if (apply()) window.clearInterval(timer) }, 400)
+    return () => {
+      window.clearInterval(timer)
+      if (tilesetRef.current) tilesetRef.current.customShader = undefined
+      if (overlayTilesetRef.current) overlayTilesetRef.current.customShader = undefined
+      if (entityRef.current?.model) entityRef.current.model.customShader = undefined
+      if (overlayEntityRef.current?.model) overlayEntityRef.current.model.customShader = undefined
+      swipeShaders.current = {}
+      viewerRef.current?.scene.requestRender()
+    }
+  }, [compareMode, overlayModel?.id, overlayModelUrl, selectedModel?.id, modelUrl])
+  // the line moves: update the uniforms and the imagery split position, nothing else
+  useEffect(() => {
+    const v = viewerRef.current
+    if (!v || v.isDestroyed()) return
+    swipeShaders.current.base?.setUniform('u_split', swipePos)
+    swipeShaders.current.over?.setUniform('u_split', swipePos)
+    v.scene.splitPosition = swipePos
+    v.scene.requestRender()
+  }, [swipePos, compareMode])
+
 
   // Sync orthophoto imagery layers
   useEffect(() => {
@@ -832,7 +907,9 @@ function CesiumViewerInner({
 
     // `orthophotos` is topmost-first. Cross-fade two opaque layers exactly: the lower of the pair stays fully opaque and
     // the upper one carries the fade weight, whichever order the user has stacked them in.
-    const cmp = orthoCompare?.beforeId && orthoCompare.afterId ? orthoCompare : null
+    const cmpAny = orthoCompare?.beforeId && orthoCompare.afterId ? orthoCompare : null
+    const cmp = compareMode === 'swipe' ? null : cmpAny           // cross-fade
+    const swipeCmp = compareMode === 'swipe' ? cmpAny : null      // swipe line: before on the left, after on the right
     const idxOf = (id: string) => orthophotos.findIndex((q) => q.id === id)
     const upperIsAfter = cmp ? idxOf(cmp.afterId) < idxOf(cmp.beforeId) : false
 
@@ -890,6 +967,14 @@ function CesiumViewerInner({
       }
     }
 
+    for (const photo of orthophotos) {
+      const l = orthoMap.get(photo.id)
+      if (!l) continue
+      l.splitDirection = swipeCmp && photo.id === swipeCmp.beforeId ? Cesium.SplitDirection.LEFT
+        : swipeCmp && photo.id === swipeCmp.afterId ? Cesium.SplitDirection.RIGHT : Cesium.SplitDirection.NONE
+    }
+    v.scene.splitPosition = swipePosRef.current
+
     // Deterministic stacking: draw bottom-up in list order (list = topmost first). New layers are added on top by
     // Cesium and reload order no longer matters. Only touch Cesium when the relative order actually differs.
     const bottomUp = [...orthophotos].reverse()
@@ -903,7 +988,7 @@ function CesiumViewerInner({
     // The globe needs several frames to drop or repaint imagery after show / alpha / order change; with render-on-demand one
     // frame is not enough (a hidden orthophoto stayed painted until the camera moved)
     if (orthophotos.length) requestRenderFor(v, 1500)
-  }, [orthophotos, orthoCompare, shareToken])
+  }, [orthophotos, orthoCompare, shareToken, compareMode])
 
   // Track camera lat/lon so we can check if it's over an orthophoto's bounds.
   // Updated on moveEnd (after each navigation gesture) — not per-frame.
@@ -1124,6 +1209,7 @@ function CesiumViewerInner({
       {/* Credits stay hidden except while Google 3D is shown: Google requires attribution on screen */}
       <div ref={creditRef} className={googleShown ? 'absolute bottom-1 left-2 z-10 max-w-[60%] text-[10px] text-white/80 [&_a]:text-white/90' : 'hidden'} />
       {featurePick && <LayerFeatureCard pick={featurePick} onClose={() => setFeaturePick(null)} />}
+      {swipeActive && <SwipeLine pos={swipePos} onChange={(p) => onSwipePosChange?.(p)} />}
       <OrientationAids viewer={viewer} onHome={selectedModel ? () => homeRef.current?.() : undefined} />
       {profile && measureMode === 'profile' && <ProfilePanel profile={profile} onClose={() => setProfile(null)} />}
       {notice && (
@@ -1152,6 +1238,36 @@ function CesiumViewerInner({
     </div>
   )
 }
+/** The draggable swipe line of the compare: mouse and touch, he + en side labels. */
+function SwipeLine({ pos, onChange }: { pos: number; onChange: (p: number) => void }) {
+  const rootRef = useRef<HTMLDivElement>(null)
+  const drag = (e: React.PointerEvent<HTMLDivElement>) => {
+    const r = rootRef.current?.getBoundingClientRect()
+    if (!r || r.width <= 0) return
+    onChange(Math.min(0.98, Math.max(0.02, (e.clientX - r.left) / r.width)))
+  }
+  return (
+    <div ref={rootRef} className="absolute inset-0 z-[15] pointer-events-none" data-testid="swipe-line">
+      <div className="absolute top-0 bottom-0 w-0.5 bg-white/90 shadow-[0_0_6px_rgba(0,0,0,0.7)]" style={{ left: `${pos * 100}%` }} />
+      <div
+        role="slider" aria-label="Compare swipe line / קו השוואה" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pos * 100)}
+        className="absolute top-0 bottom-0 w-10 -ml-5 pointer-events-auto cursor-ew-resize flex items-center justify-center"
+        style={{ left: `${pos * 100}%`, touchAction: 'none' }}
+        onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); drag(e) }}
+        onPointerMove={(e) => { if (e.currentTarget.hasPointerCapture(e.pointerId)) drag(e) }}
+      >
+        <div className="h-9 w-9 rounded-full bg-white/95 text-black text-xs font-bold flex items-center justify-center shadow-lg select-none">&#x2194;</div>
+      </div>
+      <div className="absolute top-16 text-[11px] font-semibold px-2 py-1 rounded-lg bg-black/60 text-white" style={{ left: `calc(${pos * 100}% - 6px)`, transform: 'translateX(-100%)' }}>
+        <span dir="rtl">לפני / בסיס</span> · Before / Base
+      </div>
+      <div className="absolute top-16 text-[11px] font-semibold px-2 py-1 rounded-lg bg-black/60 text-white" style={{ left: `calc(${pos * 100}% + 6px)` }}>
+        After / Overlay · <span dir="rtl">אחרי / שכבה</span>
+      </div>
+    </div>
+  )
+}
+
 /** Rebuilds the whole viewer (fresh WebGL context, every effect re-run) when the user taps reload after a lost context. */
 export function CesiumViewer(props: Props) {
   const [epoch, setEpoch] = useState(0)

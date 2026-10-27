@@ -21,6 +21,9 @@ interface Props {
   onOverlayModelChange: (model: Model | null) => void
   onCompareBlendChange: (blend: number) => void
   onOrthoCompareChange: (compare: OrthoCompare | null) => void
+  /** Cross-fade or swipe line */
+  compareMode: 'fade' | 'swipe'
+  onCompareModeChange: (mode: 'fade' | 'swipe') => void
 }
 
 const PANEL = 'rounded-2xl border border-white/[0.15] bg-[#0b100d]/[0.97] backdrop-blur-xl shadow-2xl shadow-black/80'
@@ -79,6 +82,7 @@ export function ComparePanel({
   models, selectedModel, orthophotos,
   overlayModel, compareBlend, orthoCompare,
   onOverlayModelChange, onCompareBlendChange, onOrthoCompareChange,
+  compareMode, onCompareModeChange,
 }: Props) {
   const [open, setOpen] = useState(false)
 
@@ -110,6 +114,25 @@ export function ComparePanel({
           // Phones: pin the panel to the viewport (it used to hang 54 px off the left edge at 390 px)
           'max-sm:fixed max-sm:left-3 max-sm:right-3 max-sm:w-auto max-sm:mb-0 max-sm:bottom-[calc(6.5rem+env(safe-area-inset-bottom))] max-sm:max-h-[calc(100dvh-10rem)] max-sm:overflow-y-auto')}>
 
+          {/* ── How to compare ── */}
+          <div className="px-4 pt-3 pb-2 border-b border-white/[0.08]" data-testid="compare-mode">
+            <div role="group" aria-label="Compare mode / אופן השוואה" className="flex rounded-xl overflow-hidden border border-white/[0.15]">
+              {([['fade', 'Cross-fade', 'מעבר הדרגתי'], ['swipe', 'Swipe line', 'קו החלקה']] as const).map(([m, en, he]) => (
+                <button key={m} type="button" aria-pressed={compareMode === m} onClick={() => onCompareModeChange(m)}
+                  className={cn('flex-1 py-1 text-[11px] leading-tight select-none transition-colors',
+                    compareMode === m ? 'bg-[#9ACD3C]/25 text-[#b8e05c]' : 'text-white/65 hover:text-white/90 hover:bg-white/[0.07]')}>
+                  <span className="flex flex-col items-center"><span dir="rtl">{he}</span><span>{en}</span></span>
+                </button>
+              ))}
+            </div>
+            {compareMode === 'swipe' && (
+              <p className="mt-1.5 text-[10px] text-white/45 leading-snug">
+                <span dir="rtl" className="block">גררו את הקו במפה: בסיס / לפני משמאל, שכבה / אחרי מימין.</span>
+                Drag the line on the map: base / before on the left, overlay / after on the right.
+              </p>
+            )}
+          </div>
+
           {/* ── Models ── */}
           <div className="px-4 py-3 border-b border-white/[0.08]">
             <span className="text-[10px] font-semibold tracking-widest uppercase text-white/50">
@@ -136,7 +159,7 @@ export function ComparePanel({
             </div>
 
             {/* Model blend slider — only when overlay is set */}
-            {overlayModel && (
+            {overlayModel && compareMode === 'fade' && (
               <div className="mt-3 flex flex-col gap-1.5">
                 <div className="flex justify-between items-center">
                   <span className="text-[10px] text-white/35">Base</span>
@@ -186,7 +209,7 @@ export function ComparePanel({
               </div>
 
               {/* Ortho blend slider — only when both sides are selected */}
-              {orthoCompare?.beforeId && orthoCompare?.afterId && (
+              {orthoCompare?.beforeId && orthoCompare?.afterId && compareMode === 'fade' && (
                 <div className="mt-3 flex flex-col gap-1.5">
                   <div className="flex justify-between items-center">
                     <span className="text-[10px] text-white/35">Before</span>

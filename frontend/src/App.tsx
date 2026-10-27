@@ -79,6 +79,8 @@ export default function App() {
   const [overlayModelUrl, setOverlayModelUrl]   = useState<string | null>(null)
   const [compareBlend, setCompareBlend]         = useState(0.5)
   const [orthoCompare, setOrthoCompare]         = useState<OrthoCompare | null>(null)
+  const [compareMode, setCompareMode]           = useState<'fade' | 'swipe'>('fade')
+  const [swipePos, setSwipePos]                 = useState(0.5)
 
   const [geopoints, setGeopoints]           = useState<GeoPoint[]>([])
   const [geopointActive, setGeopointActive] = useState(false)
@@ -298,6 +300,9 @@ export default function App() {
             overlayModelUrl={overlayModelUrl}
             compareBlend={compareBlend}
             orthoCompare={orthoCompare}
+            compareMode={compareMode}
+            swipePos={swipePos}
+            onSwipePosChange={setSwipePos}
             onSnapToGround={(offset) => void handleSnapToGround(offset)}
             snapRef={snapRef}
             resetCameraRef={resetCameraRef}
@@ -366,6 +371,8 @@ export default function App() {
               overlayModel={overlayModel}
               compareBlend={compareBlend}
               orthoCompare={orthoCompare}
+              compareMode={compareMode}
+              onCompareModeChange={setCompareMode}
               onOverlayModelChange={setOverlayModel}
               onCompareBlendChange={setCompareBlend}
               onOrthoCompareChange={setOrthoCompare}
