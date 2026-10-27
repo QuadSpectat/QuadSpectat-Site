@@ -18,6 +18,20 @@ export interface HeightRef {
   appliedOffset: number
 }
 
+/**
+ * The vertical shift a model gets when it is drawn, in metres (the fine-tune slider is added by the caller).
+ * 3D Tiles always get the model's geoid_offset. A glTF/GLB model gets it only when the owner has switched
+ * `glb_geoid_applied` on (new uploads do): models placed before that keep being drawn at their altitude, unmoved.
+ * Either way the read-out undoes exactly the shift that was applied, so the Points panel shows the altitude that was entered
+ * (for an 'itm' model) at the ground of the model.
+ */
+export function modelGeoidShift(m: { model_type?: string; geoid_offset?: number; glb_geoid_applied?: number } | null | undefined): number {
+  if (!m) return 0
+  const off = typeof m.geoid_offset === 'number' && Number.isFinite(m.geoid_offset) ? m.geoid_offset : 0
+  if (m.model_type === '3d-tiles') return off
+  return m.glb_geoid_applied ? off : 0
+}
+
 export const DEFAULT_HEIGHT_REF: HeightRef = { appliedOffset: 0 }
 
 /** Displayed (ellipsoidal) height -> height above sea level, or null when the geoid is unknown at this position. */

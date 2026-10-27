@@ -18,6 +18,7 @@ import { DEFAULT_VISUAL, qualityToSSE } from '@/lib/visualControls'
 import type { BaseMap } from '@/components/MapSwitcher'
 import type { GeoPoint } from '@/lib/geopoints'
 import type { HeightRef } from '@/lib/heights'
+import { modelGeoidShift } from '@/lib/heights'
 import type { ViewApi } from '@/lib/views'
 import { OrientationAids } from '@/components/OrientationAids'
 import { effectiveSse, tilesetMemoryOptions, setQualityMode } from '@/lib/deviceProfile'
@@ -29,7 +30,7 @@ import { GpuNoticeCard } from '@/components/GpuNoticeCard'
 import { LayerFeatureCard } from '@/components/LayerFeatureCard'
 import type { FeaturePick } from '@/components/LayerFeatureCard'
 import {
-  loadLayerDataSource, nameDataSource, applyVisibility, captureOrigins, applyLayerOffset, drapePoints, describeEntity,
+  loadLayerDataSource, nameDataSource, applyVisibility, captureOrigins, applyLayerOffset, drapePoints, drapeOnModel, describeEntity,
 } from '@/lib/layerRender'
 import type { EntityOrigin } from '@/lib/layerRender'
 
@@ -214,6 +215,8 @@ function CesiumViewerInner({
   const overlayTilesetRef = useRef<Cesium.Cesium3DTileset | null>(null)
   // Bounding sphere of the open model: red/cyan 3D takes its focus distance and eye separation from it
   const stereoSphereRef = useRef<Cesium.BoundingSphere | null>(null)
+  // True once the open glTF model can be sampled for heights (layers are draped onto it only then)
+  const modelReadyRef = useRef(false)
 
   // Keep a ref so shader uniform getters always read the latest values
   const visualRef = useRef<VisualSettings>(visualSettings)
@@ -222,7 +225,8 @@ function CesiumViewerInner({
   const heightRef = useRef<HeightRef>({ appliedOffset: 0 })
   heightRef.current = {
     coordinateSystem: selectedModel?.coordinate_system,
-    appliedOffset: (selectedModel?.geoid_offset ?? 0) + visualSettings.heightOffset,
+    // exactly the vertical shift the model is drawn with (3D Tiles: geoid offset; GLB: only when the owner switched it on)
+    appliedOffset: modelGeoidShift(selectedModel) + visualSettings.heightOffset,
   }
 
   // Exposed as state so useMeasure re-runs once the viewer is ready
@@ -378,6 +382,7 @@ function CesiumViewerInner({
     if (!v) return
 
     stereoSphereRef.current = null
+    modelReadyRef.current = false
     // Remove previous glTF entity
     if (entityRef.current) {
       v.entities.remove(entityRef.current)
@@ -456,7 +461,9 @@ function CesiumViewerInner({
       homeRef.current = noop
       return
     }
-    const position = Cesium.Cartesian3.fromDegrees(longitude, latitude, altitude)
+    // The altitude is the sea-level height of the model's ground: the geoid offset (when switched on for this model) and the
+    // Height Offset slider are added, like they are for 3D Tiles; the slider moves the model later (see the effect below)
+    const position = Cesium.Cartesian3.fromDegrees(longitude, latitude, altitude + modelGeoidShift(selectedModel) + visualRef.current.heightOffset)
     const hpr = new Cesium.HeadingPitchRoll(
       Cesium.Math.toRadians(heading),
       Cesium.Math.toRadians(pitch),
@@ -529,6 +536,8 @@ function CesiumViewerInner({
         if (cancelled) { window.clearInterval(timer); return }
         if (modelReady()) {
           window.clearInterval(timer)
+          modelReadyRef.current = true
+          setLoadingModel(false)
           setTileError((cur) => (cur === notReadyMsg ? null : cur))
           stereoSphereRef.current = new Cesium.BoundingSphere(bs.center.clone(), bs.radius)
           const far = Cesium.Cartesian3.distance(bs.center, position)
@@ -674,6 +683,20 @@ function CesiumViewerInner({
     }
   }, [visualSettings.heightOffset, selectedModel?.geoid_offset])
 
+  // The same slider (and the geoid switch) moves a GLB model: its entity is re-placed, nothing is reloaded
+  useEffect(() => {
+    const e = entityRef.current
+    const m = selectedModel
+    if (!e || !m || m.model_type === '3d-tiles') return
+    if (![m.longitude, m.latitude, m.altitude].every((n) => typeof n === 'number' && Number.isFinite(n))) return
+    const position = Cesium.Cartesian3.fromDegrees(m.longitude, m.latitude, m.altitude + modelGeoidShift(m) + visualSettings.heightOffset)
+    e.position = new Cesium.ConstantPositionProperty(position)
+    e.orientation = new Cesium.ConstantProperty(Cesium.Transforms.headingPitchRollQuaternion(position, new Cesium.HeadingPitchRoll(
+      Cesium.Math.toRadians(m.heading), Cesium.Math.toRadians(m.pitch), Cesium.Math.toRadians(m.roll),
+    )))
+    viewerRef.current?.scene.requestRender()
+  }, [visualSettings.heightOffset, selectedModel?.geoid_offset, selectedModel?.glb_geoid_applied])
+
   // ── Overlay model loading ────────────────────────────────────────────────────
   useEffect(() => {
     const v = viewerRef.current
@@ -713,7 +736,7 @@ function CesiumViewerInner({
 
     // glTF / GLB overlay
     const { longitude, latitude, altitude, heading, pitch, roll, scale } = overlayModel
-    const position = Cesium.Cartesian3.fromDegrees(longitude, latitude, altitude)
+    const position = Cesium.Cartesian3.fromDegrees(longitude, latitude, altitude + modelGeoidShift(overlayModel) + visualRef.current.heightOffset)
     const hpr = new Cesium.HeadingPitchRoll(
       Cesium.Math.toRadians(heading),
       Cesium.Math.toRadians(pitch),
@@ -955,6 +978,13 @@ function CesiumViewerInner({
     flatMap: baseMap !== 'none' || orthophotos.some((p) => p.status === 'ready' && p.visible),
   })
 
+  // Height Offset slider -> moves a GLB; draped layers follow it once the slider has rested for a moment
+  const [drapeShift, setDrapeShift] = useState(0)
+  useEffect(() => {
+    const t = window.setTimeout(() => setDrapeShift(visualSettings.heightOffset), 600)
+    return () => window.clearTimeout(t)
+  }, [visualSettings.heightOffset])
+
   // Sync KML/overlay layers.
   // Each layer is loaded once per key (file + placement mode + retry counter). Afterwards ONLY what changed is touched:
   // visibility when it differs, the vertical offset when that layer's offset differs (never for the others, so 3D
@@ -971,10 +1001,13 @@ function CesiumViewerInner({
     }
     for (const id of [...loading.keys()]) if (!wanted.has(id)) loading.delete(id)
 
+    // Cesium can clamp to the globe and to 3D Tiles but not to a glTF model: for a GLB the layer is draped by height sampling
+    const onGlb = !!selectedModel && selectedModel.model_type !== '3d-tiles'
     for (const layer of layers) {
       const drape = layer.clampMode === 'drape' && layer.fileType !== 'czml'
       const offset = drape ? 0 : layer.heightOffset
-      const key = `${layer.url}|${drape ? 'drape' : 'heights'}|${layer.reloadKey}`
+      // a draped layer on a GLB is sampled again when the model is moved with the Height Offset slider
+      const key = `${layer.url}|${drape ? (onGlb ? `glb${drapeShift}` : 'drape') : 'heights'}|${layer.reloadKey}`
       let cur = rt.get(layer.id)
 
       if (cur && cur.key !== key) {          // file or placement mode changed: rebuild from the file
@@ -993,7 +1026,7 @@ function CesiumViewerInner({
       loading.set(layer.id, key)
       onLayerStateRef.current?.(layer.id, { state: 'loading' })
       const stillWanted = () => loading.get(layer.id) === key && !v.isDestroyed()
-      loadLayerDataSource(v, layer, drape)
+      loadLayerDataSource(v, layer, drape && !onGlb)
         .then(async (ds) => {
           if (!stillWanted()) return           // deleted, hidden away or reloaded meanwhile: never add a zombie
           loading.delete(layer.id)
@@ -1010,7 +1043,20 @@ function CesiumViewerInner({
           v.dataSources.add(ds)
           v.scene.requestRender()
           onLayerStateRef.current?.(layer.id, { state: 'ok' })
-          if (drape) await drapePoints(v, ds, () => rt.get(layer.id) === r)
+          if (drape && onGlb) {
+            const alive = () => rt.get(layer.id) === r
+            const ready = async (): Promise<boolean> => {
+              for (let waited = 0; waited < 90_000; waited += 250) {
+                if (!alive() || v.isDestroyed()) return false
+                if (modelReadyRef.current) return true
+                await new Promise((res) => setTimeout(res, 250))
+              }
+              return false
+            }
+            const skip = v.entities.values.filter((e) => !e.model)
+            for (let i = 0; i < v.dataSources.length; i++) skip.push(...v.dataSources.get(i).entities.values)
+            await drapeOnModel(v, ds, ready, alive, skip)
+          } else if (drape) await drapePoints(v, ds, () => rt.get(layer.id) === r)
         })
         .catch((err: unknown) => {
           if (!stillWanted()) return
@@ -1022,7 +1068,7 @@ function CesiumViewerInner({
         })
     }
     v.scene.requestRender()
-  }, [layers, viewer])
+  }, [layers, viewer, drapeShift])
 
   // Click a layer feature: name, attributes, coordinates (WGS84 / ITM). Off while a tool or Google 3D owns the click.
   const [featurePick, setFeaturePick] = useState<FeaturePick | null>(null)

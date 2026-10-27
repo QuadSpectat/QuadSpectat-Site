@@ -186,6 +186,99 @@ export async function drapePoints(v: Cesium.Viewer, ds: Cesium.DataSource, alive
   }
 }
 
+// ── Draping on a glTF model ──────────────────────────────────────────────────
+
+/**
+ * Cesium's clampToGround only works on terrain and on 3D Tiles; a glTF model (an entity) is skipped, so 2-D layers
+ * sank to the ellipsoid, far below the model. For a GLB the layer is therefore loaded unclamped and every vertex gets the
+ * height of the model surface at its position (the same sampleHeightMostDetailed the Profile uses), a few cm above it:
+ * points are moved, lines get extra vertices every ~2 m so they follow the relief, polygons take the sampled height per vertex.
+ * `ready` resolves once the model can be sampled (sampling before that returns the bare globe, height 0).
+ * Heights come back as the model surface where there is one and as the globe (height 0) where the feature leaves the model.
+ */
+export async function drapeOnModel(
+  v: Cesium.Viewer, ds: Cesium.DataSource, ready: () => Promise<boolean>, alive: () => boolean, skip: Cesium.Entity[],
+): Promise<void> {
+  const now = Cesium.JulianDate.now()
+  const NONE = Cesium.HeightReference.NONE
+  const C = Cesium.ConstantProperty
+  const LIFT = 0.3    // metres above the model: clear of thin raised features (a 0.2 m kerb) and of z-fighting
+  const STEP = 2      // metres between vertices of a line
+  const MAX_DENSIFY = 400
+  interface Job { carts: Cesium.Cartographic[]; apply: (h: (number | undefined)[]) => void }
+  const jobs: Job[] = []
+  const toCarto = (p: Cesium.Cartesian3) => Cesium.Cartographic.fromCartesian(p)
+  const fromCarto = (c: Cesium.Cartographic, h: number) => Cesium.Cartesian3.fromRadians(c.longitude, c.latitude, h)
+
+  for (const e of ds.entities.values) {
+    if (e.billboard) e.billboard.heightReference = new C(NONE)
+    if (e.label) e.label.heightReference = new C(NONE)
+    if (e.point) e.point.heightReference = new C(NONE)
+    if (e.rectangle) e.rectangle.heightReference = new C(NONE)
+
+    if (e.polyline?.positions) {
+      const pts = e.polyline.positions.getValue(now) as Cesium.Cartesian3[] | undefined
+      if (!pts || pts.length < 2) continue
+      const carts: Cesium.Cartographic[] = [toCarto(pts[0])]
+      for (let i = 1; i < pts.length; i++) {
+        const a = toCarto(pts[i - 1]), b = toCarto(pts[i])
+        const len = Cesium.Cartesian3.distance(pts[i - 1], pts[i])
+        const n = Math.min(MAX_DENSIFY, Math.max(1, Math.ceil(len / STEP)))
+        for (let k = 1; k <= n; k++) {
+          const t = k / n
+          carts.push(new Cesium.Cartographic(a.longitude + (b.longitude - a.longitude) * t, a.latitude + (b.latitude - a.latitude) * t))
+        }
+      }
+      jobs.push({ carts, apply: (h) => {
+        e.polyline!.clampToGround = new C(false)
+        e.polyline!.positions = new C(carts.map((c, i) => fromCarto(c, (h[i] ?? 0) + LIFT)))
+      } })
+    } else if (e.polygon?.hierarchy) {
+      const hv = e.polygon.hierarchy.getValue(now) as Cesium.PolygonHierarchy | Cesium.Cartesian3[] | undefined
+      const hier = hv && !Array.isArray(hv) ? hv : hv ? new Cesium.PolygonHierarchy(hv) : undefined
+      if (!hier) continue
+      const flat: Cesium.Cartographic[] = []
+      const walk = (h: Cesium.PolygonHierarchy) => { h.positions.forEach((p) => flat.push(toCarto(p))); h.holes.forEach(walk) }
+      walk(hier)
+      jobs.push({ carts: flat, apply: (h) => {
+        let i = 0
+        const rebuild = (src: Cesium.PolygonHierarchy): Cesium.PolygonHierarchy => new Cesium.PolygonHierarchy(
+          src.positions.map(() => { const c = flat[i]; const out = fromCarto(c, (h[i] ?? 0) + LIFT); i++; return out }),
+          src.holes.map(rebuild),
+        )
+        e.polygon!.heightReference = new C(NONE)
+        e.polygon!.height = undefined
+        e.polygon!.extrudedHeight = undefined
+        e.polygon!.perPositionHeight = new C(true)
+        e.polygon!.hierarchy = new C(rebuild(hier))
+      } })
+    } else if (e.position && !e.rectangle) {
+      const pos = e.position.getValue(now, new Cesium.Cartesian3())
+      if (!Cesium.defined(pos)) continue
+      const c = toCarto(pos)
+      jobs.push({ carts: [c], apply: (h) => { e.position = new Cesium.ConstantPositionProperty(fromCarto(c, (h[0] ?? 0) + LIFT)) } })
+    }
+  }
+  if (!jobs.length || !v.scene.sampleHeightSupported) return
+  if (!(await ready()) || !alive() || v.isDestroyed()) return
+
+  // One flat list, sampled in chunks; the sampled heights are handed back to each job in order
+  const all: Cesium.Cartographic[] = []
+  for (const j of jobs) all.push(...j.carts)
+  const heights: (number | undefined)[] = new Array(all.length)
+  const CHUNK = 500
+  for (let i = 0; i < all.length; i += CHUNK) {
+    if (!alive() || v.isDestroyed()) return
+    let got: (Cesium.Cartographic | undefined)[]
+    try { got = await v.scene.sampleHeightMostDetailed(all.slice(i, i + CHUNK).map((c) => new Cesium.Cartographic(c.longitude, c.latitude)), skip) } catch { return }
+    got.forEach((c, k) => { heights[i + k] = c && Number.isFinite(c.height) ? c.height : undefined })
+  }
+  if (!alive() || v.isDestroyed()) return
+  let at = 0
+  for (const j of jobs) { j.apply(heights.slice(at, at + j.carts.length)); at += j.carts.length }
+  v.scene.requestRender()
+}
+
 // ── Feature info (click popup) ───────────────────────────────────────────────
 
 export interface FeatureInfo {
