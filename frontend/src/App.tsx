@@ -211,6 +211,10 @@ export default function App() {
     }
   }
 
+  // In /app only the orthophotos of the selected model's asset are drawn (not those of every other asset); with no model open all are
+  const selectedAsset = selectedModel?.asset_name?.trim()
+  const orthoForMap = selectedAsset ? orthoPhotos.filter((p) => p.asset_name === selectedAsset) : orthoPhotos
+
   function crsLabel(): string | undefined {
     if (!selectedModel) return undefined
     const { coordinate_system, geoid_offset } = selectedModel
@@ -295,7 +299,7 @@ export default function App() {
             onBaseMapFallback={() => setBaseMap(prevBaseMap.current)}
             layers={layerCtl.resolved}
             onLayerState={layerCtl.onLoadState}
-            orthophotos={orthoPhotos}
+            orthophotos={orthoForMap}
             overlayModel={overlayModel}
             overlayModelUrl={overlayModelUrl}
             compareBlend={compareBlend}
@@ -367,7 +371,7 @@ export default function App() {
             <ComparePanel
               models={models}
               selectedModel={selectedModel}
-              orthophotos={orthoPhotos}
+              orthophotos={orthoForMap}
               overlayModel={overlayModel}
               compareBlend={compareBlend}
               orthoCompare={orthoCompare}
