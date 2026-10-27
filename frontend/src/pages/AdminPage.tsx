@@ -11,7 +11,7 @@ import {
 import { cn } from '@/lib/utils'
 import {
   listModels, deleteModel, updateModel, presignUpload, uploadToSpaces, createModel,
-  listOrthophotos, deleteOrthophoto, presignOrthophotoUpload, createOrthophoto,
+  listOrthophotos, deleteOrthophoto, updateOrthophoto, presignOrthophotoUpload, createOrthophoto,
   login, getMe, getAgeInfo,
 } from '@/lib/api'
 import type { Model, Orthophoto, CreateOrthophotoPayload } from '@/lib/api'
@@ -292,6 +292,8 @@ function EditModelModal({ model, onClose, onSaved }: { model: Model; onClose: ()
   })
   const [crsValue, setCrsValue] = useState(presetKnown ? model.coordinate_system : 'custom')
   const [customOffset, setCustomOffset] = useState(String(model.geoid_offset))
+  const [glbGeoid, setGlbGeoid] = useState(!!model.glb_geoid_applied)
+  const [publicDemo, setPublicDemo] = useState(!!model.is_public_demo)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const setP = (k: keyof PoseText) => (v: string) => setPose((p) => ({ ...p, [k]: v }))
@@ -310,6 +312,8 @@ function EditModelModal({ model, onClose, onSaved }: { model: Model; onClose: ()
     if (!Number.isFinite(off)) { setError('Geoid offset must be a number'); return }
     payload.coordinate_system = crsValue
     payload.geoid_offset = off
+    if (isGlb) payload.glb_geoid_applied = glbGeoid
+    payload.is_public_demo = publicDemo
     setSaving(true); setError(null)
     try {
       onSaved(await updateModel(model.id, payload))
@@ -346,6 +350,25 @@ function EditModelModal({ model, onClose, onSaved }: { model: Model; onClose: ()
         {crsValue === 'custom' && (
           <Field label="Geoid Offset (m)" value={customOffset} onChange={setCustomOffset} type="number" step="0.1" />
         )}
+        {isGlb && (
+          <label className="flex items-start gap-2.5 cursor-pointer select-none" data-testid="glb-geoid-toggle">
+            <input type="checkbox" checked={glbGeoid} onChange={(e) => setGlbGeoid(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-white/20 bg-white/5 accent-primary" />
+            <span className="text-xs text-white/60 leading-snug">
+              <span dir="rtl" className="block">הגובה שהוזן הוא גובה פני הקרקע מעל פני הים: להוסיף את תיקון הגיאואיד לציור המודל (מזיז את המודל)</span>
+              The altitude is the sea-level height of the model&apos;s ground: add the geoid offset when drawing it, like 3D Tiles (moves the model by the offset)
+              <span className="block text-white/45">Off = the model is drawn at its altitude unchanged (how models placed before this option are drawn).</span>
+            </span>
+          </label>
+        )}
+        <label className="flex items-start gap-2.5 cursor-pointer select-none" data-testid="public-demo-toggle">
+          <input type="checkbox" checked={publicDemo} onChange={(e) => setPublicDemo(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-white/20 bg-white/5 accent-primary" />
+          <span className="text-xs text-white/60 leading-snug">
+            <span dir="rtl" className="block">הדגמה ציבורית: כל אחד יכול לראות ולפתוח את המודל ואת כל השכבות שלו בלי קישור</span>
+            Public demo: anyone can list and open this model and all its layers without a link
+          </span>
+        </label>
         {error && (
           <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-400">
             <AlertCircle size={13} className="mt-0.5 shrink-0" />{error}
@@ -504,6 +527,7 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
             ...pr.v,
             coordinate_system,
             geoid_offset,
+            glb_geoid_applied: true,   // new GLBs: the altitude is the sea-level height of the ground, the offset is applied
             show_watermark: showWatermark,
             watermark_text: wt,
           })
@@ -1045,6 +1069,11 @@ function OrthophotosTab({
     return () => clearTimeout(id)
   }, [processingIds.join(','), onRefresh])
 
+  async function togglePublicDemo(o: Orthophoto, on: boolean) {
+    try { await updateOrthophoto(o.id, { is_public_demo: on }); onRefresh(); toast('success', `"${o.name}" is ${on ? 'now' : 'no longer'} a public demo`) }
+    catch (err) { toast('error', err instanceof Error ? err.message : 'Could not change the public demo setting') }
+  }
+
   async function handleDelete(o: Orthophoto) {
     if (!confirm(`Delete orthophoto "${o.name}"? This cannot be undone.`)) return
     try { await deleteOrthophoto(o.id); onDelete(o.id); toast('success', `Deleted "${o.name}"`) }
@@ -1117,7 +1146,14 @@ function OrthophotosTab({
                   <td className="px-4 py-2.5 text-white/50 hidden sm:table-cell">{fmtDate(o.created_at)}</td>
                   <td className="px-4 py-2.5 hidden sm:table-cell"><AgeBadge createdAt={o.created_at} /></td>
                   <td className="px-4 py-2.5">
-                    <div className="flex items-center gap-1 justify-end">
+                    <div className="flex items-center gap-2 justify-end">
+                      <label className="flex items-center gap-1.5 text-[11px] text-white/55 cursor-pointer select-none whitespace-nowrap"
+                        title="Public demo: anyone can list and open this orthophoto without a link / הדגמה ציבורית: פתוח לכל אחד בלי קישור">
+                        <input type="checkbox" data-testid="ortho-public-demo" checked={!!o.is_public_demo}
+                          onChange={(e) => { void togglePublicDemo(o, e.target.checked) }}
+                          className="h-3.5 w-3.5 rounded border-white/20 bg-white/5 accent-primary" />
+                        Public demo
+                      </label>
                       <button
                         title="Delete orthophoto"
                         onClick={() => handleDelete(o)}

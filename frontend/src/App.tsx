@@ -54,6 +54,8 @@ export default function App() {
   const { models, loading, error, refresh, remove } = useModels()
   const navigate = useNavigate()
   const phone = usePhoneLayout()
+  // Google Photorealistic 3D is for the signed-in owner only (terms and billing): anonymous /app visitors never see the button
+  const owner = isOwnerSession()
 
   const [selectedModel, setSelectedModel] = useState<Model | null>(null)
   const [modelUrl, setModelUrl]           = useState<string | null>(null)
@@ -209,6 +211,8 @@ export default function App() {
     if (!selectedModel) return undefined
     const { coordinate_system, geoid_offset } = selectedModel
     if (coordinate_system === 'unknown' || coordinate_system === 'wgs84') return undefined
+    // a GLB placed before the owner switched the geoid offset on is drawn at its altitude unshifted: do not claim an offset
+    if (selectedModel.model_type !== '3d-tiles' && !selectedModel.glb_geoid_applied) return `${coordinate_system.toUpperCase()} (offset not applied)`
     const sign = geoid_offset >= 0 ? '+' : ''
     return `${coordinate_system.toUpperCase()} ${sign}${geoid_offset.toFixed(1)} m`
   }
@@ -236,7 +240,7 @@ export default function App() {
           </>
         )}
         <div className="flex-1" />
-        <MapSwitcher inline allowGoogle3d value={baseMap} onChange={setBaseMap} />
+        <MapSwitcher inline allowGoogle3d={owner} value={baseMap} onChange={setBaseMap} />
         <button
           type="button"
           disabled={!selectedModel}
@@ -282,7 +286,7 @@ export default function App() {
             onMeasureResult={setMeasureResult}
             visualSettings={visualSettings}
             baseMap={baseMap}
-            allowGoogle3d
+            allowGoogle3d={owner}
             onBaseMapFallback={() => setBaseMap(prevBaseMap.current)}
             layers={layerCtl.resolved}
             onLayerState={layerCtl.onLoadState}

@@ -21,6 +21,10 @@ export interface Model {
   external_url: string | null
   coordinate_system: string
   geoid_offset: number
+  /** 1 = a GLB is drawn shifted by geoid_offset like 3D Tiles (altitude = sea-level height of its ground); 0 = drawn at its altitude as is */
+  glb_geoid_applied?: number
+  /** 1 = listed and served to anyone without a login (the public demo); set by the owner */
+  is_public_demo?: number
   show_watermark: number  // 1 = show, 0 = hide
   watermark_text: string  // text shown as watermark; empty = no watermark
   created_at: string
@@ -45,6 +49,8 @@ export interface CreateModelPayload {
   external_url?: string
   coordinate_system?: string
   geoid_offset?: number
+  glb_geoid_applied?: boolean
+  is_public_demo?: boolean
   show_watermark?: boolean
   watermark_text?: string
 }
@@ -61,6 +67,8 @@ export interface UpdateModelPayload {
   scale?: number
   coordinate_system?: string
   geoid_offset?: number
+  glb_geoid_applied?: boolean
+  is_public_demo?: boolean
 }
 
 export function getAuthHeader(): { Authorization: string } | Record<string, never> {
@@ -319,6 +327,7 @@ export interface Orthophoto {
   show_watermark: number   // 1 = show, 0 = hide
   watermark_text: string   // empty = no watermark
   sort_order?: number      // stacking order within the asset, higher = drawn on top
+  is_public_demo?: number  // 1 = listed and served to anyone without a login (set by the owner)
   created_at: string
   updated_at: string
 }
@@ -329,7 +338,7 @@ export const listOrthophotos = () =>
 export const getOrthophoto = (id: string) =>
   apiFetch<Orthophoto>(`/orthophotos/${id}`)
 
-export const updateOrthophoto = (id: string, payload: { visible?: boolean; opacity?: number }) =>
+export const updateOrthophoto = (id: string, payload: { visible?: boolean; opacity?: number; is_public_demo?: boolean }) =>
   apiFetch<Orthophoto>(`/orthophotos/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
 
 /** Persist the stacking order of one asset's orthophotos. `ids` = the asset's orthophotos, topmost first. */
