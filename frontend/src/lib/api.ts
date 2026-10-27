@@ -21,8 +21,8 @@ export interface Model {
   external_url: string | null
   coordinate_system: string
   geoid_offset: number
-  /** 1 = a GLB is drawn shifted by geoid_offset like 3D Tiles (altitude = sea-level height of its ground); 0 = drawn at its altitude as is */
-  glb_geoid_applied?: number
+  /** 1 = the model's heights are orthometric (above sea level) and it is drawn at h = H + N (EGM2008); 0 = legacy drawing (see backend db.ts) */
+  geoid_mode?: number
   /** 1 = listed and served to anyone without a login (the public demo); set by the owner */
   is_public_demo?: number
   show_watermark: number  // 1 = show, 0 = hide
@@ -49,7 +49,7 @@ export interface CreateModelPayload {
   external_url?: string
   coordinate_system?: string
   geoid_offset?: number
-  glb_geoid_applied?: boolean
+  geoid_mode?: boolean
   is_public_demo?: boolean
   show_watermark?: boolean
   watermark_text?: string
@@ -67,7 +67,7 @@ export interface UpdateModelPayload {
   scale?: number
   coordinate_system?: string
   geoid_offset?: number
-  glb_geoid_applied?: boolean
+  geoid_mode?: boolean
   is_public_demo?: boolean
 }
 

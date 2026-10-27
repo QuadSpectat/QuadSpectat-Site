@@ -207,8 +207,10 @@ sqlite.exec(`
   }
 }
 // ── Models: GLB height convention + explicit public-demo flag (additive; safe to run on every start) ──
-// glb_geoid_applied: 0 = a GLB is drawn at its altitude as before (every existing model keeps its place); 1 = it is shifted by
-//   geoid_offset like 3D Tiles. Only new uploads and an explicit owner choice set it, so no live model moves by itself.
+// geoid_mode: 0 = legacy: the model is drawn exactly as before (3D Tiles shifted by geoid_offset, a GLB at its altitude), so no
+//   existing model moves; 1 = orthometric: the heights of the model are heights above sea level and it is drawn at h = H + N
+//   (N = EGM2008 geoid height at the model, about +17 to +22.5 m in Israel). Only new uploads (ITM choice) and an explicit owner
+//   tick in Edit model set it.
 // is_public_demo: replaces "asset name contains DEMO" as the rule for what anonymous visitors may list and open. The columns
 //   are added once, and in that same transaction every existing model / orthophoto whose asset name contains the old marker
 //   (PUBLIC_ASSET_NAME, default DEMO) is flagged, so the public demo keeps working. Later starts never re-flag anything.
@@ -217,7 +219,7 @@ sqlite.exec(`
   const m = cols('models')
   const o = cols('orthophotos')
   sqlite.transaction(() => {
-    if (!m.has('glb_geoid_applied')) sqlite.exec(`ALTER TABLE models ADD COLUMN glb_geoid_applied INTEGER NOT NULL DEFAULT 0`)
+    if (!m.has('geoid_mode')) sqlite.exec(`ALTER TABLE models ADD COLUMN geoid_mode INTEGER NOT NULL DEFAULT 0`)
     const marker = env.PUBLIC_ASSET_NAME.trim()
     if (!m.has('is_public_demo')) {
       sqlite.exec(`ALTER TABLE models ADD COLUMN is_public_demo INTEGER NOT NULL DEFAULT 0`)

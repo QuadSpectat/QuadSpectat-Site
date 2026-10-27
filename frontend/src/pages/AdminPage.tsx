@@ -16,6 +16,8 @@ import {
 } from '@/lib/api'
 import type { Model, Orthophoto, CreateOrthophotoPayload } from '@/lib/api'
 import { ClientPagesTab } from '@/components/ClientPagesTab'
+import { geoidUndulation } from '@/lib/geoid'
+import { modelGeoidShift, toMsl } from '@/lib/heights'
 import { readFolder, readZip, uploadTileset, type TileFile } from '@/lib/tilesetUpload'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -33,7 +35,7 @@ interface Toast {
 const CRS_PRESETS = [
   { value: 'unknown',  label: 'Unknown / manual slider',              offset: 0,    hint: 'Use the height offset slider after loading' },
   { value: 'wgs84',   label: 'WGS84 Ellipsoidal (no offset)',         offset: 0,    hint: 'Heights already in WGS84 — no correction needed' },
-  { value: 'itm',     label: 'Israel ITM / IG05 (ContextCapture/DJI)', offset: -17.5, hint: 'Auto-applies −17.5 m geoid correction for Israel' },
+  { value: 'itm',     label: 'Israel ITM / IG05: heights above sea level (orthometric)', offset: 0, hint: 'Heights are above sea level; the viewer adds the geoid height N (about +17 to +22.5 m in Israel) when drawing, so the Points panel shows exactly the height in the file' },
   { value: 'custom',  label: 'Custom geoid offset…',                  offset: null, hint: 'Enter your own geoid undulation value in metres' },
 ] as const
 
@@ -281,6 +283,53 @@ const POSE_HINT = 'Where the model sits on the globe. Altitude is metres above t
 
 // ─── Edit Model Modal ─────────────────────────────────────────────────────────
 
+/** Confirmation before a model becomes a public demo (he + en). */
+function confirmPublicDemo(name: string): boolean {
+  return window.confirm(`הפיכת "${name}" להדגמה ציבורית: כל אחד יוכל לפתוח אותו ללא קוד גישה ולראות את כל השכבות שלו. להמשיך?\n\nMake "${name}" a PUBLIC DEMO? Anyone with the link or the app can open it without a token and will see ALL its layers. Continue?`)
+}
+
+/**
+ * The "heights are above sea level" option of a model (geoid_mode), with the height of the model now and after the switch,
+ * so the owner can decide per model. Rule: drawn height h = H + N (N = EGM2008 geoid height at the model).
+ */
+function HeightOption({ model, pose, isGlb, checked, onChange }: {
+  model: Model; pose: PoseText; isGlb: boolean; checked: boolean; onChange: (v: boolean) => void
+}) {
+  const lat = isGlb && Number.isFinite(Number(pose.lat)) && Number(pose.lat) !== 0 ? Number(pose.lat) : 32.0
+  const lon = isGlb && Number.isFinite(Number(pose.lon)) && Number(pose.lon) !== 0 ? Number(pose.lon) : 34.8
+  const alt = Number(pose.alt)
+  const N = geoidUndulation(lat, lon)
+  const saved = !!model.geoid_mode
+  const s0 = modelGeoidShift({ model_type: model.model_type, geoid_offset: model.geoid_offset, geoid_mode: 0 })
+  const f = (v: number) => v.toFixed(2)
+  let now: string
+  let after: string | null = null
+  if (saved) {
+    now = `Now: drawn at h = H + N; N = ${N === null ? 'n/a' : f(N)} m here, so the Points panel shows exactly the height in the file.`
+  } else if (isGlb && Number.isFinite(alt)) {
+    const h0 = alt + s0
+    const H0 = toMsl(lat, lon, h0, { coordinateSystem: model.coordinate_system, appliedOffset: s0 })
+    now = `Now (legacy): altitude ${f(alt)} m is drawn at ellipsoid ${f(h0)} m and the Points panel shows ${H0 === null ? 'n/a' : f(H0)} m above sea level for its ground.`
+    if (N !== null) after = `With the option: drawn at ellipsoid ${f(alt + N)} m (= ${f(alt)} + N ${f(N)}); the Points panel shows ${f(alt)} m. The model moves ${N - s0 >= 0 ? 'UP' : 'DOWN'} by ${f(Math.abs(N - s0))} m.`
+  } else {
+    now = `Now (legacy): the tileset is drawn shifted by the stored geoid offset ${f(s0)} m.`
+    if (N !== null) after = `With the option: shifted by N = ${f(N)} m (at ${lat.toFixed(1)}N ${lon.toFixed(1)}E; the real value is taken at the model). The model moves ${N - s0 >= 0 ? 'UP' : 'DOWN'} by about ${f(Math.abs(N - s0))} m.`
+  }
+  return (
+    <label className="flex items-start gap-2.5 cursor-pointer select-none" data-testid="geoid-mode-toggle">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)}
+        className="mt-0.5 h-4 w-4 rounded border-white/20 bg-white/5 accent-primary" />
+      <span className="text-xs text-white/60 leading-snug">
+        <span dir="rtl" className="block">הגבהים של המודל הם מעל פני הים (אורתומטריים): לצייר אותו בגובה אליפסואיד h = H + N ולהציג בחלונית הנקודות בדיוק את H. שימו לב: המודל יזוז.</span>
+        The model&apos;s heights are above sea level (orthometric): draw it at ellipsoid height h = H + N (N = geoid height, about +17 to +22.5 m in Israel) and show exactly H in the Points panel. The model will MOVE.
+        <span className="block text-white/45" data-testid="geoid-now">{now}</span>
+        {after && <span className="block text-amber-200/80" data-testid="geoid-after">{after}</span>}
+        <span className="block text-white/45">Off = the model keeps being drawn exactly as before. (The old ITM preset used -17.5 m, which has the wrong sign for heights above sea level.)</span>
+      </span>
+    </label>
+  )
+}
+
 function EditModelModal({ model, onClose, onSaved }: { model: Model; onClose: () => void; onSaved: (m: Model) => void }) {
   const isGlb = model.model_type !== '3d-tiles'
   const presetKnown = CRS_PRESETS.some((p) => p.value === model.coordinate_system)
@@ -292,7 +341,7 @@ function EditModelModal({ model, onClose, onSaved }: { model: Model; onClose: ()
   })
   const [crsValue, setCrsValue] = useState(presetKnown ? model.coordinate_system : 'custom')
   const [customOffset, setCustomOffset] = useState(String(model.geoid_offset))
-  const [glbGeoid, setGlbGeoid] = useState(!!model.glb_geoid_applied)
+  const [geoidMode, setGeoidMode] = useState(!!model.geoid_mode)
   const [publicDemo, setPublicDemo] = useState(!!model.is_public_demo)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -308,11 +357,13 @@ function EditModelModal({ model, onClose, onSaved }: { model: Model; onClose: ()
       if (r.error) { setError(r.error); return }
       Object.assign(payload, r.v)
     }
-    const off = preset.offset !== null ? preset.offset : Number(customOffset)
+    // An unchanged preset keeps the stored offset (an old ITM model carries -17.5: saving must not silently change it)
+    const keepOffset = crsValue === model.coordinate_system && crsValue !== 'custom'
+    const off = keepOffset ? model.geoid_offset : preset.offset !== null ? preset.offset : Number(customOffset)
     if (!Number.isFinite(off)) { setError('Geoid offset must be a number'); return }
     payload.coordinate_system = crsValue
     payload.geoid_offset = off
-    if (isGlb) payload.glb_geoid_applied = glbGeoid
+    payload.geoid_mode = geoidMode
     payload.is_public_demo = publicDemo
     setSaving(true); setError(null)
     try {
@@ -350,23 +401,13 @@ function EditModelModal({ model, onClose, onSaved }: { model: Model; onClose: ()
         {crsValue === 'custom' && (
           <Field label="Geoid Offset (m)" value={customOffset} onChange={setCustomOffset} type="number" step="0.1" />
         )}
-        {isGlb && (
-          <label className="flex items-start gap-2.5 cursor-pointer select-none" data-testid="glb-geoid-toggle">
-            <input type="checkbox" checked={glbGeoid} onChange={(e) => setGlbGeoid(e.target.checked)}
-              className="mt-0.5 h-4 w-4 rounded border-white/20 bg-white/5 accent-primary" />
-            <span className="text-xs text-white/60 leading-snug">
-              <span dir="rtl" className="block">הגובה שהוזן הוא גובה פני הקרקע מעל פני הים: להוסיף את תיקון הגיאואיד לציור המודל (מזיז את המודל)</span>
-              The altitude is the sea-level height of the model&apos;s ground: add the geoid offset when drawing it, like 3D Tiles (moves the model by the offset)
-              <span className="block text-white/45">Off = the model is drawn at its altitude unchanged (how models placed before this option are drawn).</span>
-            </span>
-          </label>
-        )}
+        <HeightOption model={model} pose={pose} isGlb={isGlb} checked={geoidMode} onChange={setGeoidMode} />
         <label className="flex items-start gap-2.5 cursor-pointer select-none" data-testid="public-demo-toggle">
-          <input type="checkbox" checked={publicDemo} onChange={(e) => setPublicDemo(e.target.checked)}
+          <input type="checkbox" checked={publicDemo} onChange={(e) => { if (!e.target.checked || confirmPublicDemo(model.name)) setPublicDemo(e.target.checked) }}
             className="mt-0.5 h-4 w-4 rounded border-white/20 bg-white/5 accent-primary" />
           <span className="text-xs text-white/60 leading-snug">
-            <span dir="rtl" className="block">הדגמה ציבורית: כל אחד יכול לראות ולפתוח את המודל ואת כל השכבות שלו בלי קישור</span>
-            Public demo: anyone can list and open this model and all its layers without a link
+            <span dir="rtl" className="block">הדגמה ציבורית: כל מי שיש לו את הקישור או את האפליקציה יכול לפתוח את המודל בלי קוד גישה, ורואה את כל השכבות שלו</span>
+            Public demo: anyone with the link or the app can open this model without a token and sees ALL its layers
           </span>
         </label>
         {error && (
@@ -527,7 +568,7 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
             ...pr.v,
             coordinate_system,
             geoid_offset,
-            glb_geoid_applied: true,   // new GLBs: the altitude is the sea-level height of the ground, the offset is applied
+            geoid_mode: coordinate_system === 'itm',   // ITM models: heights are above sea level, drawn at H + N
             show_watermark: showWatermark,
             watermark_text: wt,
           })
@@ -543,6 +584,7 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
             model_type: '3d-tiles',
             coordinate_system,
             geoid_offset,
+            geoid_mode: coordinate_system === 'itm',
             show_watermark: showWatermark,
             watermark_text: wt,
           })
@@ -558,6 +600,7 @@ function UploadAssetModal({ onClose, onSuccess, existingAssets, existingWatermar
             model_type: '3d-tiles',
             coordinate_system,
             geoid_offset,
+            geoid_mode: coordinate_system === 'itm',
             show_watermark: showWatermark,
             watermark_text: wt,
           })

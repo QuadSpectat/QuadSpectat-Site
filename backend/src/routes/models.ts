@@ -72,7 +72,7 @@ router.post('/', requireAuth, async (req: Request, res: Response, next: NextFunc
       asset_name, name, file_key, file_size, file_type, description,
       longitude, latitude, altitude, heading, pitch, roll, scale,
       model_type, external_url, coordinate_system, geoid_offset, show_watermark, watermark_text,
-      glb_geoid_applied, is_public_demo,
+      geoid_mode, is_public_demo,
     } = req.body as Record<string, unknown>
 
     const perr = poseError(req.body as Record<string, unknown>)
@@ -91,7 +91,7 @@ router.post('/', requireAuth, async (req: Request, res: Response, next: NextFunc
          (id, asset_name, name, description, file_key, file_size, file_type,
           longitude, latitude, altitude, heading, pitch, roll, scale,
           model_type, external_url, coordinate_system, geoid_offset, show_watermark, watermark_text,
-          glb_geoid_applied, is_public_demo)
+          geoid_mode, is_public_demo)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
        RETURNING *`,
       [
@@ -115,7 +115,7 @@ router.post('/', requireAuth, async (req: Request, res: Response, next: NextFunc
         geoid_offset ?? 0,
         show_watermark === false || show_watermark === 0 ? 0 : 1,
         typeof watermark_text === 'string' ? watermark_text : '',
-        glb_geoid_applied === true || glb_geoid_applied === 1 ? 1 : 0,
+        geoid_mode === true || geoid_mode === 1 ? 1 : 0,
         is_public_demo === true || is_public_demo === 1 ? 1 : 0,
       ],
     )
@@ -133,7 +133,7 @@ router.put('/:id', requireAuth, async (req: Request, res: Response, next: NextFu
     const {
       name, description,
       longitude, latitude, altitude, heading, pitch, roll, scale,
-      coordinate_system, geoid_offset, watermark_text, glb_geoid_applied, is_public_demo,
+      coordinate_system, geoid_offset, watermark_text, geoid_mode, is_public_demo,
     } = req.body as Record<string, unknown>
 
     const perr = poseError(req.body as Record<string, unknown>)
@@ -152,7 +152,7 @@ router.put('/:id', requireAuth, async (req: Request, res: Response, next: NextFu
            coordinate_system  = COALESCE($10, coordinate_system),
            geoid_offset       = COALESCE($11, geoid_offset),
            watermark_text     = COALESCE($12, watermark_text),
-           glb_geoid_applied  = COALESCE($13, glb_geoid_applied),
+           geoid_mode  = COALESCE($13, geoid_mode),
            is_public_demo     = COALESCE($14, is_public_demo),
            updated_at         = NOW()
        WHERE id = $15
@@ -170,7 +170,7 @@ router.put('/:id', requireAuth, async (req: Request, res: Response, next: NextFu
         coordinate_system ?? null,
         geoid_offset ?? null,
         typeof watermark_text === 'string' ? watermark_text : null,
-        bit(glb_geoid_applied),
+        bit(geoid_mode),
         bit(is_public_demo),
         req.params.id,
       ],

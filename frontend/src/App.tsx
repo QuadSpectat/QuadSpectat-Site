@@ -199,6 +199,7 @@ export default function App() {
     const updated = await updateModel(selectedModel.id, {
       coordinate_system: 'custom',
       geoid_offset: detectedOffset,
+      geoid_mode: false,
     }).catch(console.error)
     if (updated) {
       setSelectedModel(updated)
@@ -210,9 +211,10 @@ export default function App() {
   function crsLabel(): string | undefined {
     if (!selectedModel) return undefined
     const { coordinate_system, geoid_offset } = selectedModel
+    if (selectedModel.geoid_mode) return 'Orthometric heights (H + N, EGM2008)'
     if (coordinate_system === 'unknown' || coordinate_system === 'wgs84') return undefined
-    // a GLB placed before the owner switched the geoid offset on is drawn at its altitude unshifted: do not claim an offset
-    if (selectedModel.model_type !== '3d-tiles' && !selectedModel.glb_geoid_applied) return `${coordinate_system.toUpperCase()} (offset not applied)`
+    // legacy drawing: a GLB is drawn at its altitude, whatever offset is stored
+    if (selectedModel.model_type !== '3d-tiles') return `${coordinate_system.toUpperCase()} (legacy: offset not applied)`
     const sign = geoid_offset >= 0 ? '+' : ''
     return `${coordinate_system.toUpperCase()} ${sign}${geoid_offset.toFixed(1)} m`
   }

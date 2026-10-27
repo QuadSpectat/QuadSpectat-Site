@@ -18,7 +18,7 @@ import { DEFAULT_VISUAL, qualityToSSE } from '@/lib/visualControls'
 import type { BaseMap } from '@/components/MapSwitcher'
 import type { GeoPoint } from '@/lib/geopoints'
 import type { HeightRef } from '@/lib/heights'
-import { modelGeoidShift } from '@/lib/heights'
+import { modelGeoidShift, modelCoordinateSystem } from '@/lib/heights'
 import type { ViewApi } from '@/lib/views'
 import { OrientationAids } from '@/components/OrientationAids'
 import { effectiveSse, tilesetMemoryOptions, setQualityMode } from '@/lib/deviceProfile'
@@ -222,11 +222,22 @@ function CesiumViewerInner({
   const visualRef = useRef<VisualSettings>(visualSettings)
   visualRef.current = visualSettings
   // What shift the model currently has, so measured heights can be converted to height above sea level
+  const selectedModelRef = useRef(selectedModel)
+  selectedModelRef.current = selectedModel
+  // Where a 3D Tiles model is (its middle), known once the tileset has loaded: the geoid height N is taken there
+  const tileCenterRef = useRef<{ lat: number; lon: number } | null>(null)
+  /** The vertical shift the open model is drawn with: geoid part (see modelGeoidShift) without the fine-tune slider */
+  const geoidShiftOf = (m: Model | null | undefined): number => {
+    if (!m) return 0
+    if (m.model_type === '3d-tiles') return modelGeoidShift(m, tileCenterRef.current?.lat, tileCenterRef.current?.lon)
+    return modelGeoidShift(m, m.latitude, m.longitude)
+  }
+  // Getters, so a measurement always sees the shift that is drawn right now (the tileset centre arrives after the first render)
   const heightRef = useRef<HeightRef>({ appliedOffset: 0 })
   heightRef.current = {
-    coordinateSystem: selectedModel?.coordinate_system,
-    // exactly the vertical shift the model is drawn with (3D Tiles: geoid offset; GLB: only when the owner switched it on)
-    appliedOffset: modelGeoidShift(selectedModel) + visualSettings.heightOffset,
+    get coordinateSystem() { return modelCoordinateSystem(selectedModelRef.current) },
+    // exactly the vertical shift the model is drawn with
+    get appliedOffset() { return geoidShiftOf(selectedModelRef.current) + visualRef.current.heightOffset },
   }
 
   // Exposed as state so useMeasure re-runs once the viewer is ready
@@ -383,6 +394,7 @@ function CesiumViewerInner({
 
     stereoSphereRef.current = null
     modelReadyRef.current = false
+    tileCenterRef.current = null
     // Remove previous glTF entity
     if (entityRef.current) {
       v.entities.remove(entityRef.current)
@@ -425,9 +437,10 @@ function CesiumViewerInner({
         vv.scene.primitives.add(tileset)
         tilesetRef.current = tileset
         // Combined offset: model's stored geoid correction + user fine-tune slider
-        const geoidOffset = selectedModel?.geoid_offset ?? 0
         const rootBefore = tileset.boundingSphere.center.clone()
-        applyHeightOffset(tileset, geoidOffset + visualRef.current.heightOffset)
+        const c0 = Cesium.Cartographic.fromCartesian(rootBefore)
+        tileCenterRef.current = { lat: Cesium.Math.toDegrees(c0.latitude), lon: Cesium.Math.toDegrees(c0.longitude) }
+        applyHeightOffset(tileset, geoidShiftOf(selectedModel) + visualRef.current.heightOffset)
         const shift = Cesium.Cartesian3.subtract(tileset.boundingSphere.center, rootBefore, new Cesium.Cartesian3())
         const focus = contentSphere(tileset, shift)
         stereoSphereRef.current = focus
@@ -463,7 +476,7 @@ function CesiumViewerInner({
     }
     // The altitude is the sea-level height of the model's ground: the geoid offset (when switched on for this model) and the
     // Height Offset slider are added, like they are for 3D Tiles; the slider moves the model later (see the effect below)
-    const position = Cesium.Cartesian3.fromDegrees(longitude, latitude, altitude + modelGeoidShift(selectedModel) + visualRef.current.heightOffset)
+    const position = Cesium.Cartesian3.fromDegrees(longitude, latitude, altitude + modelGeoidShift(selectedModel, latitude, longitude) + visualRef.current.heightOffset)
     const hpr = new Cesium.HeadingPitchRoll(
       Cesium.Math.toRadians(heading),
       Cesium.Math.toRadians(pitch),
@@ -678,10 +691,9 @@ function CesiumViewerInner({
   // Re-apply height offset whenever the slider or model changes
   useEffect(() => {
     if (tilesetRef.current) {
-      const geoidOffset = selectedModel?.geoid_offset ?? 0
-      applyHeightOffset(tilesetRef.current, geoidOffset + visualSettings.heightOffset)
+      applyHeightOffset(tilesetRef.current, geoidShiftOf(selectedModel) + visualSettings.heightOffset)
     }
-  }, [visualSettings.heightOffset, selectedModel?.geoid_offset])
+  }, [visualSettings.heightOffset, selectedModel?.geoid_offset, selectedModel?.geoid_mode])
 
   // The same slider (and the geoid switch) moves a GLB model: its entity is re-placed, nothing is reloaded
   useEffect(() => {
@@ -689,13 +701,13 @@ function CesiumViewerInner({
     const m = selectedModel
     if (!e || !m || m.model_type === '3d-tiles') return
     if (![m.longitude, m.latitude, m.altitude].every((n) => typeof n === 'number' && Number.isFinite(n))) return
-    const position = Cesium.Cartesian3.fromDegrees(m.longitude, m.latitude, m.altitude + modelGeoidShift(m) + visualSettings.heightOffset)
+    const position = Cesium.Cartesian3.fromDegrees(m.longitude, m.latitude, m.altitude + modelGeoidShift(m, m.latitude, m.longitude) + visualSettings.heightOffset)
     e.position = new Cesium.ConstantPositionProperty(position)
     e.orientation = new Cesium.ConstantProperty(Cesium.Transforms.headingPitchRollQuaternion(position, new Cesium.HeadingPitchRoll(
       Cesium.Math.toRadians(m.heading), Cesium.Math.toRadians(m.pitch), Cesium.Math.toRadians(m.roll),
     )))
     viewerRef.current?.scene.requestRender()
-  }, [visualSettings.heightOffset, selectedModel?.geoid_offset, selectedModel?.glb_geoid_applied])
+  }, [visualSettings.heightOffset, selectedModel?.geoid_offset, selectedModel?.geoid_mode])
 
   // ── Overlay model loading ────────────────────────────────────────────────────
   useEffect(() => {
@@ -725,8 +737,8 @@ function CesiumViewerInner({
         ...tilesetMemoryOptions(),
       }).then((tileset) => {
         if (cancelled || !viewerRef.current) return
-        const geoidOffset = overlayModel.geoid_offset ?? 0
-        applyHeightOffset(tileset, geoidOffset + visualRef.current.heightOffset)
+        const oc = Cesium.Cartographic.fromCartesian(tileset.boundingSphere.center)
+        applyHeightOffset(tileset, modelGeoidShift(overlayModel, Cesium.Math.toDegrees(oc.latitude), Cesium.Math.toDegrees(oc.longitude)) + visualRef.current.heightOffset)
         viewerRef.current.scene.primitives.add(tileset)
         overlayTilesetRef.current = tileset
         viewerRef.current.scene.requestRender()
@@ -736,7 +748,7 @@ function CesiumViewerInner({
 
     // glTF / GLB overlay
     const { longitude, latitude, altitude, heading, pitch, roll, scale } = overlayModel
-    const position = Cesium.Cartesian3.fromDegrees(longitude, latitude, altitude + modelGeoidShift(overlayModel) + visualRef.current.heightOffset)
+    const position = Cesium.Cartesian3.fromDegrees(longitude, latitude, altitude + modelGeoidShift(overlayModel, latitude, longitude) + visualRef.current.heightOffset)
     const hpr = new Cesium.HeadingPitchRoll(
       Cesium.Math.toRadians(heading),
       Cesium.Math.toRadians(pitch),
