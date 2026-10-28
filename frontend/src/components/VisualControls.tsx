@@ -52,6 +52,11 @@ export interface GoogleAlignUi {
   pickMode: boolean
   pickCount: number
   onTogglePick: () => void
+  /** unsaved manual height change made while Google 3D is shown (the nudges / Height Offset slider), metres */
+  pending: number
+  onSaveManual: () => void
+  /** Cut out Google under the model */
+  cutout: { on: boolean; auto: boolean; margin: number; status: string | null; onToggle: (on: boolean) => void; onMargin: (v: number) => void }
   /** primary: Clear Google fit (never hidden under Google) */
   onAlign: () => void
   /** secondary: centred best-average fit */
@@ -112,6 +117,31 @@ function GoogleAlignBlock({ ui }: { ui: GoogleAlignUi }) {
         ))}
       </div>
       <span className="text-[11px] font-mono text-sky-200" data-testid="google-align-offset">Google offset {ui.offset >= 0 ? '+' : ''}{ui.offset.toFixed(2)} m</span>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] font-mono text-white/70" data-testid="google-align-pending">Unsaved manual change {ui.pending >= 0 ? '+' : ''}{ui.pending.toFixed(2)} m</span>
+        <button type="button" disabled={ui.busy || Math.abs(ui.pending) < 0.005} onClick={ui.onSaveManual} data-testid="google-align-save" className={btnCls}>Save as Google offset / שמור</button>
+      </div>
+      <p className="text-[10px] leading-snug text-white/55" data-testid="google-align-manual-help">
+        <span dir="rtl" className="block">הקרקע של Google יכולה להיות לא מדויקת (רזולוציה נמוכה, שיפוע שגוי). המודל שלכם הוא ההתייחסות: התאימו ידנית בכפתורי + / - או בסרגל Height Offset ושמרו. הכפתורים האוטומטיים רק עוזרים.</span>
+        Google&apos;s ground can be inaccurate (low resolution, wrong slope). Your model is the reference: adjust by hand with the +/- buttons or the Height Offset slider, then save. The automatic buttons are only helpers.
+      </p>
+      <div className="flex flex-col gap-1.5 border-t border-sky-400/20 pt-2" data-testid="google-cutout">
+        <label className="flex items-start gap-2 cursor-pointer select-none">
+          <input type="checkbox" data-testid="google-cutout-toggle" checked={ui.cutout.on} onChange={(e) => ui.cutout.onToggle(e.target.checked)} className="mt-0.5 h-4 w-4 accent-primary" />
+          <span className="text-[11px] text-sky-100 font-medium"><span dir="rtl">חתוך את גוגל מתחת למודל</span> / Cut out Google under the model{ui.cutout.auto ? ' (automatic: on because the model is aligned)' : ''}</span>
+        </label>
+        <p className="text-[10px] leading-snug text-white/55">
+          <span dir="rtl" className="block">גוגל נחתך בקו קשיח לפי שטח המודל, כך שהקרקע של המודל מחליפה את הקרקע המטושטשת של גוגל, וגוגל נשאר כרקע מסביב. החיתוך אופקי: ההיסט של גוגל מזיז את המודל רק למעלה/למטה.</span>
+          Google is cut out along the model&apos;s footprint (hard edge), so the model&apos;s own ground replaces Google&apos;s blurry ground and Google stays around it. The cut is horizontal: the Google offset only moves the model up or down.
+        </p>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-white/60 shrink-0"><span dir="rtl">שוליים</span> / Margin</span>
+          <input type="range" min={-20} max={50} step={1} value={ui.cutout.margin} data-testid="google-cutout-margin" disabled={!ui.cutout.on}
+            onChange={(e) => ui.cutout.onMargin(Number(e.target.value))} className="flex-1 accent-sky-300" />
+          <span className="text-[11px] font-mono text-sky-200 w-14 text-right" data-testid="google-cutout-margin-value">{ui.cutout.margin >= 0 ? '+' : ''}{ui.cutout.margin} m</span>
+        </div>
+        {ui.cutout.status && <span className="text-[10px] text-white/60 leading-snug" data-testid="google-cutout-status">{ui.cutout.status}</span>}
+      </div>
       {ui.info && <span className="text-[10px] text-white/70 leading-snug" data-testid="google-align-info">{ui.info}</span>}
       {ui.lines.length > 0 && (
         <ul className="text-[10px] text-white/60 leading-snug list-disc pl-3.5" data-testid="google-align-report">

@@ -222,6 +222,10 @@ sqlite.exec(`
     if (!m.has('geoid_mode')) sqlite.exec(`ALTER TABLE models ADD COLUMN geoid_mode INTEGER NOT NULL DEFAULT 0`)
     // google_offset: metres added to the model's height ONLY while Google 3D is shown (owner's "Align to Google 3D"); 0 = no change
     if (!m.has('google_offset')) sqlite.exec(`ALTER TABLE models ADD COLUMN google_offset REAL NOT NULL DEFAULT 0`)
+    // google_cutout: "Cut out Google under the model" while Google 3D is shown. 0 = automatic (on when the model has a saved
+    //   google_offset), 1 = on, 2 = off. google_cutout_margin: metres added around the model's footprint (negative = smaller).
+    if (!m.has('google_cutout')) sqlite.exec(`ALTER TABLE models ADD COLUMN google_cutout INTEGER NOT NULL DEFAULT 0`)
+    if (!m.has('google_cutout_margin')) sqlite.exec(`ALTER TABLE models ADD COLUMN google_cutout_margin REAL NOT NULL DEFAULT 0`)
     const marker = env.PUBLIC_ASSET_NAME.trim()
     if (!m.has('is_public_demo')) {
       sqlite.exec(`ALTER TABLE models ADD COLUMN is_public_demo INTEGER NOT NULL DEFAULT 0`)

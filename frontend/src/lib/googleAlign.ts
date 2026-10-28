@@ -87,7 +87,21 @@ async function sampleGrid(v: Cesium.Viewer, google: Cesium.Cesium3DTileset, sphe
   return { samples, g, m, r, c }
 }
 
-export async function alignToGoogleSurface(
+/** Google's ground has to be readable while measuring: the cut-out (clipping polygon) is switched off for the duration. */
+async function withoutCutout<T>(v: Cesium.Viewer, google: Cesium.Cesium3DTileset, fn: () => Promise<T>): Promise<T> {
+  const c = google.clippingPolygons
+  const was = c ? c.enabled : false
+  if (c && was) { c.enabled = false; v.scene.render() }
+  try { return await fn() } finally { if (c && was && !c.isDestroyed()) { c.enabled = true; v.scene.requestRender() } }
+}
+
+export function alignToGoogleSurface(
+  v: Cesium.Viewer, google: Cesium.Cesium3DTileset, sphere: Cesium.BoundingSphere, currentOffset: number, modelTilesets: Cesium.Cesium3DTileset[] = [], mode: 'clear' | 'centred' = 'clear',
+): Promise<GoogleAlignResult> {
+  return withoutCutout(v, google, () => alignOverall(v, google, sphere, currentOffset, modelTilesets, mode))
+}
+
+async function alignOverall(
   v: Cesium.Viewer, google: Cesium.Cesium3DTileset, sphere: Cesium.BoundingSphere, currentOffset: number, modelTilesets: Cesium.Cesium3DTileset[] = [], mode: 'clear' | 'centred' = 'clear',
 ): Promise<GoogleAlignResult> {
   let loaded = await waitForTiles(v, [google, ...modelTilesets])
@@ -124,7 +138,13 @@ export async function alignToGoogleSurface(
 }
 
 /** Align at the chosen ground spots (owner clicks): mean of the differences around them, residuals over the footprint reported. */
-export async function alignAtPoints(
+export function alignAtPoints(
+  v: Cesium.Viewer, google: Cesium.Cesium3DTileset, sphere: Cesium.BoundingSphere, points: Cesium.Cartographic[], currentOffset: number, modelTilesets: Cesium.Cesium3DTileset[] = [],
+): Promise<GoogleAlignResult> {
+  return withoutCutout(v, google, () => alignPoints(v, google, sphere, points, currentOffset, modelTilesets))
+}
+
+async function alignPoints(
   v: Cesium.Viewer, google: Cesium.Cesium3DTileset, sphere: Cesium.BoundingSphere, points: Cesium.Cartographic[], currentOffset: number, modelTilesets: Cesium.Cesium3DTileset[] = [],
 ): Promise<GoogleAlignResult> {
   const loaded = await waitForTiles(v, [google, ...modelTilesets])
