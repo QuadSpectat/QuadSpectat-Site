@@ -23,8 +23,6 @@ import type { HeightRef } from '@/lib/heights'
 import { modelGeoidShift, modelCoordinateSystem } from '@/lib/heights'
 import { alignToGoogleSurface, alignAtPoints } from '@/lib/googleAlign'
 import { pickModelPosition } from '@/lib/pickModel'
-import { applyCutout, computeFootprint, cutoutEffective, cutoutSupported, footprintPositions } from '@/lib/googleCutout'
-import type { Footprint } from '@/lib/googleCutout'
 import type { GoogleAlignResult } from '@/lib/googleAlign'
 import type { ViewApi } from '@/lib/views'
 import { OrientationAids } from '@/components/OrientationAids'
@@ -151,7 +149,6 @@ interface Props {
   /** Same, for Align at point(s): measures around the given ground spots */
   googleAlignPointsRef?: React.MutableRefObject<((pts: Cesium.Cartographic[]) => Promise<GoogleAlignResult>) | null>
   /** Status text of the Google cut-out (null = nothing to say), for the owner's panel */
-  onCutoutStatus?: (msg: string | null) => void
   /** Owner is choosing ground spots for Align at point(s): a click on the model reports its position */
   googlePickMode?: boolean
   onGooglePick?: (c: Cesium.Cartographic) => void
@@ -209,7 +206,6 @@ function CesiumViewerInner({
   snapRef,
   googleAlignRef,
   googleAlignPointsRef,
-  onCutoutStatus,
   googlePickMode = false,
   onGooglePick,
   googlePickPoints = NO_POINTS,
@@ -1112,38 +1108,6 @@ function CesiumViewerInner({
       return alignAtPoints(v, g, sph, pts, m.google_offset ?? 0, tilesetRef.current ? [tilesetRef.current] : [])
     }
   }
-  // Cut out Google under the model: a clipping polygon over the model's footprint (hard edge), only while Google 3D is shown
-  const footprintRef = useRef<{ id: string; fp: Footprint } | null>(null)
-  const cutoutStatusRef = useRef(onCutoutStatus)
-  cutoutStatusRef.current = onCutoutStatus
-  useEffect(() => {
-    if (!viewer || viewer.isDestroyed() || !googleShown || !selectedModel) { cutoutStatusRef.current?.(null); return }
-    let alive = true
-    const model = selectedModel
-    const on = cutoutEffective(model)
-    ;(async () => {
-      for (let waited = 0; waited < 90_000 && alive && (!google3dRef.current || !stereoSphereRef.current); waited += 300) await new Promise((r) => setTimeout(r, 300))
-      const g = google3dRef.current, sph = stereoSphereRef.current
-      if (!alive || !g || !sph || viewer.isDestroyed()) return
-      if (!on) { if (cutoutSupported(viewer.scene)) applyCutout(g, null); cutoutStatusRef.current?.(null); viewer.scene.requestRender(); return }
-      if (!cutoutSupported(viewer.scene)) { cutoutStatusRef.current?.('Cutting out Google is not supported on this device: Google 3D is left uncut. / החיתוך אינו נתמך במכשיר זה, גוגל נשאר שלם.'); return }
-      cutoutStatusRef.current?.('Working out the model footprint... / מחשב את שטח המודל...')
-      let c = footprintRef.current
-      if (!c || c.id !== model.id) {
-        const fp = await computeFootprint(viewer, g, sph, tilesetRef.current ? [tilesetRef.current] : [])
-        if (!alive) return
-        if (!fp) { cutoutStatusRef.current?.('Could not work out the model footprint (the model surface was not found): Google is left uncut.'); return }
-        c = { id: model.id, fp }; footprintRef.current = c
-      }
-      if (!alive || viewer.isDestroyed() || google3dRef.current !== g) return
-      applyCutout(g, footprintPositions(c.fp, model.google_cutout_margin ?? 0))
-      const m = model.google_cutout_margin ?? 0
-      cutoutStatusRef.current?.(`Google is cut out under the model (hard edge, margin ${m >= 0 ? '+' : ''}${m} m, footprint ${Math.round(Math.abs(c.fp.hull.reduce((a, p, i, h) => a + (p.x * h[(i + 1) % h.length].y - h[(i + 1) % h.length].x * p.y), 0)) / 2)} m2). Google 3D stays around it.`)
-      viewer.scene.requestRender()
-    })().catch((e) => { console.error('[cutout]', e); cutoutStatusRef.current?.('Cutting out Google failed: Google is left uncut.') })
-    return () => { alive = false }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewer, googleShown, selectedModel?.id, selectedModel?.google_cutout, selectedModel?.google_offset, selectedModel?.google_cutout_margin])
   // Align at point(s): while chosen, a click on the model (Google ignored) reports the ground spot; markers show the spots
   const onGooglePickRef = useRef(onGooglePick)
   onGooglePickRef.current = onGooglePick

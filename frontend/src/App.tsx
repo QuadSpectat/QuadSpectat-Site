@@ -27,7 +27,6 @@ import { sortOrthosTopFirst } from '@/components/OrthophotoPanel'
 import type { GoogleAlignResult } from '@/lib/googleAlign'
 import type * as Cesium from 'cesium'
 import type { GoogleAlignUi } from '@/components/VisualControls'
-import { cutoutEffective } from '@/lib/googleCutout'
 import type { OrthoCompare } from '@/components/ComparePanel'
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? '/api'
@@ -96,8 +95,6 @@ export default function App() {
   const [alignInfo, setAlignInfo] = useState<string | null>(null)
   const [alignLines, setAlignLines] = useState<string[]>([])
   const [alignPick, setAlignPick] = useState(false)
-  const [cutoutStatus, setCutoutStatus] = useState<string | null>(null)
-  const marginTimer = useRef<number | undefined>(undefined)
   const [alignPts, setAlignPts] = useState<Cesium.Cartographic[]>([])
   const [alignBusy, setAlignBusy] = useState(false)
   const resetCameraRef = useRef<(() => void) | null>(null)
@@ -264,19 +261,6 @@ export default function App() {
       void saveGoogleOffset(total).then(() => { setVisualSettings((s) => ({ ...s, heightOffset: 0 })); setAlignInfo(`Saved: Google offset ${total >= 0 ? '+' : ''}${total.toFixed(2)} m (your manual adjustment).`); setAlignLines([]) }).catch(console.error)
     },
     onReset: () => { setAlignPick(false); setAlignPts([]); setVisualSettings((s) => ({ ...s, heightOffset: 0 })); void saveGoogleOffset(0).then(() => { setAlignInfo('Reset: the model is drawn as in the normal view.'); setAlignLines([]) }).catch(console.error) },
-    cutout: {
-      on: cutoutEffective(selectedModel),
-      auto: (selectedModel.google_cutout ?? 0) === 0 && cutoutEffective(selectedModel),
-      margin: selectedModel.google_cutout_margin ?? 0,
-      status: cutoutStatus,
-      onToggle: (on) => { void updateModel(selectedModel.id, { google_cutout: on ? 1 : 2 }).then((u) => { setSelectedModel(u); void refresh() }).catch(console.error) },
-      onMargin: (v) => {
-        setSelectedModel((m) => (m ? { ...m, google_cutout_margin: v } : m))
-        window.clearTimeout(marginTimer.current)
-        const id = selectedModel.id
-        marginTimer.current = window.setTimeout(() => { void updateModel(id, { google_cutout_margin: v }).then(() => void refresh()).catch(console.error) }, 500)
-      },
-    },
   } : undefined
   // Align at point(s): every click adds a spot; the offset is recomputed from all spots chosen so far
   function onGooglePick(c: Cesium.Cartographic) {
@@ -384,7 +368,6 @@ export default function App() {
             snapRef={snapRef}
             googleAlignRef={googleAlignRef}
             googleAlignPointsRef={googleAlignPointsRef}
-            onCutoutStatus={setCutoutStatus}
             googlePickMode={alignPick && !alignBusy}
             onGooglePick={onGooglePick}
             googlePickPoints={alignPts}

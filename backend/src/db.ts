@@ -222,6 +222,7 @@ sqlite.exec(`
     if (!m.has('geoid_mode')) sqlite.exec(`ALTER TABLE models ADD COLUMN geoid_mode INTEGER NOT NULL DEFAULT 0`)
     // google_offset: metres added to the model's height ONLY while Google 3D is shown (owner's "Align to Google 3D"); 0 = no change
     if (!m.has('google_offset')) sqlite.exec(`ALTER TABLE models ADD COLUMN google_offset REAL NOT NULL DEFAULT 0`)
+    // PARKED 2026-10-28 (Google cut-out removed): these two columns are kept, unused, so old and new backends stay compatible with a migrated DB.
     // google_cutout: "Cut out Google under the model" while Google 3D is shown. 0 = automatic (on when the model has a saved
     //   google_offset), 1 = on, 2 = off. google_cutout_margin: metres added around the model's footprint (negative = smaller).
     if (!m.has('google_cutout')) sqlite.exec(`ALTER TABLE models ADD COLUMN google_cutout INTEGER NOT NULL DEFAULT 0`)
