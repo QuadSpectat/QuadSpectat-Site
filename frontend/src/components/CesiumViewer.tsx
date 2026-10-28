@@ -145,7 +145,7 @@ interface Props {
   /** Parent passes a ref; CesiumViewer writes the snap-to-ground function into it */
   snapRef?: React.MutableRefObject<(() => void) | null>
   /** Parent passes a ref; CesiumViewer writes the Align to Google 3D measurement into it (owner only) */
-  googleAlignRef?: React.MutableRefObject<(() => Promise<GoogleAlignResult>) | null>
+  googleAlignRef?: React.MutableRefObject<((mode?: 'clear' | 'centred') => Promise<GoogleAlignResult>) | null>
   /** Same, for Align at point(s): measures around the given ground spots */
   googleAlignPointsRef?: React.MutableRefObject<((pts: Cesium.Cartographic[]) => Promise<GoogleAlignResult>) | null>
   /** Owner is choosing ground spots for Align at point(s): a click on the model reports its position */
@@ -1086,14 +1086,14 @@ function CesiumViewerInner({
   const toolWanted = measureMode !== 'none' || geopointActive
   const googleExcluded = (): object[] => (google3dRef.current ? [google3dRef.current] : [])
   if (googleAlignRef) {
-    googleAlignRef.current = async () => {
+    googleAlignRef.current = async (mode = 'clear') => {
       const v = viewerRef.current
       const g = google3dRef.current
       const m = selectedModelRef.current
       const sph = stereoSphereRef.current
       if (!v || v.isDestroyed() || !g || !m) throw new Error('Google 3D is not loaded yet: wait until it is drawn, then try again.')
       if (!sph) throw new Error('The model is not ready yet.')
-      return alignToGoogleSurface(v, g, sph, m.google_offset ?? 0, tilesetRef.current ? [tilesetRef.current] : [])
+      return alignToGoogleSurface(v, g, sph, m.google_offset ?? 0, tilesetRef.current ? [tilesetRef.current] : [], mode)
     }
   }
   if (googleAlignPointsRef) {

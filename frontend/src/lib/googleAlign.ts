@@ -88,7 +88,7 @@ async function sampleGrid(v: Cesium.Viewer, google: Cesium.Cesium3DTileset, sphe
 }
 
 export async function alignToGoogleSurface(
-  v: Cesium.Viewer, google: Cesium.Cesium3DTileset, sphere: Cesium.BoundingSphere, currentOffset: number, modelTilesets: Cesium.Cesium3DTileset[] = [],
+  v: Cesium.Viewer, google: Cesium.Cesium3DTileset, sphere: Cesium.BoundingSphere, currentOffset: number, modelTilesets: Cesium.Cesium3DTileset[] = [], mode: 'clear' | 'centred' = 'clear',
 ): Promise<GoogleAlignResult> {
   let loaded = await waitForTiles(v, [google, ...modelTilesets])
   let first = await sampleGrid(v, google, sphere)
@@ -101,17 +101,25 @@ export async function alignToGoogleSurface(
     if (!google.tilesLoaded || Math.abs(m1 - m2) > 0.15) loaded = false
     if (again.samples.length >= first.samples.length) first = again
   }
-  const fit = robustOffset(first.samples)
+  const fit0 = robustOffset(first.samples)
+  const ins = first.samples.filter((_, i) => fit0.inlier[i]).map((p) => p.d).sort((a, b) => a - b)
+  const clear = mode === 'clear' && ins.length ? Math.max(0, ins[Math.floor(0.9 * (ins.length - 1))] - fit0.delta) : 0
+  // "Clear Google": the centred fit raised so the model is above Google on ~90 % of the ground-like points
+  const fit = { ...fit0, delta: fit0.delta + clear }
   const rep = reportFor(first.samples, fit, first.r * 2)
-  const ins = first.samples.filter((_, i) => fit.inlier[i]).map((p) => p.d).sort((a, b) => a - b)
-  const clear = ins.length ? Math.max(0, ins[Math.floor(0.9 * (ins.length - 1))] - fit.delta) : 0
   const s = first.samples.map((p) => p.d).sort((a, b) => a - b)
   const q1 = s[Math.floor(s.length / 4)], q3 = s[Math.ceil((3 * s.length) / 4) - 1]
   const lines = reportLines(rep)
+  if (mode === 'clear') {
+    const gres = first.samples.filter((_, i) => fit.inlier[i]).map((p) => p.d - fit.delta)
+    const above = gres.filter((v) => v < -0.05), under = gres.filter((v) => v > 0.05)
+    const pct = (n: number) => Math.round((100 * n) / Math.max(1, gres.length))
+    lines.unshift(`Clear Google (default): the centred fit raised by ${clear.toFixed(2)} m. On the ground-like points the model is above Google on ${pct(above.length)} % (median gap ${above.length ? medianOf(above.map((v) => -v)).toFixed(2) : '0.00'} m, largest gap ${above.length ? Math.max(...above.map((v) => -v)).toFixed(2) : '0.00'} m: it floats there) and under Google on ${pct(under.length)} % (largest ${under.length ? Math.max(...under).toFixed(2) : '0.00'} m).`)
+  }
   if (!loaded) lines.unshift('Google 3D (or the model) was still loading while measuring: some tiles were coarse, so this may be off. Wait until everything is sharp and press Align again.')
   return {
     offset: currentOffset + fit.delta, delta: fit.delta, googleHeight: medianOf(first.g), modelHeight: medianOf(first.m), samples: first.samples.length,
-    spread: q3 - q1, loaded, clearDelta: clear, lines,
+    spread: q3 - q1, loaded, clearDelta: 0, lines,
   }
 }
 

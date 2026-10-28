@@ -90,11 +90,10 @@ export default function App() {
 
   // Snap-to-ground ref, reset-camera ref, fly-to-ortho ref
   const snapRef        = useRef<(() => void) | null>(null)
-  const googleAlignRef = useRef<(() => Promise<GoogleAlignResult>) | null>(null)
+  const googleAlignRef = useRef<((mode?: 'clear' | 'centred') => Promise<GoogleAlignResult>) | null>(null)
   const googleAlignPointsRef = useRef<((pts: Cesium.Cartographic[]) => Promise<GoogleAlignResult>) | null>(null)
   const [alignInfo, setAlignInfo] = useState<string | null>(null)
   const [alignLines, setAlignLines] = useState<string[]>([])
-  const [alignClear, setAlignClear] = useState(0)
   const [alignPick, setAlignPick] = useState(false)
   const [alignPts, setAlignPts] = useState<Cesium.Cartographic[]>([])
   const [alignBusy, setAlignBusy] = useState(false)
@@ -235,7 +234,14 @@ export default function App() {
   }
   const showAlignResult = (r: GoogleAlignResult, what: string) => {
     setAlignInfo(`${what}: Google ground ${r.googleHeight.toFixed(2)} m, model ground ${r.modelHeight.toFixed(2)} m (ellipsoid), correction ${r.delta >= 0 ? '+' : ''}${r.delta.toFixed(2)} m from ${r.samples} point${r.samples === 1 ? '' : 's'}${r.loaded ? '' : ' (STILL LOADING: may be off)'}.`)
-    setAlignLines(r.lines); setAlignClear(r.clearDelta)
+    setAlignLines(r.lines)
+  }
+  const runAlign = (mode: 'clear' | 'centred') => {
+    setAlignBusy(true); setAlignPick(false); setAlignPts([]); setAlignInfo('Measuring Google 3D and the model (waiting for the tiles to load)... / מודד...'); setAlignLines([])
+    googleAlignRef.current?.(mode)
+      .then(async (r) => { await saveGoogleOffset(r.offset); showAlignResult(r, mode === 'clear' ? 'Align to Google 3D (Clear Google)' : 'Align overall (centred)') })
+      .catch((e: unknown) => setAlignInfo(e instanceof Error ? e.message : String(e)))
+      .finally(() => setAlignBusy(false))
   }
   const googleAlign: GoogleAlignUi | undefined = baseMap === 'google3d' && selectedModel ? {
     offset: selectedModel.google_offset ?? 0,
@@ -244,21 +250,11 @@ export default function App() {
     busy: alignBusy,
     pickMode: alignPick,
     pickCount: alignPts.length,
-    clearDelta: alignClear,
     onTogglePick: () => { setAlignPick((v) => !v); setAlignPts([]) },
-    onAlign: () => {
-      setAlignBusy(true); setAlignPick(false); setAlignPts([]); setAlignInfo('Measuring Google 3D and the model (waiting for the tiles to load)... / מודד...'); setAlignLines([])
-      googleAlignRef.current?.()
-        .then(async (r) => { await saveGoogleOffset(r.offset); showAlignResult(r, 'Align overall') })
-        .catch((e: unknown) => setAlignInfo(e instanceof Error ? e.message : String(e)))
-        .finally(() => setAlignBusy(false))
-    },
-    onClear: () => {
-      const add = alignClear
-      void saveGoogleOffset((selectedModel.google_offset ?? 0) + add).then(() => { setAlignInfo(`Raised by ${add.toFixed(2)} m: the model is now above Google on about 90 % of the ground-like points.`); setAlignClear(0) }).catch(console.error)
-    },
-    onNudge: (d) => { void saveGoogleOffset((selectedModel.google_offset ?? 0) + d).then(() => { setAlignInfo(null); setAlignLines([]); setAlignClear(0) }).catch(console.error) },
-    onReset: () => { setAlignPick(false); setAlignPts([]); void saveGoogleOffset(0).then(() => { setAlignInfo('Reset: the model is drawn as in the normal view.'); setAlignLines([]); setAlignClear(0) }).catch(console.error) },
+    onAlign: () => runAlign('clear'),
+    onAlignCentred: () => runAlign('centred'),
+    onNudge: (d) => { void saveGoogleOffset((selectedModel.google_offset ?? 0) + d).then(() => { setAlignInfo(null); setAlignLines([]); }).catch(console.error) },
+    onReset: () => { setAlignPick(false); setAlignPts([]); void saveGoogleOffset(0).then(() => { setAlignInfo('Reset: the model is drawn as in the normal view.'); setAlignLines([]); }).catch(console.error) },
   } : undefined
   // Align at point(s): every click adds a spot; the offset is recomputed from all spots chosen so far
   function onGooglePick(c: Cesium.Cartographic) {
