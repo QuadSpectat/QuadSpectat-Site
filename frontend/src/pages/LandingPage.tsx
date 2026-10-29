@@ -40,7 +40,7 @@ export function LandingPage() {
       {/* ── Nav ─────────────────────────────────────────────────── */}
       <nav className="flex items-center justify-between gap-3 px-4 sm:px-8 py-3 border-b border-border/60 sticky top-0 z-40 bg-background/85 backdrop-blur-md">
         <a href="#top" className="flex items-center gap-3 shrink-0">
-          <img src="/logo.svg" alt="QuadSpectat" className="h-11 w-11" />
+          <img src="/logo-en.svg" alt="QuadSpectat" className="h-11 w-11" />
           <span className="hidden sm:block font-display font-medium leading-tight">QuadSpectat<br /><span className="text-xs text-muted-foreground font-sans">Drone Studio</span></span>
         </a>
         <div className="flex items-center gap-3 sm:gap-6">
@@ -249,7 +249,7 @@ export function LandingPage() {
       {/* ── Footer ──────────────────────────────────────────────── */}
       <footer className="px-6 py-8 border-t border-border/60 mt-auto">
         <div className="max-w-6xl mx-auto flex items-center justify-center gap-3">
-          <img src="/logo.svg" alt="QuadSpectat" className="h-9 w-9 opacity-90" />
+          <img src="/logo-en.svg" alt="QuadSpectat" className="h-9 w-9 opacity-90" />
           <span className="text-xs text-muted-foreground">Quadspectat · נקודת מבט · מכל זווית</span>
         </div>
       </footer>
